@@ -150,12 +150,12 @@ export default function ClassLandingPage() {
   };
 
   // Đăng nhập bằng Google Auth
-  const handleGoogleSignIn = async () => {
+const handleGoogleSignIn = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/teacher`
+          redirectTo: window.location.origin // Chuyển hướng về trang chủ thay vì /teacher
         }
       });
       if (error) throw error;
