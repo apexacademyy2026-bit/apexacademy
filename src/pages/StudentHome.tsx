@@ -14,9 +14,7 @@ import {
   ExternalLink,
   ShieldCheck,
   Zap,
-  ArrowUpRight,
-  GraduationCap,
-  BookOpen
+  ArrowUpRight
 } from "lucide-react";
 
 export default function StudentHome() {
@@ -68,41 +66,49 @@ export default function StudentHome() {
     return trimmed;
   };
 
+  // Lấy tên hiển thị mặc định từ Google Meta, Email hoặc hiển thị Học sinh
+  const defaultDisplayName = 
+    user?.user_metadata?.full_name || 
+    user?.user_metadata?.name || 
+    user?.email?.split('@')[0] || 
+    "Học sinh";
+
+  // KHÔNG DÙNG MOCK DATA MẶC ĐỊNH LÀM FALLBACK NỮA
   const studentInfo = {
     fullName: 
       cleanName(studentDetail?.name) || 
       cleanName((profile as any)?.full_name) || 
       cleanName(profile?.display_name) || 
-      "Ngọc",
+      defaultDisplayName,
 
-    email: user?.email || studentDetail?.email || "panhpanhdk7@gmail.com",
+    email: user?.email || studentDetail?.email || "Chưa cập nhật",
 
     phone: 
       studentDetail?.phone || 
       (profile as any)?.phone || 
-      "0293847493",
+      "Chưa cập nhật",
 
     dob: 
       studentDetail?.dob || 
       studentDetail?.date_of_birth || 
       (profile as any)?.date_of_birth || 
-      "2008-04-24",
+      "Chưa cập nhật",
 
     grade: 
       studentDetail?.grade || 
       (profile as any)?.school_class || 
       (profile as any)?.grade || 
-      "12",
+      "Chưa chọn",
 
     parentName: 
       cleanName(studentDetail?.parent_name) || 
       cleanName((profile as any)?.parent_name) || 
-      "Hường",
+      "Chưa cập nhật",
 
     parentPhone: 
       studentDetail?.parent_phone || 
       (profile as any)?.parent_phone || 
-      "834293847",
+      "Chưa cập nhật",
   };
 
   return (
@@ -159,28 +165,36 @@ export default function StudentHome() {
               <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                 <Phone className="h-3 w-3 text-blue-500" /> Số điện thoại
               </span>
-              <p className="font-extrabold text-slate-800 text-sm">{studentInfo.phone}</p>
+              <p className={`font-extrabold text-sm ${studentInfo.phone === "Chưa cập nhật" ? "text-slate-400 italic font-medium" : "text-slate-800"}`}>
+                {studentInfo.phone}
+              </p>
             </div>
 
             <div className="bg-slate-50/80 p-3.5 rounded-2xl space-y-1 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                 <Calendar className="h-3 w-3 text-indigo-500" /> Ngày sinh
               </span>
-              <p className="font-extrabold text-slate-800 text-sm">{studentInfo.dob}</p>
+              <p className={`font-extrabold text-sm ${studentInfo.dob === "Chưa cập nhật" ? "text-slate-400 italic font-medium" : "text-slate-800"}`}>
+                {studentInfo.dob}
+              </p>
             </div>
 
             <div className="bg-slate-50/80 p-3.5 rounded-2xl space-y-1 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                 <User className="h-3 w-3 text-purple-500" /> Phụ huynh
               </span>
-              <p className="font-extrabold text-slate-800 text-sm">{studentInfo.parentName}</p>
+              <p className={`font-extrabold text-sm ${studentInfo.parentName === "Chưa cập nhật" ? "text-slate-400 italic font-medium" : "text-slate-800"}`}>
+                {studentInfo.parentName}
+              </p>
             </div>
 
             <div className="bg-slate-50/80 p-3.5 rounded-2xl space-y-1 border border-slate-100">
               <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                 <Phone className="h-3 w-3 text-emerald-500" /> SĐT Phụ huynh
               </span>
-              <p className="font-extrabold text-slate-800 text-sm">{studentInfo.parentPhone}</p>
+              <p className={`font-extrabold text-sm ${studentInfo.parentPhone === "Chưa cập nhật" ? "text-slate-400 italic font-medium" : "text-slate-800"}`}>
+                {studentInfo.parentPhone}
+              </p>
             </div>
 
           </div>
