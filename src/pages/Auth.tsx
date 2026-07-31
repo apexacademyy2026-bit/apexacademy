@@ -149,20 +149,22 @@ export default function ClassLandingPage() {
     }
   };
 
-  // Đăng nhập bằng Google Auth
 const handleGoogleSignIn = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin // Chuyển hướng về trang chủ thay vì /teacher
-        }
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message || "Không thể kết nối với Google Auth");
-    }
-  };
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: {
+          prompt: 'select_account', // BẮT BUỘC: Ép Google hiện bảng chọn tài khoản
+        },
+      },
+    });
+    if (error) throw error;
+  } catch (error: any) {
+    toast.error(error.message || "Không thể kết nối với Google Auth");
+  }
+};
 
   // Các hàm thao tác với lịch tư vấn
   const addWeeklySlot = () => {
