@@ -119,8 +119,10 @@ export default function ClassDialog({ open, onOpenChange, cls }: { open: boolean
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl rounded-3xl p-6 sm:p-8 bg-white border-slate-100 shadow-2xl max-h-[90vh] overflow-y-auto">
-        
+<DialogContent 
+  className="max-w-2xl rounded-3xl p-6 sm:p-8 bg-white border-slate-100 shadow-2xl max-h-[90vh] overflow-y-auto"
+  onInteractOutside={(e) => e.preventDefault()}
+>        
         {/* HEADER MODAL */}
         <DialogHeader className="space-y-1 text-left border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">

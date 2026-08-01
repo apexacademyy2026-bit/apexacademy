@@ -2,7 +2,7 @@ export type Lang = "vi" | "en";
 
 export const translations = {
   vi: {
-    appName: "Chăm học",
+    appName: "Apex Academy",
     dashboard: "Bảng điều khiển",
     students: "Học sinh",
     classes: "Lớp học",
@@ -175,7 +175,7 @@ export const translations = {
     score: "Điểm",
   },
   en: {
-    appName: "Chăm học",
+    appName: "Apex Academy",
     dashboard: "Dashboard",
     students: "Students",
     classes: "Classes",

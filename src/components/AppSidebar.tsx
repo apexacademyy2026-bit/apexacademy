@@ -112,7 +112,7 @@ const displayName =
   profile?.display_name || 
   (profile as any)?.full_name || 
   user?.email?.split("@")[0] || 
-  "Thành viên";  const brandName = user?.user_metadata?.brand_name || "Sổ Gia Sư";
+  "Thành viên";  const brandName = user?.user_metadata?.brand_name || "Apex Academy";
 
   return (
     <Sidebar variant="sidebar" collapsible="icon" className="border-r border-slate-100 bg-white">

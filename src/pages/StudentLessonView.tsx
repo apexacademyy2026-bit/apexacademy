@@ -93,7 +93,7 @@ export default function StudentLessonView() {
         }
 
         setLesson(ls);
-        document.title = `${ls.title || ls.name || "Bài học"} — Sổ Gia Sư`;
+        document.title = `${ls.title || ls.name || "Bài học"} — Apex Academy`;
 
         // 2. LẤY TÀI LIỆU BÀI HỌC
         let docList: any[] = [];

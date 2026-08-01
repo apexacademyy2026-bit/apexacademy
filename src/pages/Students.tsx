@@ -6,7 +6,6 @@ import {
   Grid2X2, 
   List as ListIcon, 
   GraduationCap, 
-  Phone, 
   ChevronRight, 
   Trash2, 
   Pencil, 
@@ -23,10 +22,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEnrollments, useClasses } from "@/hooks/useData";
 import StudentDialog from "@/components/StudentDialog";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
-// Hàm làm sạch dữ liệu đặt ở ngoài component để tránh trùng lặp
 const cleanName = (val: any) => {
   if (!val || typeof val !== "string") return "";
   const trimmed = val.trim();
@@ -38,8 +36,8 @@ export default function Students() {
   const { t } = useApp();
   const qc = useQueryClient();
   const confirm = useConfirm();
-  const enrollments = useEnrollments();
-  const classes = useClasses();
+  const enrollmentsQuery = useEnrollments();
+  const classesQuery = useClasses();
 
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -50,52 +48,51 @@ export default function Students() {
   const { data: students = [] } = useQuery({
     queryKey: ["students-list"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any).from("students").select("*").order("name");
+      const { data, error } = await supabase.from("students").select("*").order("name");
       if (error) throw error;
       return data || [];
     },
   });
 
-  // 2. Lấy danh sách profiles để đồng bộ thông tin nếu học sinh tự đăng ký tài khoản
-  const { data: profiles = [] } = useQuery({
-    queryKey: ["profiles-list"],
-    queryFn: async () => {
-      const { data } = await (supabase as any).from("profiles").select("*");
-      return data || [];
-    },
-  });
-
   useEffect(() => {
-    document.title = `${t.students || "Học sinh"} — ${t.appName || "Sổ Gia Sư"}`;
+    document.title = `${t.students || "Học sinh"} — ${t.appName || "Apex Academy"}`;
   }, [t]);
 
-  // Map thông tin hiển thị tối ưu cho từng học sinh
+  // ✅ TRẢ VỀ NULL NẾU CHƯA ĐĂNG KÝ TÊN PHỤ HUYNH VÀ SĐT
   const enrichedStudents = useMemo(() => {
+    const enrollmentsList = Array.isArray(enrollmentsQuery?.data) ? enrollmentsQuery.data : Array.isArray(enrollmentsQuery) ? enrollmentsQuery : [];
+    const classesList = Array.isArray(classesQuery?.data) ? classesQuery.data : Array.isArray(classesQuery) ? classesQuery : [];
+
     return students.map((st: any) => {
-      const matchedProfile = profiles.find(
-        (p: any) => p.id === st.user_id || p.id === st.linked_user_id || p.email === st.email
-      ) as any;
+      const name = cleanName(st.name) || "Chưa đặt tên";
+      const phone = st.phone || "—";
+      const grade = st.grade || "—";
+      
+      // ✅ Nếu không nhập (hoặc rỗng) -> TRẢ VỀ NULL TRỰC TIẾP
+      const rawParentName = cleanName(st.parent_name);
+      const rawParentPhone = st.parent_phone?.trim();
 
-      const name = cleanName(matchedProfile?.full_name) || cleanName(matchedProfile?.display_name) || cleanName(st.name) || "Ngọc";
-      const phone = st.phone || matchedProfile?.phone || "0293847493";
-      const grade = st.grade || matchedProfile?.school_class || matchedProfile?.grade || "12";
-      const parentName = cleanName(matchedProfile?.parent_name) || cleanName(st.parent_name) || "Hường";
-      const parentPhone = st.parent_phone || matchedProfile?.parent_phone || "834293847";
+      const parentName = rawParentName !== "" ? rawParentName : null;
+      const parentPhone = rawParentPhone ? rawParentPhone : null;
 
-      const cids = (enrollments.data || []).filter((e: any) => e.student_id === st.id).map((e: any) => e.class_id);
-      const studentClasses = (classes.data || []).filter((c: any) => cids.includes(c.id));
+      // Lọc danh sách lớp học
+      const cids = enrollmentsList
+        .filter((e: any) => e.student_id === st.id)
+        .map((e: any) => e.class_id);
+      
+      const studentClasses = classesList.filter((c: any) => cids.includes(c.id));
 
       return {
         ...st,
         displayName: name,
         displayPhone: phone,
         displayGrade: grade,
-        displayParentName: parentName,
-        displayParentPhone: parentPhone,
+        displayParentName: parentName, // value: string | null
+        displayParentPhone: parentPhone, // value: string | null
         studentClasses,
       };
     });
-  }, [students, profiles, enrollments.data, classes.data]);
+  }, [students, enrollmentsQuery, classesQuery]);
 
   const filteredStudents = useMemo(() => {
     return enrichedStudents.filter((st: any) => {
@@ -103,8 +100,8 @@ export default function Students() {
       return (
         st.displayName.toLowerCase().includes(q) ||
         st.displayPhone.toLowerCase().includes(q) ||
-        st.displayParentName.toLowerCase().includes(q) ||
-        st.displayParentPhone.toLowerCase().includes(q)
+        (st.displayParentName && st.displayParentName.toLowerCase().includes(q)) ||
+        (st.displayParentPhone && st.displayParentPhone.toLowerCase().includes(q))
       );
     });
   }, [enrichedStudents, search]);
@@ -225,15 +222,19 @@ export default function Students() {
                   </div>
                 </div>
 
-                {/* Thông tin phụ huynh & SĐT */}
+                {/* ✅ HIỂN THỊ THÔNG TIN PHỤ HUYNH & SĐT (XỬ LÝ ĐÚNG NULL) */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
                   <div className="bg-slate-50 p-2.5 rounded-xl space-y-0.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Phụ huynh</span>
-                    <p className="font-extrabold text-slate-800 truncate">{st.displayParentName}</p>
+                    <p className={cn("font-extrabold truncate", st.displayParentName ? "text-slate-800" : "text-slate-400 italic")}>
+                      {st.displayParentName ?? "—"}
+                    </p>
                   </div>
                   <div className="bg-slate-50 p-2.5 rounded-xl space-y-0.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">SĐT Phụ huynh</span>
-                    <p className="font-extrabold text-emerald-600 truncate">{st.displayParentPhone}</p>
+                    <p className={cn("font-extrabold truncate", st.displayParentPhone ? "text-emerald-600" : "text-slate-400 italic")}>
+                      {st.displayParentPhone ?? "—"}
+                    </p>
                   </div>
                 </div>
 
@@ -294,8 +295,12 @@ export default function Students() {
                       </Badge>
                     </td>
                     <td className="py-4 px-4">
-                      <p className="font-extrabold text-slate-800">{st.displayParentName}</p>
-                      <p className="text-[11px] text-emerald-600 font-semibold">{st.displayParentPhone}</p>
+                      <p className={cn("font-extrabold", st.displayParentName ? "text-slate-800" : "text-slate-400 italic")}>
+                        {st.displayParentName ?? "—"}
+                      </p>
+                      <p className={cn("text-[11px] font-semibold", st.displayParentPhone ? "text-emerald-600" : "text-slate-400 italic")}>
+                        {st.displayParentPhone ?? "—"}
+                      </p>
                     </td>
                     <td className="py-4 px-4">
                       <div className="flex flex-wrap gap-1">

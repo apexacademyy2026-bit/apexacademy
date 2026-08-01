@@ -24,7 +24,7 @@ export default function StudentHome() {
   const [studentDetail, setStudentDetail] = useState<any>(null);
 
   useEffect(() => { 
-    document.title = `${(t as any)?.home || "Trang chủ"} — ${t?.appName || "Sổ Gia Sư"}`; 
+    document.title = `${(t as any)?.home || "Trang chủ"} — ${t?.appName || "Apex Academy"}`; 
   }, [t]);
 
   useEffect(() => {

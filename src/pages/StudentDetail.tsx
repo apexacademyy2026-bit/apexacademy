@@ -87,77 +87,60 @@ export default function StudentDetail() {
     },
   });
 
-  // 4. BẮT CẶP TÀI KHOẢN ĐÃ LINK (Linked Account)
-  const linkedProfile = useMemo(() => {
-    if (!student || !profiles.length) return null;
+// 4. BẮT CẶP TÀI KHOẢN ĐÃ LINK (Linked Account)
+const linkedProfile = useMemo(() => {
+  if (!student || !profiles.length) return null;
 
-    // Tìm user_id được link trực tiếp trong bản ghi student hoặc trong enrollments
-    const linkedUserId = 
-      student.linked_user_id || 
-      student.user_id || 
-      enrollments.find((e: any) => e.user_id)?.user_id;
+  // CHỈ CÔNG NHẬN LINKED NẾU CÓ linked_user_id TRONG DATABASE
+  const linkedUserId = student.linked_user_id;
 
-    if (linkedUserId) {
-      const found = profiles.find((p: any) => p.id === linkedUserId);
-      if (found) return found;
-    }
+  if (linkedUserId) {
+    return profiles.find((p: any) => p.id === linkedUserId) || null;
+  }
 
-    // Fallback: Nếu chưa gán user_id trực tiếp, tìm theo Phone/Email trùng khớp
-    const stPhoneNorm = normalizePhone(student.phone);
-    const stEmailNorm = student.email?.trim().toLowerCase();
-
-    return profiles.find((p: any) => {
-      const pEmailNorm = p.email?.trim().toLowerCase();
-      if (stEmailNorm && pEmailNorm && stEmailNorm === pEmailNorm) return true;
-
-      const pPhoneNorm = normalizePhone(p.phone);
-      if (stPhoneNorm && pPhoneNorm && stPhoneNorm === pPhoneNorm) return true;
-
-      return false;
-    }) as any;
-  }, [student, profiles, enrollments]);
+  // Nếu không có linked_user_id -> Trả về null luôn, KHÔNG TỰ ĐỘNG MATCH PHONE/EMAIL NỮA!
+  return null;
+}, [student, profiles]);
 
   // 5. ĐỒNG BỘ DỮ LIỆU: ƯU TIÊN TUYỆT ĐỐI THÔNG TIN DO HỌC SINH TẠO
-  const displayInfo = useMemo(() => {
-    const lp = linkedProfile || {};
-    const st = student || {};
+// 5. ĐỒNG BỘ DỮ LIỆU: ƯU TIÊN THÔNG TIN GIÁO VIÊN CẬP NHẬT TRONG BẢNG STUDENTS
+// 5. ĐỒNG BỘ DỮ LIỆU HIỂN THỊ
+const displayInfo = useMemo(() => {
+  const lp = linkedProfile || {};
+  const st = student || {};
 
-    // Xử lý định dạng ngày sinh
-    const rawDob = cleanValue(lp.date_of_birth) || cleanValue(lp.dob) || cleanValue(st.date_of_birth) || cleanValue(st.dob);
-    let formattedDob = "—";
-    if (rawDob) {
-      if (rawDob.includes("-")) {
-        const parts = rawDob.split("-");
-        if (parts.length === 3) formattedDob = `${parts[2]}/${parts[1]}/${parts[0]}`;
-        else formattedDob = rawDob;
-      } else {
-        formattedDob = rawDob;
-      }
+  const rawDob = cleanValue(st.date_of_birth) || cleanValue(st.dob) || cleanValue(lp.date_of_birth) || cleanValue(lp.dob);
+  let formattedDob = "Chưa cập nhật";
+  if (rawDob) {
+    if (rawDob.includes("-")) {
+      const parts = rawDob.split("-");
+      if (parts.length === 3) formattedDob = `${parts[2]}/${parts[1]}/${parts[0]}`;
+      else formattedDob = rawDob;
+    } else {
+      formattedDob = rawDob;
     }
+  }
 
-    return {
-      name:
-        cleanValue(lp.display_name) ||
-        cleanValue(lp.full_name) ||
-        cleanValue(st.name) ||
-        "Chưa cập nhật tên",
-      email: cleanValue(lp.email) || cleanValue(st.email) || "—",
-      phone: cleanValue(lp.phone) || cleanValue(st.phone) || "—",
-      dob: formattedDob,
-      grade: cleanValue(lp.school_class) || cleanValue(lp.grade) || cleanValue(st.grade) || "—",
-      parentName: cleanValue(lp.parent_name) || cleanValue(st.parent_name) || "—",
-      parentPhone: cleanValue(lp.parent_phone) || cleanValue(st.parent_phone) || "—",
-      notes: cleanValue(st.notes) || cleanValue(lp.bio) || "—",
-      paymentMode: st.payment_mode === "monthly" ? "By month" : "By session",
-      startDate: st.created_at
-        ? new Date(st.created_at).toLocaleDateString("en-GB")
-        : "—",
-    };
-  }, [student, linkedProfile]);
+  return {
+    // 🔥 UY TIÊN BẢN GHI STUDENT TRƯỚC
+    name: cleanValue(st.name) || cleanValue(lp.display_name) || cleanValue(lp.full_name) || "Chưa cập nhật tên",
+    email: cleanValue(st.email) || cleanValue(lp.email) || "Chưa cập nhật",
+    phone: cleanValue(st.phone) || cleanValue(lp.phone) || "Chưa cập nhật",
+    dob: formattedDob,
+    grade: cleanValue(st.grade) || cleanValue(lp.school_class) || cleanValue(lp.grade) || "—",
+    parentName: cleanValue(st.parent_name) || cleanValue(lp.parent_name) || "Chưa cập nhật",
+    parentPhone: cleanValue(st.parent_phone) || cleanValue(lp.parent_phone) || "Chưa cập nhật",
+    notes: cleanValue(st.notes) || cleanValue(lp.bio) || "Chưa có ghi chú",
+    paymentMode: st.payment_mode === "monthly" ? "Theo tháng" : "Theo buổi",
+    startDate: st.created_at
+      ? new Date(st.created_at).toLocaleDateString("vi-VN")
+      : "—",
+  };
+}, [student, linkedProfile]);
 
   useEffect(() => {
     if (displayInfo.name) {
-      document.title = `${displayInfo.name} — ${t.appName || "Sổ Gia Sư"}`;
+      document.title = `${displayInfo.name} — ${t.appName || "Apex Academy"}`;
     }
   }, [displayInfo.name, t]);
 
@@ -346,16 +329,18 @@ export default function StudentDetail() {
       </div>
 
       <StudentDialog
-        open={dialogOpen}
-        onOpenChange={(o) => {
-          setDialogOpen(o);
-          if (!o) {
-            qc.invalidateQueries({ queryKey: ["student-detail", id] });
-            qc.invalidateQueries({ queryKey: ["profiles-list-detail"] });
-          }
-        }}
-        student={student}
-      />
+  open={dialogOpen}
+  onOpenChange={(o) => {
+    setDialogOpen(o);
+    if (!o) {
+      qc.invalidateQueries({ queryKey: ["student-detail", id] });
+      qc.invalidateQueries({ queryKey: ["students-list"] });
+      qc.invalidateQueries({ queryKey: ["profiles-list-detail"] });
+    }
+  }}
+  student={student}
+/>
+      
     </div>
   );
 }

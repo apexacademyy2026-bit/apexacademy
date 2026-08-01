@@ -148,7 +148,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 🌟 Đọc tên thương hiệu động từ metadata của tài khoản user
     const customBrandName = user?.user_metadata?.brand_name;
     if (role === "teacher" && customBrandName) {
-      baseDict.appName = customBrandName;
+      baseDict.appName = "Apex Academy"; // Thay thế bằng tên thương hiệu động
     }
     return baseDict;
   };

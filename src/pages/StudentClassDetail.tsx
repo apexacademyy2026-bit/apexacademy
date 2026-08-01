@@ -48,7 +48,7 @@ useEffect(() => {
           .eq("id", id)
           .maybeSingle();
         setCls(c);
-        if (c) document.title = `${c.name} — Sổ Gia Sư`;
+        if (c) document.title = `${c.name} — Apex Academy`;
 
       // 2. Tìm tất cả ID hồ sơ học sinh thuộc tài khoản này (Đã bổ sung quét user_id)
 const { data: stList } = await (supabase as any)

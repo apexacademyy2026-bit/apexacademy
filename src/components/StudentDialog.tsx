@@ -78,48 +78,64 @@ export default function StudentDialog({ open, onOpenChange, student }: StudentDi
     }
   }, [student, open, enrollments.data]);
 
-  const submit = async () => {
-    if (!user || !form.name) return;
-    setBusy(true);
-    try {
-      let id = student?.id;
-      if (student) {
-        const { error } = await supabase.from("students").update(form).eq("id", student.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from("students")
-          .insert({ ...form, user_id: user.id })
-          .select()
-          .single();
-        if (error) throw error;
-        id = data.id;
-      }
+// ✅ SỬA LẠI HÀM submit CHUẨN XÁC:
+// ✅ ĐÃ SỬA: Loại bỏ triệt để user_id trước khi insert/update
+const submit = async () => {
+  if (!user || !form.name) return;
+  setBusy(true);
+  try {
+    let id = student?.id;
 
-      // Sync enrollments
-      const existing = (enrollments.data || []).filter((e: any) => e.student_id === id);
-      const existingIds = new Set(existing.map((e: any) => e.class_id));
-      const wanted = new Set(classIds);
-      const toAdd = classIds.filter((c) => !existingIds.has(c));
-      const toRemove = existing.filter((e: any) => !wanted.has(e.class_id));
+    // 🎯 TÁCH user_id RA KHỎI FORM ĐỂ ĐẢM BẢO KHÔNG TRUYỀN ID GIÁO VIÊN
+    const { user_id, ...cleanForm } = form;
 
-      if (toAdd.length) {
-        await supabase
-          .from("enrollments")
-          .insert(toAdd.map((c) => ({ student_id: id, class_id: c, user_id: user.id })));
-      }
-      for (const r of toRemove) await supabase.from("enrollments").delete().eq("id", r.id);
-
-      toast.success(t?.save || "Saved successfully");
-      qc.invalidateQueries({ queryKey: qk.students });
-      qc.invalidateQueries({ queryKey: qk.enrollments });
-      onOpenChange(false);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setBusy(false);
+    if (student) {
+      // Khi CẬP NHẬT: chỉ update các trường dữ liệu sạch (không chạm vào user_id)
+      const { error } = await supabase
+        .from("students")
+        .update(cleanForm)
+        .eq("id", student.id);
+        
+      if (error) throw error;
+    } else {
+      // Khi THÊM MỚI: insert dữ liệu sạch, ép user_id = null 
+      const { data, error } = await supabase
+        .from("students")
+        .insert({
+          ...cleanForm,
+          user_id: null, // 🔥 Ép buộc user_id luôn là null cho học sinh mới
+        })
+        .select()
+        .single();
+        
+      if (error) throw error;
+      id = data.id;
     }
-  };
+
+    // Sync enrollments (Giữ nguyên)
+    const existing = (enrollments.data || []).filter((e: any) => e.student_id === id);
+    const existingIds = new Set(existing.map((e: any) => e.class_id));
+    const wanted = new Set(classIds);
+    const toAdd = classIds.filter((c) => !existingIds.has(c));
+    const toRemove = existing.filter((e: any) => !wanted.has(e.class_id));
+
+    if (toAdd.length) {
+      await supabase
+        .from("enrollments")
+        .insert(toAdd.map((c) => ({ student_id: id, class_id: c, user_id: user.id })));
+    }
+    for (const r of toRemove) await supabase.from("enrollments").delete().eq("id", r.id);
+
+    toast.success(t?.save || "Saved successfully");
+    qc.invalidateQueries({ queryKey: qk.students });
+    qc.invalidateQueries({ queryKey: qk.enrollments });
+    onOpenChange(false);
+  } catch (e: any) {
+    toast.error(e.message);
+  } finally {
+    setBusy(false);
+  }
+};
 
   const toggleClass = (id: string) => {
     setClassIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
