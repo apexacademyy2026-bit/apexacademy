@@ -1,25 +1,28 @@
-import { useEffect, useState, useMemo } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { 
   ArrowLeft, 
   Pencil, 
+  Plus, 
+  Trash2, 
+  Receipt, 
+  Printer, 
   User, 
   Phone, 
   Mail, 
   Calendar, 
   GraduationCap, 
-  FileText,
-  Receipt,
-  BookOpen,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Printer,
-  DollarSign
+  BookOpen, 
+  Clock, 
+  FileText 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -29,140 +32,224 @@ import {
 import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEnrollments, useClasses } from "@/hooks/useData";
+import { formatVND, fmtDate } from "@/lib/format";
 import StudentDialog from "@/components/StudentDialog";
-
-// Hàm làm sạch giá trị hiển thị
-const cleanValue = (val: any) => {
-  if (!val || typeof val !== "string") return "";
-  const trimmed = val.trim();
-  if (["—", "-", "null", "undefined"].includes(trimmed.toLowerCase())) return "";
-  return trimmed;
-};
+import { toast } from "sonner";
+import { useConfirm } from "@/components/ConfirmProvider";
 
 export default function StudentDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { t } = useApp();
+  const { t, user } = useApp();
+  const enrollments = useEnrollments();
+  const classes = useClasses();
   const qc = useQueryClient();
+  const confirm = useConfirm();
 
-  const [dialogOpen, setDialogOpen] = useState(false);
+  // State điều khiển Modal & Form
+  const [editing, setEditing] = useState(false);
   const [billOpen, setBillOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    class_id: "",
+    note: "",
+  });
 
-  // 1. Fetch thông tin bản ghi do GV tạo từ bảng `students`
+  const [editRow, setEditRow] = useState<Record<string, { present: boolean; note: string; date: string }>>({});
+  const [editRowTime, setEditRowTime] = useState<Record<string, { start: string; end: string }>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("unpaid");
+
+  // 1. Fetch thông tin học sinh
   const { data: student, isLoading: studentLoading } = useQuery({
-    queryKey: ["student-detail", id],
+    queryKey: ["student", id],
     queryFn: async () => {
-      if (!id) return null;
-      const { data, error } = await (supabase as any)
-        .from("students")
-        .select("*")
-        .eq("id", id)
-        .maybeSingle();
+      const { data, error } = await supabase.from("students").select("*").eq("id", id).single();
       if (error) throw error;
       return data;
     },
     enabled: !!id,
   });
 
-  // 2. Fetch danh sách enrollments
-  const { data: enrollments = [] } = useQuery({
-    queryKey: ["student-enrollments-detail", id],
+  // 2. Fetch điểm danh kèm thông tin lịch học (schedule_events)
+  const { data: attendance = [], isLoading: attendanceLoading } = useQuery({
+    queryKey: ["student-attendance", id],
     queryFn: async () => {
-      if (!id) return [];
-      const { data } = await (supabase as any)
-        .from("enrollments")
-        .select("*, classes(*)")
-        .eq("student_id", id);
-      return data || [];
-    },
-    enabled: !!id,
-  });
-
-  // 3. Fetch toàn bộ danh sách profiles
-  const { data: profiles = [] } = useQuery({
-    queryKey: ["profiles-list-detail"],
-    queryFn: async () => {
-      const { data } = await (supabase as any).from("profiles").select("*");
-      return data || [];
-    },
-  });
-
-  // 4. Fetch lịch sử điểm danh của học sinh
-  const { data: attendanceHistory = [], isLoading: attendanceLoading } = useQuery({
-    queryKey: ["student-attendance-history", id],
-    queryFn: async () => {
-      if (!id) return [];
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("attendance")
-        .select("*, sessions(*, classes(*))")
+        .select("*, schedule_events(event_date, start_time, end_time, class_id)")
         .eq("student_id", id)
         .order("created_at", { ascending: false });
+
       if (error) throw error;
+      const rows = (data || []) as any[];
+      rows.sort((a, b) => {
+        const da = a.schedule_events?.event_date || a.created_at || "";
+        const db = b.schedule_events?.event_date || b.created_at || "";
+        return db.localeCompare(da);
+      });
+      return rows;
+    },
+    enabled: !!id,
+  });
+
+  // 3. Fetch dữ liệu thanh toán
+  const { data: payments = [] } = useQuery({
+    queryKey: ["student-payments", id],
+    queryFn: async () => {
+      const { data } = await supabase.from("payments").select("*").eq("student_id", id);
       return data || [];
     },
     enabled: !!id,
   });
 
-  // 5. BẮT CẶP TÀI KHOẢN ĐÃ LINK (Chỉ nhận nếu linked_user_id hợp lệ và KHÔNG PHẢI TEACHER)
-  const linkedProfile = useMemo(() => {
-    if (!student || !profiles.length) return null;
+  // Tự động kiểm tra buổi học đã đóng tiền hay chưa
+  const isPaid = (a: any) => {
+    const ev = a.schedule_events;
+    if (!ev?.event_date) return false;
+    const d = ev.event_date as string;
+    const label = d.slice(0, 7); // YYYY-MM
+    return (payments as any[]).some((p) => {
+      if (p.class_id && ev.class_id && p.class_id !== ev.class_id) return false;
+      if (p.cycle_type === "monthly") return p.cycle_label === label;
+      if (p.period_start && p.period_end) return d >= p.period_start && d <= p.period_end;
+      return false;
+    });
+  };
 
-    const linkedUserId = student.linked_user_id || student.user_id;
-    if (!linkedUserId) return null;
+  useEffect(() => {
+    document.title = student ? `${student.name} — ${t.appName || "Lớp Học"}` : t.appName || "Apex Academy";
+  }, [student, t]);
 
-    const foundProfile = profiles.find((p: any) => p.id === linkedUserId);
-    if (!foundProfile) return null;
+  // Lớp học sinh đang tham gia
+  const myClasses = useMemo(() => {
+    const cids = (enrollments.data || []).filter((e: any) => e.student_id === id).map((e: any) => e.class_id);
+    return (classes.data || []).filter((c: any) => cids.includes(c.id));
+  }, [enrollments.data, classes.data, id]);
 
-    if (foundProfile.role === "teacher" || foundProfile.is_teacher) return null;
+  useEffect(() => {
+    if (myClasses[0] && !addForm.class_id) {
+      setAddForm((f) => ({ ...f, class_id: myClasses[0].id }));
+    }
+  }, [myClasses, addForm.class_id]);
 
-    return foundProfile;
-  }, [student, profiles]);
+  // Tính tổng học phí
+  const totalFee = useMemo(() => {
+    return myClasses.reduce((sum: number, c: any) => {
+      const fee = Number(c.fee_per_month || c.fee_per_session || c.fee || 0);
+      return sum + fee;
+    }, 0);
+  }, [myClasses]);
 
-  // 6. HIỂN THỊ DỮ LIỆU chuẩn hóa
-  const displayInfo = useMemo(() => {
-    const st = student || {};
-    const lp = linkedProfile || {};
+  // Xử lý Thêm Điểm Danh Mới
+  const addAttendance = async () => {
+    if (!user || !addForm.class_id) return;
+    const { data: ev, error: e1 } = await supabase
+      .from("schedule_events")
+      .insert({
+        user_id: user.id,
+        class_id: addForm.class_id,
+        event_date: addForm.date,
+        start_time: "00:00",
+        end_time: "01:00",
+        notes: "__manual__",
+      })
+      .select()
+      .single();
 
-    const rawDob = cleanValue(st.date_of_birth) || cleanValue(st.dob) || cleanValue(lp.date_of_birth) || cleanValue(lp.dob);
-    let formattedDob = "Chưa cập nhật";
-    if (rawDob) {
-      if (rawDob.includes("-")) {
-        const parts = rawDob.split("-");
-        if (parts.length === 3) formattedDob = `${parts[2]}/${parts[1]}/${parts[0]}`;
-        else formattedDob = rawDob;
-      } else {
-        formattedDob = rawDob;
+    if (e1) {
+      toast.error(e1.message);
+      return;
+    }
+
+    const { error: e2 } = await supabase.from("attendance").insert({
+      user_id: user.id,
+      event_id: ev.id,
+      student_id: student.id,
+      present: true,
+      homework_note: addForm.note,
+    });
+
+    if (e2) {
+      toast.error(e2.message);
+      return;
+    }
+
+    toast.success(t.save || "Đã lưu");
+    setAddForm({ date: new Date().toISOString().slice(0, 10), class_id: myClasses[0]?.id || "", note: "" });
+    setAddOpen(false);
+    qc.invalidateQueries({ queryKey: ["student-attendance", id] });
+    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+  };
+
+  // Xử lý Xóa Buổi Điểm Danh
+  const removeAttendance = async (a: any) => {
+    if (!(await confirm({ description: t.confirmDelete || "Bạn có chắc chắn muốn xóa?", destructive: true }))) return;
+    await supabase.from("attendance").delete().eq("id", a.id);
+    qc.invalidateQueries({ queryKey: ["student-attendance", id] });
+    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+    toast.success("Đã xóa thành công");
+  };
+
+  // Xử lý Bắt đầu Chỉnh Sửa
+  const startEdit = (a: any) => {
+    setEditingId(a.id);
+    setEditRow({
+      ...editRow,
+      [a.id]: {
+        present: !!a.present,
+        note: a.homework_note || "",
+        date: a.schedule_events?.event_date || new Date().toISOString().slice(0, 10),
+      },
+    });
+    setEditRowTime({
+      ...editRowTime,
+      [a.id]: {
+        start: (a.schedule_events?.start_time || "00:00").slice(0, 5),
+        end: (a.schedule_events?.end_time || "01:00").slice(0, 5),
+      },
+    });
+  };
+
+  // Xử lý Lưu Chỉnh Sửa
+  const saveEdit = async (a: any) => {
+    const row = editRow[a.id];
+    const timeRow = editRowTime[a.id];
+    if (!row) return;
+
+    const { error: e1 } = await supabase
+      .from("attendance")
+      .update({ present: row.present, homework_note: row.note })
+      .eq("id", a.id);
+
+    if (e1) return toast.error(e1.message);
+
+    if (a.event_id) {
+      const ev = a.schedule_events || {};
+      const updates: any = {};
+      if (row.date !== ev.event_date) updates.event_date = row.date;
+      if (timeRow && timeRow.start !== (ev.start_time || "").slice(0, 5)) updates.start_time = timeRow.start;
+      if (timeRow && timeRow.end !== (ev.end_time || "").slice(0, 5)) updates.end_time = timeRow.end;
+
+      if (Object.keys(updates).length) {
+        await supabase.from("schedule_events").update(updates).eq("id", a.event_id);
       }
     }
 
-    return {
-      name: cleanValue(st.name) || "Chưa cập nhật tên",
-      email: cleanValue(st.email) || cleanValue(lp.email) || "Chưa cập nhật",
-      phone: cleanValue(st.phone) || cleanValue(lp.phone) || "Chưa cập nhật",
-      dob: formattedDob,
-      grade: cleanValue(st.grade) || cleanValue(lp.school_class) || cleanValue(lp.grade) || "—",
-      parentName: cleanValue(st.parent_name) || cleanValue(lp.parent_name) || "Chưa cập nhật",
-      parentPhone: cleanValue(st.parent_phone) || cleanValue(lp.parent_phone) || "Chưa cập nhật",
-      notes: cleanValue(st.notes) || cleanValue(lp.bio) || "Chưa có ghi chú",
-      paymentMode: st.payment_mode === "monthly" ? "Theo tháng" : "Theo buổi",
-      startDate: st.created_at
-        ? new Date(st.created_at).toLocaleDateString("vi-VN")
-        : "—",
-    };
-  }, [student, linkedProfile]);
+    toast.success(t.save || "Đã cập nhật");
+    setEditingId(null);
+    qc.invalidateQueries({ queryKey: ["student-attendance", id] });
+  };
 
-  // Tính tổng học phí các lớp đang tham gia
-  const totalFee = useMemo(() => {
-    return enrollments.reduce((sum: number, item: any) => {
-      return sum + (item.classes?.fee || 0);
-    }, 0);
-  }, [enrollments]);
-
-  useEffect(() => {
-    if (displayInfo.name) {
-      document.title = `${displayInfo.name} — ${t.appName || "Apex Academy"}`;
-    }
-  }, [displayInfo.name, t]);
+  // Danh sách điểm danh lọc theo trạng thái thanh toán
+  const visibleAttendance = useMemo(() => {
+    return (attendance || []).filter((a: any) => {
+      if (payFilter === "all") return true;
+      return payFilter === "paid" ? isPaid(a) : !isPaid(a);
+    });
+  }, [attendance, payFilter, payments]);
 
   const handlePrint = () => {
     window.print();
@@ -171,7 +258,7 @@ export default function StudentDetail() {
   if (studentLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
       </div>
     );
   }
@@ -180,19 +267,19 @@ export default function StudentDetail() {
     return (
       <div className="max-w-4xl mx-auto p-6 text-center space-y-4">
         <p className="text-slate-500">Không tìm thấy thông tin học sinh.</p>
-        <Link to="/students">
-          <Button variant="outline"><ArrowLeft className="h-4 w-4 mr-2" /> Quay lại</Button>
-        </Link>
+        <Button variant="outline" onClick={() => navigate("/students")}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Quay lại
+        </Button>
       </div>
     );
   }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
-      {/* Nút quay lại */}
-      <Link to="/students" className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors">
-        <ArrowLeft className="h-4 w-4" /> Students
-      </Link>
+      {/* Nút Quay Lại */}
+      <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2 text-xs font-bold text-slate-500 hover:text-slate-900">
+        <ArrowLeft className="h-4 w-4 mr-1" /> {t.students || "Học sinh"}
+      </Button>
 
       {/* HEADER TỔNG QUAN HỌC SINH */}
       <Card className="p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white relative overflow-hidden">
@@ -202,26 +289,21 @@ export default function StudentDetail() {
               className="h-16 w-16 rounded-2xl text-white font-black text-2xl flex items-center justify-center shadow-md shrink-0"
               style={{ background: student.color || "linear-gradient(to top right, #3b82f6, #6366f1)" }}
             >
-              {displayInfo.name.charAt(0).toUpperCase()}
+              {(student.name || "S").charAt(0).toUpperCase()}
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black text-slate-950 tracking-tight">{displayInfo.name}</h1>
-                {linkedProfile && (
-                  <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[10px] font-bold">
-                    ✓ Linked
+              <h1 className="text-2xl font-black text-slate-950 tracking-tight">{student.name}</h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                {student.grade && (
+                  <Badge variant="secondary" className="bg-blue-50 text-blue-700 font-bold border-blue-100 flex items-center gap-1">
+                    <GraduationCap className="h-3.5 w-3.5" /> {t.grade || "Khối"}: {student.grade}
                   </Badge>
                 )}
-              </div>
-              <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                <Badge variant="secondary" className="bg-blue-50 text-blue-700 font-bold border-blue-100 flex items-center gap-1">
-                  <GraduationCap className="h-3.5 w-3.5" /> Grade: {displayInfo.grade}
-                </Badge>
                 <Badge variant="secondary" className="bg-slate-100 text-slate-700 font-bold flex items-center gap-1">
-                  <Calendar className="h-3.5 w-3.5" /> Start date: {displayInfo.startDate}
+                  <Calendar className="h-3.5 w-3.5" /> {t.startDate || "Bắt đầu"}: {fmtDate(student.start_date || student.created_at)}
                 </Badge>
                 <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 font-bold">
-                  {displayInfo.paymentMode}
+                  {student.payment_mode === "monthly" ? (t.monthly || "Theo tháng") : (t.bySession || "Theo buổi")}
                 </Badge>
               </div>
             </div>
@@ -230,241 +312,330 @@ export default function StudentDetail() {
           <div className="flex items-center gap-2 self-end sm:self-auto">
             <Button 
               variant="outline" 
-              onClick={() => setDialogOpen(true)}
+              onClick={() => setEditing(true)}
               className="rounded-xl border-slate-200 font-bold text-xs h-9 gap-1.5"
             >
-              <Pencil className="h-3.5 w-3.5" /> Edit
+              <Pencil className="h-3.5 w-3.5" /> {t.edit || "Sửa"}
             </Button>
             <Button 
               onClick={() => setBillOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs h-9 gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs h-9 gap-1.5 shadow-xs"
             >
-              <Receipt className="h-3.5 w-3.5" /> View bill
+              <Receipt className="h-3.5 w-3.5" /> {t.viewBill || "Xem hóa đơn"}
             </Button>
           </div>
         </div>
       </Card>
 
-      {/* CHI TIẾT THÔNG TIN */}
+      {/* THÔNG TIN CHI TIẾT VÀ BẢNG LỚP HỌC */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* CỘT 1 & 2: THÔNG TIN CÁ NHÂN & ĐIỂM DANH */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* 1. THÔNG TIN CÁ NHÂN VÀ PHỤ HUYNH */}
-          <Card className="p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white space-y-5">
-            <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
-              <User className="h-4 w-4 text-blue-600" /> THÔNG TIN CÁ NHÂN & PHỤ HUYNH
-            </h2>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <User className="h-4 w-4 text-slate-400" /> Họ và tên
-                </span>
-                <span className="text-xs font-black text-slate-900">{displayInfo.name}</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-slate-400" /> Email
-                </span>
-                <span className="text-xs font-bold text-slate-900">{displayInfo.email}</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-slate-400" /> Số điện thoại
-                </span>
-                <span className="text-xs font-black text-blue-600">{displayInfo.phone}</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-slate-400" /> Ngày sinh
-                </span>
-                <span className="text-xs font-bold text-slate-900">{displayInfo.dob}</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4 text-slate-400" /> Khối lớp
-                </span>
-                <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                  Lớp {displayInfo.grade}
-                </span>
-              </div>
+        {/* CỘT THÔNG TIN CÁ NHÂN & PHỤ HUYNH */}
+        <Card className="p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white space-y-4">
+          <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+            <User className="h-4 w-4 text-blue-600" /> {t.parentName || "Thông tin Phụ huynh & Liên hệ"}
+          </h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50">
+              <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
+                <User className="h-4 w-4 text-slate-400" /> Phụ huynh
+              </span>
+              <span className="text-xs font-black text-slate-900">{student.parent_name || "—"}</span>
             </div>
 
-            <div className="pt-2 border-t border-slate-100 space-y-3">
-              <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">THÔNG TIN PHỤ HUYNH</p>
-              
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <User className="h-4 w-4 text-slate-400" /> Tên phụ huynh
-                </span>
-                <span className="text-xs font-black text-slate-900">{displayInfo.parentName}</span>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/80">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-slate-400" /> SĐT Phụ huynh
-                </span>
-                <span className="text-xs font-black text-emerald-600">{displayInfo.parentPhone}</span>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-slate-50/80 space-y-1">
-                <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-slate-400" /> Ghi chú
-                </span>
-                <p className="text-xs text-slate-700 pl-6">{displayInfo.notes}</p>
-              </div>
-            </div>
-          </Card>
-
-          {/* 2. LỊCH SỬ ĐIỂM DANH (ATTENDANCE) */}
-          <Card className="p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
-                <Clock className="h-4 w-4 text-blue-600" /> LỊCH SỬ ĐIỂM DANH ({attendanceHistory.length})
-              </h2>
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50">
+              <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
+                <Phone className="h-4 w-4 text-slate-400" /> SĐT Phụ huynh
+              </span>
+              <span className="text-xs font-black text-emerald-600">{student.parent_phone || "—"}</span>
             </div>
 
-            {attendanceLoading ? (
-              <p className="text-xs text-slate-400 py-4 text-center">Đang tải điểm danh...</p>
-            ) : attendanceHistory.length === 0 ? (
-              <div className="p-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                <p className="text-xs text-slate-400 italic">Chưa có dữ liệu điểm danh cho học sinh này.</p>
-              </div>
-            ) : (
-              <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
-                {attendanceHistory.map((att: any) => {
-                  const sessionDate = att.sessions?.date 
-                    ? new Date(att.sessions.date).toLocaleDateString("vi-VN") 
-                    : new Date(att.created_at).toLocaleDateString("vi-VN");
-                  const className = att.sessions?.classes?.name || "Lớp học";
-                  const status = att.status || "present";
+            <div className="p-3 rounded-2xl bg-slate-50 space-y-1">
+              <span className="text-xs font-bold text-slate-500 flex items-center gap-2">
+                <FileText className="h-4 w-4 text-slate-400" /> {t.notes || "Ghi chú"}
+              </span>
+              <p className="text-xs text-slate-700 pl-6">{student.notes || "Chưa có ghi chú"}</p>
+            </div>
+          </div>
+        </Card>
 
-                  return (
-                    <div 
-                      key={att.id} 
-                      className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-xs text-slate-900">{className}</span>
-                          <span className="text-[10px] font-bold text-slate-400">({sessionDate})</span>
-                        </div>
-                        {att.notes && (
-                          <p className="text-[11px] text-slate-500 italic">Ghi chú: {att.notes}</p>
-                        )}
-                      </div>
+        {/* CỘT LỚP HỌC ĐANG THAM GIA */}
+        <Card className="lg:col-span-2 p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white space-y-4">
+          <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-blue-600" /> {t.classes || "Lớp học đang tham gia"}
+          </h2>
 
-                      <div>
-                        {status === "present" && (
-                          <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[10px] font-bold flex items-center gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> Có mặt
-                          </Badge>
-                        )}
-                        {status === "absent" && (
-                          <Badge className="bg-rose-100 text-rose-800 hover:bg-rose-100 border-rose-200 text-[10px] font-bold flex items-center gap-1">
-                            <XCircle className="h-3 w-3" /> Vắng
-                          </Badge>
-                        )}
-                        {status === "late" && (
-                          <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200 text-[10px] font-bold flex items-center gap-1">
-                            <Clock className="h-3 w-3" /> Đi trễ
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-        </div>
-
-        {/* CỘT 3: LỚP HỌC */}
-        <div className="space-y-6">
-          <Card className="p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white space-y-4">
-            <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
-              <BookOpen className="h-4 w-4 text-blue-600" /> LỚP HỌC ĐANG THAM GIA
-            </h2>
-
-            {enrollments.length === 0 ? (
-              <p className="text-xs text-slate-400 italic py-4 text-center">Chưa đăng ký lớp học nào</p>
-            ) : (
-              <div className="space-y-2.5">
-                {enrollments.map((item: any) => (
-                  <div 
-                    key={item.id} 
-                    className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                      <span className="font-black text-xs text-slate-900">{item.classes?.name || "Lớp học"}</span>
-                    </div>
-                    <span className="text-xs font-bold text-emerald-600">
-                      {item.classes?.fee ? `${item.classes.fee.toLocaleString("vi-VN")} đ` : "—"}
-                    </span>
+          {myClasses.length === 0 ? (
+            <div className="text-xs text-slate-400 italic py-6 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              {t.nothingHere || "Chưa đăng ký lớp học nào"}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {myClasses.map((c: any) => (
+                <div 
+                  key={c.id} 
+                  className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: c.color || "#3b82f6" }} />
+                    <span className="font-black text-xs text-slate-900">{c.name}</span>
                   </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+                  <span className="text-xs font-bold text-emerald-600">
+                    {Number(c.fee_per_month || 0) > 0
+                      ? `${formatVND(Number(c.fee_per_month))}`
+                      : Number(c.fee_per_session || 0) > 0
+                      ? `${formatVND(Number(c.fee_per_session))}`
+                      : c.fee ? `${formatVND(Number(c.fee))}` : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
 
       </div>
 
-      {/* DIALOG EDIT HỌC SINH */}
+      {/* PHẦN ĐIỂM DANH & BÀI TẬP VỀ NHÀ */}
+      <Card className="p-6 border border-slate-200/80 rounded-3xl shadow-xs bg-white space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider flex items-center gap-2">
+              <Clock className="h-4 w-4 text-blue-600" /> {t.addAttendance || "Lịch sử điểm danh"} & {t.homework || "Bài tập"}
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            {/* Bộ Lọc Đã Đóng Tiền / Chưa Đóng Tiền */}
+            <div className="flex border border-slate-200 rounded-xl p-0.5 bg-slate-50 text-xs">
+              {(["unpaid", "paid", "all"] as const).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => setPayFilter(k)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    payFilter === k 
+                      ? "bg-white text-slate-900 shadow-xs" 
+                      : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  {k === "unpaid" ? (t.unpaid || "Chưa thu") : k === "paid" ? (t.paid || "Đã thu") : (t.selectAll || "Tất cả")}
+                </button>
+              ))}
+            </div>
+
+            <Button 
+              size="sm" 
+              onClick={() => setAddOpen((o) => !o)}
+              className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs gap-1.5 h-8"
+            >
+              <Plus className="h-3.5 w-3.5" /> {t.addAttendance || "Điểm danh mới"}
+            </Button>
+          </div>
+        </div>
+
+        {/* FORM THÊM ĐIỂM DANH */}
+        {addOpen && (
+          <div className="grid sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-blue-50/50 border border-blue-100/80">
+            <div>
+              <Label className="text-xs font-bold text-slate-600">{t.date || "Ngày"}</Label>
+              <Input 
+                type="date" 
+                value={addForm.date} 
+                onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} 
+                className="mt-1 bg-white rounded-xl text-xs"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-bold text-slate-600">{t.class || "Lớp học"}</Label>
+              <Select value={addForm.class_id} onValueChange={(v) => setAddForm({ ...addForm, class_id: v })}>
+                <SelectTrigger className="mt-1 bg-white rounded-xl text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {myClasses.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs font-bold text-slate-600">{t.homework || "Ghi chú / Bài tập"}</Label>
+              <Textarea 
+                rows={1} 
+                value={addForm.note} 
+                onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} 
+                className="mt-1 bg-white rounded-xl text-xs"
+                placeholder="Ghi chú bài tập hoặc nhận xét..."
+              />
+            </div>
+            <div className="sm:col-span-4 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setAddOpen(false)} className="rounded-xl text-xs">
+                {t.cancel || "Hủy"}
+              </Button>
+              <Button size="sm" onClick={addAttendance} className="bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold">
+                {t.save || "Lưu"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* DANH SÁCH LỊCH SỬ ĐIỂM DANH */}
+        {attendanceLoading ? (
+          <p className="text-xs text-slate-400 py-4 text-center">Đang tải lịch sử điểm danh...</p>
+        ) : visibleAttendance.length === 0 ? (
+          <div className="text-xs text-slate-400 italic py-8 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+            {t.nothingHere || "Không tìm thấy dữ liệu điểm danh"}
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {visibleAttendance.map((a: any) => {
+              const ev = a.schedule_events;
+              const cls = (classes.data || []).find((c: any) => c.id === ev?.class_id);
+
+              if (editingId === a.id) {
+                const row = editRow[a.id];
+                const timeRow = editRowTime[a.id] || { start: "00:00", end: "01:00" };
+                return (
+                  <div key={a.id} className="py-3 space-y-3 bg-slate-50/80 p-3 rounded-2xl my-2">
+                    <div className="grid sm:grid-cols-5 gap-2">
+                      <Input 
+                        type="date" 
+                        value={row.date}
+                        onChange={(e) => setEditRow({ ...editRow, [a.id]: { ...row, date: e.target.value } })} 
+                        className="bg-white text-xs rounded-xl"
+                      />
+                      <div className="flex gap-1">
+                        <Input 
+                          type="time" 
+                          value={timeRow.start}
+                          onChange={(e) => setEditRowTime({ ...editRowTime, [a.id]: { ...timeRow, start: e.target.value } })} 
+                          className="bg-white text-xs rounded-xl"
+                        />
+                        <Input 
+                          type="time" 
+                          value={timeRow.end}
+                          onChange={(e) => setEditRowTime({ ...editRowTime, [a.id]: { ...timeRow, end: e.target.value } })} 
+                          className="bg-white text-xs rounded-xl"
+                        />
+                      </div>
+                      <Select 
+                        value={row.present ? "1" : "0"}
+                        onValueChange={(v) => setEditRow({ ...editRow, [a.id]: { ...row, present: v === "1" } })}
+                      >
+                        <SelectTrigger className="bg-white text-xs rounded-xl"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">{t.present || "Có mặt"}</SelectItem>
+                          <SelectItem value="0">{t.absent || "Vắng"}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Textarea 
+                        rows={1} 
+                        className="sm:col-span-2 bg-white text-xs rounded-xl" 
+                        value={row.note}
+                        onChange={(e) => setEditRow({ ...editRow, [a.id]: { ...row, note: e.target.value } })} 
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setEditingId(null)} className="rounded-xl text-xs">
+                        {t.cancel || "Hủy"}
+                      </Button>
+                      <Button size="sm" onClick={() => saveEdit(a)} className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold">
+                        {t.save || "Lưu"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={a.id} className="py-3.5 flex items-start justify-between gap-3 hover:bg-slate-50/50 px-2 rounded-2xl transition-colors">
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-xs text-slate-900">
+                      {ev?.event_date ? fmtDate(ev.event_date) : fmtDate(a.created_at)} 
+                      {ev?.start_time && <span className="text-slate-400 font-normal"> · {ev.start_time.slice(0, 5)}–{ev.end_time?.slice(0, 5)}</span>}
+                    </div>
+                    <div className="text-[11px] font-semibold text-blue-600">{cls?.name || "Lớp học"}</div>
+                    {a.homework_note && (
+                      <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl mt-1 border border-slate-100">
+                        💬 {a.homework_note}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isPaid(a) && (
+                      <Badge className="rounded-xl bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[10px] font-bold">
+                        {t.paid || "Đã đóng"}
+                      </Badge>
+                    )}
+                    <Badge 
+                      variant={a.present ? "default" : "secondary"} 
+                      className={`rounded-xl text-[10px] font-bold ${
+                        a.present 
+                          ? "bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200" 
+                          : "bg-rose-100 text-rose-800 hover:bg-rose-100 border-rose-200"
+                      }`}
+                    >
+                      {a.present ? (t.present || "Có mặt") : (t.absent || "Vắng")}
+                    </Badge>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-700" onClick={() => startEdit(a)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 rounded-lg text-rose-400 hover:text-rose-600 hover:bg-rose-50" onClick={() => removeAttendance(a)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* DIALOG CHỈNH SỬA HỌC SINH */}
       <StudentDialog
-        open={dialogOpen}
+        open={editing}
         onOpenChange={(o) => {
-          setDialogOpen(o);
-          if (!o) {
-            qc.invalidateQueries({ queryKey: ["student-detail", id] });
-            qc.invalidateQueries({ queryKey: ["students-list"] });
-            qc.invalidateQueries({ queryKey: ["profiles-list-detail"] });
-          }
+          setEditing(o);
+          if (!o) qc.invalidateQueries({ queryKey: ["student", id] });
         }}
         student={student}
       />
 
-      {/* MODAL IN HÓA ĐƠN HỌC PHÍ (VIEW BILL) */}
+      {/* MODAL IN HÓA ĐƠN HỌC PHÍ (BILL DIALOG) */}
       <Dialog open={billOpen} onOpenChange={setBillOpen}>
-        <DialogContent className="max-w-lg rounded-3xl p-6 bg-white print:p-0 print:border-none print:shadow-none">
+        <DialogContent className="max-w-md rounded-3xl p-6 bg-white print:p-0 print:border-none print:shadow-none">
           <DialogHeader>
-            <DialogTitle className="text-lg font-black text-slate-900 flex items-center gap-2 print:hidden">
+            <DialogTitle className="text-base font-black text-slate-900 flex items-center gap-2 print:hidden">
               <Receipt className="h-5 w-5 text-emerald-600" /> Hóa Đơn Học Phí
             </DialogTitle>
           </DialogHeader>
 
-          {/* NỘI DUNG HÓA ĐƠN ĐỂ IN */}
-          <div className="space-y-6 pt-2 print:pt-6" id="printable-bill">
-            <div className="text-center pb-4 border-b border-slate-100">
-              <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">HÓA ĐƠN HỌC PHÍ</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{t.appName || "Lớp Học Phương Anh"}</p>
-              <p className="text-[10px] text-slate-400">Ngày xuất: {new Date().toLocaleDateString("vi-VN")}</p>
+          {/* KHU VỰC NỘI DUNG HÓA ĐƠN HIỂN THỊ / IN */}
+          <div className="space-y-5 pt-2 print:pt-4" id="printable-bill">
+            <div className="text-center pb-3 border-b border-slate-100">
+              <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">HÓA ĐƠN HỌC PHÍ</h2>
+              <p className="text-xs text-slate-500 font-medium">{t.appName || "Apex Academy"}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Ngày xuất: {new Date().toLocaleDateString("vi-VN")}</p>
             </div>
 
             <div className="space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium">Họ tên học sinh:</span>
-                <span className="font-bold text-slate-900">{displayInfo.name}</span>
+                <span className="font-bold text-slate-900">{student.name}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-medium">Khối lớp:</span>
-                <span className="font-bold text-slate-900">Lớp {displayInfo.grade}</span>
-              </div>
+              {student.grade && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">Khối lớp:</span>
+                  <span className="font-bold text-slate-900">{student.grade}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium">Phụ huynh:</span>
-                <span className="font-bold text-slate-900">{displayInfo.parentName} ({displayInfo.parentPhone})</span>
+                <span className="font-bold text-slate-900">{student.parent_name || "—"} ({student.parent_phone || "—"})</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium">Hình thức thu:</span>
-                <span className="font-bold text-slate-900">{displayInfo.paymentMode}</span>
+                <span className="font-bold text-slate-900">
+                  {student.payment_mode === "monthly" ? "Theo tháng" : "Theo buổi"}
+                </span>
               </div>
             </div>
 
@@ -477,19 +648,22 @@ export default function StudentDetail() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {enrollments.length === 0 ? (
+                  {myClasses.length === 0 ? (
                     <tr>
                       <td colSpan={2} className="p-3 text-center text-slate-400 italic">Chưa đăng ký lớp</td>
                     </tr>
                   ) : (
-                    enrollments.map((item: any) => (
-                      <tr key={item.id}>
-                        <td className="p-3 font-semibold text-slate-800">{item.classes?.name || "Lớp học"}</td>
-                        <td className="p-3 text-right font-bold text-slate-900">
-                          {item.classes?.fee ? `${item.classes.fee.toLocaleString("vi-VN")} đ` : "0 đ"}
-                        </td>
-                      </tr>
-                    ))
+                    myClasses.map((c: any) => {
+                      const fee = Number(c.fee_per_month || c.fee_per_session || c.fee || 0);
+                      return (
+                        <tr key={c.id}>
+                          <td className="p-3 font-semibold text-slate-800">{c.name}</td>
+                          <td className="p-3 text-right font-bold text-slate-900">
+                            {formatVND(fee)}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -497,26 +671,25 @@ export default function StudentDetail() {
 
             <div className="flex justify-between items-center p-3.5 bg-emerald-50 rounded-2xl border border-emerald-100">
               <span className="text-xs font-bold text-emerald-900">TỔNG CỘNG HỌC PHÍ</span>
-              <span className="text-base font-black text-emerald-700">{totalFee.toLocaleString("vi-VN")} đ</span>
+              <span className="text-base font-black text-emerald-700">{formatVND(totalFee)}</span>
             </div>
 
-            <div className="text-center text-[10px] text-slate-400 pt-4 border-t border-slate-100">
+            <div className="text-center text-[10px] text-slate-400 pt-2">
               <p>Cảm ơn quý phụ huynh và học sinh!</p>
             </div>
           </div>
 
-          {/* NÚT IN VÀ HỦY */}
+          {/* ACTION BUTTONS */}
           <div className="flex justify-end gap-2 mt-4 print:hidden">
             <Button variant="outline" onClick={() => setBillOpen(false)} className="rounded-xl font-bold text-xs">
               Đóng
             </Button>
-            <Button onClick={handlePrint} className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs gap-1.5">
+            <Button onClick={handlePrint} className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs gap-1.5 shadow-xs">
               <Printer className="h-4 w-4" /> In hóa đơn
             </Button>
           </div>
         </DialogContent>
       </Dialog>
-      
     </div>
   );
 }
