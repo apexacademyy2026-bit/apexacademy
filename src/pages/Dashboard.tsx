@@ -293,7 +293,7 @@ export default function Dashboard() {
   const paymentsCount = filteredPayments.length;
   const avgPayment = paymentsCount > 0 ? totalRevenue / paymentsCount : 0;
 
-  // ==================== XỬ LÝ UPCOMING BILLS (TÁCH BIỆT TỪNG HÓA ĐƠN) ====================
+// ==================== XỬ LÝ UPCOMING BILLS (HIỆN THEO TỪNG KỲ HÓA ĐƠN) ====================
   const upcoming: { studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
   const today = new Date();
   let pendingTotal = 0;
@@ -303,80 +303,49 @@ export default function Dashboard() {
   const payList = payments.data || [];
 
   (students.data || []).forEach((s: any) => {
-    if (s.payment_mode === "monthly") {
-      // 1. DÀNH CHO HỌC SINH TÍNH THEO THÁNG
-      const cycles = computeMonthlyCycles(s.start_date, today);
-      cycles.forEach((c) => {
-        const hasAttendanceInCycle = allPresentAttendance.some((a: any) => {
-          if (a.student_id !== s.id) return false;
-          const ev = evList.find((e: any) => e.id === a.event_id);
-          if (!ev || !ev.event_date) return false;
-          const evDate = new Date(ev.event_date);
-          return evDate >= c.start && evDate <= c.end;
-        });
+    // Lấy danh sách tất cả các tháng/chu kỳ có phát sinh học phí của học sinh
+    const cycles = computeMonthlyCycles(s.start_date || "2026-04-01", today);
 
-        if (!hasAttendanceInCycle) return;
-
-        const paid = payList.some((p: any) => p.student_id === s.id && p.cycle_label === c.label);
-        const amt = Number(s.fee_per_month || 0);
-
-        if (!paid) pendingTotal += amt;
-
-        upcoming.push({
-          studentName: s.name,
-          due: c.end,
-          label: c.label,
-          amount: amt,
-          paid,
-        });
+    cycles.forEach((c) => {
+      // 1. Kiểm tra xem chu kỳ/tháng này có buổi điểm danh nào không
+      const attInCycle = allPresentAttendance.filter((a: any) => {
+        if (a.student_id !== s.id) return false;
+        const ev = evList.find((e: any) => e.id === a.event_id);
+        if (!ev || !ev.event_date) return false;
+        const evDate = new Date(ev.event_date);
+        return evDate >= c.start && evDate <= c.end;
       });
-    } else {
-      // 2. DÀNH CHO HỌC SINH TÍNH THEO BUỔI (Ví dụ: Khánh Ngọc, Bảo Trâm...)
-      // Lấy tất cả các buổi học sinh đã điểm danh có mặt
-      const myAtt = allPresentAttendance.filter((a: any) => a.student_id === s.id);
-      
-      if (myAtt.length > 0) {
-        // Tính tổng tiền nợ phát sinh thực tế từ các buổi học
-        const totalOwed = myAtt.reduce((sum: number, a: any) => {
-          const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || 0);
+
+      // Nếu tháng này có điểm danh
+      if (attInCycle.length > 0) {
+        // Tính tiền của tháng này (lấy theo số buổi x đơn giá hoặc fee_per_month)
+        const cycleAmount = attInCycle.reduce((sum: number, a: any) => {
+          const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.fee_per_month || 0);
           return sum + fee;
         }, 0);
 
-        // Lấy tất cả các hóa đơn/lần chuyển khoản đã ghi nhận cho học sinh này
-        const studentPayments = payList.filter((p: any) => p.student_id === s.id);
-        const totalPaid = studentPayments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+        // 2. Kiểm tra xem kỳ này ĐÃ ĐÓNG TIỀN CHƯA (khớp theo cycle_label, ví dụ: KhánhNgọc_Tháng7_2026)
+        const isPaid = payList.some((p: any) => {
+          return p.student_id === s.id && (p.cycle_label === c.label || p.cycle_label?.includes(c.label));
+        });
 
-        // Số tiền CÒN NỢ chưa thanh toán
-        const unPaidAmount = totalOwed - totalPaid;
-
-        // A. Nếu còn dư nợ (> 0) -> Tạo 1 Hóa đơn chưa thanh toán (UNPAID)
-        if (unPaidAmount > 0) {
-          pendingTotal += unPaidAmount;
-          upcoming.push({
-            studentName: s.name,
-            due: today,
-            label: lang === "vi" ? `Học phí chưa đóng (${myAtt.length} buổi)` : `Unpaid fee (${myAtt.length} sessions)`,
-            amount: unPaidAmount,
-            paid: false, // 👈 Hiện ngay ở danh sách Unpaid!
-          });
+        if (!isPaid) {
+          pendingTotal += cycleAmount;
         }
 
-        // B. Nếu học sinh từng có lịch sử đóng tiền -> Tạo thêm các mục Hóa đơn đã đóng (PAID) tương ứng
-        if (studentPayments.length > 0) {
-          studentPayments.forEach((p: any, idx: number) => {
-            upcoming.push({
-              studentName: s.name,
-              due: p.paid_at ? new Date(p.paid_at) : today,
-              label: p.cycle_label || (lang === "vi" ? `Đợt thanh toán #${idx + 1}` : `Payment #${idx + 1}`),
-              amount: Number(p.amount || 0),
-              paid: true, // 👈 Hiện khi bấm sang tab Paid/All
-            });
-          });
-        }
+        // Đẩy kỳ này vào danh sách Upcoming Bills
+        upcoming.push({
+          studentName: s.name,
+          due: c.end,
+          label: c.label, // Tên kỳ: ví dụ KhánhNgọc_Tháng6_2026
+          amount: cycleAmount,
+          paid: isPaid,
+        });
       }
-    }
+    });
   });
   // =================================================================================
+
 
 
 
