@@ -33,7 +33,6 @@ const cleanName = (val: any) => {
 };
 
 export default function Students() {
-  const { t } = useApp();
   const qc = useQueryClient();
   const confirm = useConfirm();
   const enrollmentsQuery = useEnrollments();
@@ -44,15 +43,24 @@ export default function Students() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
-  // 1. Lấy danh sách học sinh từ bảng students
-  const { data: students = [] } = useQuery({
-    queryKey: ["students-list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("students").select("*").order("name");
-      if (error) throw error;
-      return data || [];
-    },
-  });
+ // 1. Lấy thông tin user hiện tại từ AppContext (hoặc Auth)
+const { user, t } = useApp();
+
+// 2. Lấy danh sách học sinh LỌC THEO USER_ID
+const { data: students = [] } = useQuery({
+  queryKey: ["students-list", user?.id],
+  enabled: !!user?.id, // Chỉ gọi query khi đã load xong thông tin user
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("students")
+      .select("*")
+      .eq("user_id", user.id) // 👈 BỔ SUNG LỌC THEO USER DĂNG NHẬP
+      .order("name");
+      
+    if (error) throw error;
+    return data || [];
+  },
+});
 
   useEffect(() => {
     document.title = `${t.students || "Học sinh"} — ${t.appName || "Apex Academy"}`;

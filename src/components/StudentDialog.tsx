@@ -103,7 +103,7 @@ const submit = async () => {
         .from("students")
         .insert({
           ...cleanForm,
-          user_id: null, // 🔥 Ép buộc user_id luôn là null cho học sinh mới
+          user_id: user.id // 🔥 Ép buộc user_id luôn là null cho học sinh mới
         })
         .select()
         .single();
