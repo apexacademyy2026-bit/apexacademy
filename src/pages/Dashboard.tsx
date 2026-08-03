@@ -293,75 +293,83 @@ export default function Dashboard() {
   const paymentsCount = filteredPayments.length;
   const avgPayment = paymentsCount > 0 ? totalRevenue / paymentsCount : 0;
 
-// ==================== XỬ LÝ UPCOMING BILLS & PENDING REVENUE ====================
+// ==================== XỬ LÝ UPCOMING BILLS (TÍNH TỔNG CỘNG HIỆN TẠI) ====================
   const upcoming: { studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
   const today = new Date();
   let pendingTotal = 0;
 
   const evList = events.data || [];
-  // Lọc danh sách điểm danh CÓ MẶT (present: true) và NẰM TRONG KHOẢNG THỜI GIAN LỌC
-  const attList = (attendanceAll.data || []).filter((a: any) => {
-    if (!a.present) return false;
-    const ev = evList.find((e: any) => e.id === a.event_id);
-    return ev ? inRange(ev.event_date) : false;
-  });
-
+  const allPresentAttendance = (attendanceAll.data || []).filter((a: any) => a.present);
   const payList = payments.data || [];
 
   (students.data || []).forEach((s: any) => {
     if (s.payment_mode === "monthly") {
+      // 1. Dành cho học sinh tính theo THÁNG
       const cycles = computeMonthlyCycles(s.start_date, today);
       cycles.forEach((c) => {
-        if (!inRange(c.end)) return;
-
-        // BỔ SUNG ĐIỀU KIỆN: Chỉ tính khi học sinh CÓ ĐIỂM DANH trong chu kỳ này
-        const hasAttendanceInCycle = (attendanceAll.data || []).some((a: any) => {
-          if (a.student_id !== s.id || !a.present) return false;
+        // Lấy tất cả điểm danh thuộc chu kỳ này
+        const hasAttendanceInCycle = allPresentAttendance.some((a: any) => {
+          if (a.student_id !== s.id) return false;
           const ev = evList.find((e: any) => e.id === a.event_id);
           if (!ev || !ev.event_date) return false;
           const evDate = new Date(ev.event_date);
           return evDate >= c.start && evDate <= c.end;
         });
 
-        // Nếu học sinh chưa từng điểm danh trong chu kỳ này -> Bỏ qua, chưa phát sinh học phí
         if (!hasAttendanceInCycle) return;
 
         const paid = payList.some((p: any) => p.student_id === s.id && p.cycle_label === c.label);
         const amt = Number(s.fee_per_month || 0);
-        if (!paid) pendingTotal += amt;
-        upcoming.push({ studentName: s.name, due: c.end, label: c.label, amount: amt, paid });
+
+        if (!paid) {
+          pendingTotal += amt;
+        }
+
+        upcoming.push({
+          studentName: s.name,
+          due: c.end,
+          label: c.label,
+          amount: amt,
+          paid,
+        });
       });
     } else {
-      // HỌC SINH THEO BUỔI (per_session): Chỉ tính trên những buổi ĐÃ ĐIỂM DANH trong khoảng lọc
-      const myAtt = attList.filter((a: any) => a.student_id === s.id);
+      // 2. Dành cho học sinh tính theo BUỔI (Gia sư / Học theo ca)
+      // Tính TỔNG CỘNG học phí từ tất cả các buổi đã điểm danh từ trước tới nay
+      const myAtt = allPresentAttendance.filter((a: any) => a.student_id === s.id);
       
-      const owed = myAtt.reduce((sum: number, a: any) => {
+      const totalOwed = myAtt.reduce((sum: number, a: any) => {
         const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || 0);
         return sum + fee;
       }, 0);
 
-      const paidAmt = payList
-        .filter((p: any) => p.student_id === s.id && inRange(p.paid_at))
+      // Tổng số tiền học sinh ĐÃ THANH TOÁN từ trước tới nay
+      const totalPaid = payList
+        .filter((p: any) => p.student_id === s.id)
         .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
 
-      const remaining = Math.max(0, owed - paidAmt);
-      
-      // CHỈ NỔI HÓA ĐƠN KHI ĐÃ CÓ ĐIỂM DANH (owed > 0)
-      if (owed > 0) {
-        const isPaid = remaining <= 0;
-        if (!isPaid) pendingTotal += remaining;
+      // Số tiền còn NỢ đến thời điểm hiện tại
+      const remainingDebt = Math.max(0, totalOwed - totalPaid);
+
+      if (totalOwed > 0) {
+        const isPaid = remainingDebt <= 0;
+        
+        if (!isPaid) {
+          pendingTotal += remainingDebt;
+        }
+
         upcoming.push({
           studentName: s.name,
           due: today,
-          label: t.pendingRevenue,
-          amount: isPaid ? owed : remaining,
+          label: isPaid ? (lang === "vi" ? "Đã hoàn thành" : "Completed") : (lang === "vi" ? "Tổng học phí hiện tại" : "Total current fee"),
+          amount: isPaid ? totalOwed : remainingDebt, // Hiện số còn nợ nếu chưa thu, hoặc tổng tiền nếu đã thu xong
           paid: isPaid,
         });
       }
     }
   });
   // =================================================================================
-  // =================================================================================
+
 
   const visibleUpcoming = upcoming.filter((u) =>
     payFilter === "all" ? true : payFilter === "paid" ? u.paid : !u.paid,
