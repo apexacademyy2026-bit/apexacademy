@@ -1,725 +1,713 @@
-import { useEffect, useMemo, useState, useRef } from "react";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Check, Clock } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import {
-  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
-} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { 
+  Users, 
+  GraduationCap, 
+  Wallet, 
+  BellRing, 
+  ArrowUpRight, 
+  CalendarClock, 
+  TrendingUp, 
+  Hourglass, 
+  Filter,
+  CheckCircle2,
+  CalendarCheck2,
+  UserCheck
+} from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
+import { useStudents, useClasses, usePayments, useEvents, useEnrollments, useClassSchedules } from "@/hooks/useData";
+import { formatVND, computeMonthlyCycles } from "@/lib/format";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEvents, useClasses, useClassSchedules, useEnrollments, useStudents, qk, useAttendance } from "@/hooks/useData";
-import { toast } from "sonner";
-import { addDays, startOfWeek, format, isSameDay } from "date-fns";
-import { getStoredGoogleCalendarSelection, getStoredGoogleCalendarToken, listGoogleCalendarEvents } from "@/lib/google-calendar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
-const HOUR_START = 0;   // 00:00 AM
-const HOUR_END = 23;     // 23:00 PM
-const HOUR_HEIGHT = 56;
-const SCHEDULE_MAX_HEIGHT = 700;
-
-const toMinutes = (t: string) => {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + (m || 0);
-};
-
-function layoutColumns<T extends { start_time: string; end_time: string }>(events: T[]) {
-  const sorted = [...events].sort((a, b) => a.start_time.localeCompare(b.start_time));
-  const cols: T[][] = [];
-  const placed: { ev: T; col: number; cols: number }[] = [];
-  for (const ev of sorted) {
-    let col = 0;
-    while (true) {
-      const c = cols[col] || [];
-      const overlap = c.some(
-        (x) => toMinutes(ev.start_time) < toMinutes(x.end_time) && toMinutes(ev.end_time) > toMinutes(x.start_time)
-      );
-      if (!overlap) {
-        cols[col] = [...c, ev];
-        placed.push({ ev, col, cols: 0 });
-        break;
-      }
-      col++;
-    }
-  }
-  const total = Math.max(1, cols.length);
-  return placed.map((p) => ({ ...p, cols: total }));
-}
-
-export default function Schedule() {
-  const { t, user, lang } = useApp();
-  const qc = useQueryClient();
-  const [view, setView] = useState<"week" | "month">("week");
-  const [anchor, setAnchor] = useState(new Date());
-  const [eventDialog, setEventDialog] = useState<{ open: boolean; date?: Date; event?: any }>({ open: false });
-  const [attDialog, setAttDialog] = useState<{ open: boolean; event?: any }>({ open: false });
-  const [confirmDel, setConfirmDel] = useState<{ open: boolean; ev?: any }>({ open: false });
-  const [googleEvents, setGoogleEvents] = useState<any[]>([]);
-  const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
-  
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { document.title = `${t.schedule} — ${t.appName}`; }, [t]);
-
-  useEffect(() => {
-    if (view === "week" && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 7 * HOUR_HEIGHT;
-    }
-  }, [view]);
-
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
-  const days = Array.from({ length: view === "week" ? 7 : 35 }, (_, i) => 
-    addDays(view === "week" ? weekStart : startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1), { weekStartsOn: 1 }), i)
-  );
-  const fromISO = format(days[0], "yyyy-MM-dd");
-  const toISO = format(days[days.length - 1], "yyyy-MM-dd");
-
-  const events = useEvents(fromISO, toISO);
-  const classes = useClasses();
-  const schedules = useClassSchedules();
-  const enrollments = useEnrollments();
+export default function Dashboard() {
+  const { t, profile, lang, user } = useApp();
+  const queryClient = useQueryClient();
+  const brandName = user?.user_metadata?.brand_name || "Phương anh";
   const students = useStudents();
-
-  // Load Google Calendar
-  useEffect(() => {
-    const token = getStoredGoogleCalendarToken();
-    const selected = getStoredGoogleCalendarSelection();
-    if (!token || !selected.length) {
-      setGoogleEvents([]);
-      return;
-    }
-
-    let active = true;
-    (async () => {
-      try {
-        setGoogleCalendarBusy(true);
-        const items = await listGoogleCalendarEvents(token, selected, fromISO, toISO);
-        if (active) setGoogleEvents(items);
-      } catch {
-        if (active) setGoogleEvents([]);
-      } finally {
-        if (active) setGoogleCalendarBusy(false);
-      }
-    })();
-
-    return () => { active = false; };
-  }, [fromISO, toISO]);
-
-  // LOGIC ĐỒNG BỘ LỊCH CỐ ĐỊNH TỪ CLASSES SANG SCHEDULE
-  const allEvents = useMemo(() => {
-    const realEvents = (events.data || []).map((e: any) => ({ ...e, virtual: false }));
-    const virtualEvents: any[] = [];
-
-    // 1. Quét từng ngày đang hiển thị trên màn hình
-    days.forEach((dayDate) => {
-      const dateStr = format(dayDate, "yyyy-MM-dd");
-      const dayOfWeek = dayDate.getDay(); // 0: CN, 1: T2, ..., 6: T7
-
-      // 2. Tìm tất cả ca học cố định trùng với thứ của ngày này
-      (schedules.data || []).forEach((sched: any) => {
-        if (sched.day_of_week === dayOfWeek) {
-          // Lấy thông tin lớp học tương ứng
-          const targetClass = (classes.data || []).find((c: any) => c.id === sched.class_id);
-          
-          // Kiểm tra xem ngày này đã có sự kiện thực tế trong DB chưa
-          const hasRealEvent = realEvents.some(
-            (re) => re.class_id === sched.class_id && re.event_date === dateStr
-          );
-
-          // Nếu chưa có sự kiện riêng lẻ, tạo lịch ảo dựa trên Class Schedule
-          if (!hasRealEvent) {
-            virtualEvents.push({
-              id: `virtual-${sched.id}-${dateStr}`,
-              class_id: sched.class_id,
-              event_date: dateStr,
-              start_time: sched.start_time,
-              end_time: sched.end_time,
-              virtual: true,
-              title: targetClass?.name || "Lớp học",
-            });
-          }
-        }
-      });
-    });
-
-    // 3. Tích hợp Google Calendar
-    const savedGoogleEventIds = new Set(
-      realEvents.filter((r) => r.source === "google").map((r) => r.google_event_id)
-    );
-
-    const filteredGoogleEvents = googleEvents
-      .filter((e) => !savedGoogleEventIds.has(e.id))
-      .map((e) => {
-        const linkedClass = (classes.data || []).find((c: any) => c.google_calendar_id === e.calendarId);
-        return linkedClass 
-          ? { ...e, title: linkedClass.name, class_id: linkedClass.id, source: "google", virtual: false }
-          : { ...e, virtual: false };
-      });
-
-    return [...realEvents, ...virtualEvents, ...filteredGoogleEvents];
-  }, [events.data, schedules.data, classes.data, days, googleEvents]);
-
-  const classOf = (cid: string) => (classes.data || []).find((c: any) => c.id === cid);
+  const classes = useClasses();
+  const payments = usePayments();
+  const events = useEvents();
+  const enrollments = useEnrollments();
+  // Lịch cố định hàng tuần — cần để tổng hợp "buổi ảo" giống hệt Schedule.tsx
+  // (buổi có lịch cố định nhưng chưa từng có dòng schedule_events riêng
+  // cho ngày hôm nay). Thiếu bảng này là lý do widget điểm danh trước đây
+  // luôn báo "không có ca học nào" dù Schedule.tsx vẫn hiện đúng buổi học.
+  const schedules = useClassSchedules();
   
-  const hasFixedSlot = (ev: any) =>
-    (schedules.data || []).some((s: any) => {
-      const eventDay = new Date(`${ev.event_date}T00:00:00`).getDay();
-      return s.class_id === ev.class_id && s.day_of_week === eventDay;
-    });
+  const attendanceAll = useQuery({
+    queryKey: ["attendance", "all"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("attendance").select("*");
+      if (error) throw error;
+      return data || [];
+    },
+  });
 
-  const requestDelete = (ev: any) => setConfirmDel({ open: true, ev });
+  const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, boolean>>({});
+  const [savingAttendance, setSavingAttendance] = useState(false);
 
-  const deleteEvent = async (ev: any) => {
-    if (ev.virtual) {
-      const { error } = await supabase.from("schedule_events").insert({
-        user_id: user!.id,
-        class_id: ev.class_id,
-        event_date: ev.event_date,
-        start_time: ev.start_time,
-        end_time: ev.end_time,
-        notes: "__cancelled__",
-      });
-      if (error) toast.error(error.message);
-      qc.invalidateQueries({ queryKey: ["events"] });
-      return;
-    }
-    if (hasFixedSlot(ev)) {
-      await supabase.from("schedule_events").update({ notes: "__cancelled__" }).eq("id", ev.id);
-    } else {
-      await supabase.from("schedule_events").delete().eq("id", ev.id);
-    }
-    qc.invalidateQueries({ queryKey: ["events"] });
+  useEffect(() => {
+    document.title = `${t.dashboard} — ${t.appName}`;
+  }, [t]);
+
+  const startOfThisMonth = () => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  };
+  const endOfThisMonth = () => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  };
+// Hàm chuyển đổi ngày chuẩn theo giờ địa phương (local time)
+  const toISO = (d: Date | string) => {
+    if (!d) return "";
+    const dateObj = typeof d === "string" ? new Date(d) : d;
+    if (isNaN(dateObj.getTime())) return "";
+    
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const day = String(dateObj.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
-  const visibleEvents = allEvents.filter((e: any) => e.notes !== "__cancelled__" && e.notes !== "__google_master__");
-  const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
-  const totalH = hours.length * HOUR_HEIGHT;
-  const weekDays = days.slice(0, 7);
+  type PresetKey = "thisMonth" | "lastMonth" | "last3" | "thisYear" | "custom";
+  const [preset, setPreset] = useState<PresetKey>("thisMonth");
+  const [fromDate, setFromDate] = useState<string>(toISO(startOfThisMonth()));
+  const [toDate, setToDate] = useState<string>(toISO(endOfThisMonth()));
+  const [loading, setLoading] = useState(false);
+  const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("unpaid");
 
-  const eventsForDay = (d: Date) =>
-    visibleEvents
-      .filter((e: any) => e.event_date === format(d, "yyyy-MM-dd"))
-      .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
+  const todayStr = useMemo(() => toISO(new Date()), []);
+
+  // Buổi học "thật" (đã có dòng schedule_events) diễn ra hôm nay, cộng thêm
+  // buổi "ảo" suy ra từ lịch cố định hàng tuần cho lớp nào chưa có dòng
+  // thật cho riêng hôm nay — đúng cách Schedule.tsx đang làm. Việc kiểm
+  // tra "đã có dòng thật chưa" phải tính trên TOÀN BỘ dòng thật (kể cả đã
+  // bị huỷ), nếu không sẽ vô tình hiện lại buổi mà giáo viên đã chủ động
+  // huỷ hôm nay; chỉ lọc bỏ "__cancelled__" ở bước hiển thị cuối cùng.
+  const todayEvents = useMemo(() => {
+    const allTodayRealEvents = (events.data || []).filter((e: any) => {
+      if (!e.event_date) return false;
+      const rawDateStr = String(e.event_date).slice(0, 10);
+      const formattedDate = toISO(e.event_date);
+      return rawDateStr === todayStr || formattedDate === todayStr;
+    });
+
+    const todayDow = new Date().getDay();
+    const virtualTodayEvents = (schedules.data || [])
+      .filter((sched: any) => sched.day_of_week === todayDow)
+      .filter((sched: any) => !allTodayRealEvents.some((e: any) => e.class_id === sched.class_id))
+      .map((sched: any) => {
+        const cls = (classes.data || []).find((c: any) => c.id === sched.class_id);
+        return {
+          id: `virtual-${sched.id}-${todayStr}`,
+          class_id: sched.class_id,
+          event_date: todayStr,
+          start_time: sched.start_time,
+          end_time: sched.end_time,
+          virtual: true,
+          title: cls?.name || "Lớp học",
+        };
+      });
+
+    const merged: any[] = [...allTodayRealEvents, ...virtualTodayEvents];
+    return merged.filter((e: any) => e.notes !== "__cancelled__");
+  }, [events.data, schedules.data, classes.data, todayStr]);
+
+  useEffect(() => {
+    if (todayEvents.length > 0 && !selectedEventId) {
+      setSelectedEventId(todayEvents[0].id);
+    }
+  }, [todayEvents, selectedEventId]);
+
+  const activeEvent = useMemo(() => {
+    return todayEvents.find((e: any) => e.id === selectedEventId) || todayEvents[0];
+  }, [todayEvents, selectedEventId]);
+
+  // ✅ SỬA ĐOẠN NÀY: Lọc danh sách học sinh chuẩn từ bảng enrollments
+  const classStudents = useMemo(() => {
+    if (!activeEvent || !students.data) return [];
+    if (!activeEvent.class_id) return students.data;
+
+    // Tìm tất cả student_id đã đăng ký lớp activeEvent.class_id
+    const enrolledStudentIds = new Set(
+      (enrollments.data || [])
+        .filter((e: any) => String(e.class_id) === String(activeEvent.class_id))
+        .map((e: any) => String(e.student_id))
+    );
+
+    return students.data.filter((s: any) => enrolledStudentIds.has(String(s.id)));
+  }, [activeEvent, students.data, enrollments.data]);
+
+  useEffect(() => {
+    if (!activeEvent || !attendanceAll.data) return;
+    const currentAtt = attendanceAll.data.filter((a: any) => String(a.event_id) === String(activeEvent.id));
+    const map: Record<string, boolean> = {};
+    
+    classStudents.forEach((s: any) => {
+      const found = currentAtt.find((a: any) => String(a.student_id) === String(s.id));
+      map[s.id] = found ? !!found.present : false;
+    });
+    setAttendanceMap(map);
+  }, [activeEvent, attendanceAll.data, classStudents]);
+
+  const toggleStudentAttendance = (studentId: string) => {
+    setAttendanceMap(prev => ({
+      ...prev,
+      [studentId]: !prev[studentId]
+    }));
+  };
+
+  const handleSaveAttendance = async () => {
+    if (!activeEvent || !user) return;
+    setSavingAttendance(true);
+    try {
+      let targetEventId = activeEvent.id;
+
+      // Buổi "ảo" chưa từng có dòng schedule_events thật — bảng attendance
+      // cần event_id trỏ tới một dòng có thật, nên phải tạo trước (giống
+      // hệt cách AttendanceDialog trong Schedule.tsx xử lý buổi ảo/Google).
+      if (activeEvent.virtual) {
+        const { data: newEvent, error: insertError } = await supabase
+          .from("schedule_events")
+          .insert({
+            user_id: user.id,
+            class_id: activeEvent.class_id,
+            event_date: activeEvent.event_date,
+            start_time: activeEvent.start_time,
+            end_time: activeEvent.end_time,
+          })
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        targetEventId = newEvent.id;
+      }
+
+      const updates = Object.entries(attendanceMap).map(([studentId, present]) => ({
+        user_id: user.id,
+        event_id: targetEventId,
+        student_id: studentId,
+        present
+      }));
+
+      const { error } = await supabase
+        .from("attendance")
+        .upsert(updates as any, { onConflict: "event_id,student_id" });
+
+      if (error) throw error;
+
+      toast.success(lang === "vi" ? "Đã cập nhật điểm danh thành công!" : "Attendance saved successfully!");
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["events"] });
+    } catch (err: any) {
+      toast.error(err.message || "Lỗi khi lưu điểm danh");
+    } finally {
+      setSavingAttendance(false);
+    }
+  };
+
+  const applyPreset = (key: PresetKey) => {
+    const today = new Date();
+    let from = startOfThisMonth();
+    let to = endOfThisMonth();
+    if (key === "thisMonth") {
+      from = new Date(today.getFullYear(), today.getMonth(), 1);
+      to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    } else if (key === "lastMonth") {
+      from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      to = new Date(today.getFullYear(), today.getMonth(), 0);
+    } else if (key === "last3") {
+      from = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+      to = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    } else if (key === "thisYear") {
+      from = new Date(today.getFullYear(), 0, 1);
+      to = new Date(today.getFullYear(), 11, 31);
+    }
+    setPreset(key);
+    setFromDate(toISO(from));
+    setToDate(toISO(to));
+    setLoading(true);
+    setTimeout(() => setLoading(false), 350);
+  };
+
+  const onCustomChange = (kind: "from" | "to", val: string) => {
+    setPreset("custom");
+    if (kind === "from") setFromDate(val);
+    else setToDate(val);
+    setLoading(true);
+    setTimeout(() => setLoading(false), 350);
+  };
+
+  const inRange = (iso: string | Date) => {
+    const d = new Date(iso);
+    const from = fromDate ? new Date(fromDate) : null;
+    const to = toDate ? new Date(toDate) : null;
+    if (to) to.setHours(23, 59, 59, 999);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  };
+
+  const filteredPayments = useMemo(
+    () => (payments.data || []).filter((p: any) => inRange(p.paid_at)),
+    [payments.data, fromDate, toDate],
+  );
+  const filteredEvents = useMemo(
+    () => (events.data || []).filter((e: any) => inRange(e.event_date)),
+    [events.data, fromDate, toDate],
+  );
+  const filteredAttendance = useMemo(() => {
+    const evIds = new Set(filteredEvents.map((e: any) => e.id));
+    return (attendanceAll.data || []).filter((a: any) => evIds.has(a.event_id) && a.present);
+  }, [attendanceAll.data, filteredEvents]);
+
+  const totalRevenue = (students.data || []).reduce((totalSum, student: any) => {
+    const studentCycles = student.cycles || [];
+    const studentTotal = studentCycles.reduce((cycleSum: number, cycle: any) => {
+      const sessionsCount = cycle.sessionsCount || cycle.attendance?.length || 0;
+      const feePerSession = cycle.fee_per_session || student.fee_per_session || 0;
+      return cycleSum + (sessionsCount * feePerSession);
+    }, 0);
+    return totalSum + studentTotal;
+  }, 0);
+
+  const activeStudentIds = new Set<string>();
+  filteredPayments.forEach((p: any) => p.student_id && activeStudentIds.add(p.student_id));
+  filteredAttendance.forEach((a: any) => a.student_id && activeStudentIds.add(a.student_id));
+  const activeStudents = activeStudentIds.size;
+
+  const activeClassIds = new Set<string>();
+  filteredEvents.forEach((e: any) => e.class_id && activeClassIds.add(e.class_id));
+  const activeClasses = activeClassIds.size;
+
+  const paymentsCount = filteredPayments.length;
+  const avgPayment = paymentsCount > 0 ? totalRevenue / paymentsCount : 0;
+
+  const upcoming: { studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
+  const today = new Date();
+  let pendingTotal = 0;
+  const evList = events.data || [];
+  const attList = (attendanceAll.data || []).filter((a: any) => a.present);
+  const payList = payments.data || [];
+
+  (students.data || []).forEach((s: any) => {
+    if (s.payment_mode === "monthly") {
+      const cycles = computeMonthlyCycles(s.start_date, today);
+      cycles.forEach((c) => {
+        if (!inRange(c.end)) return;
+        const paid = payList.some((p: any) => p.student_id === s.id && p.cycle_label === c.label);
+        const amt = Number(s.fee_per_month || 0);
+        if (!paid) pendingTotal += amt;
+        upcoming.push({ studentName: s.name, due: c.end, label: c.label, amount: amt, paid });
+      });
+    } else {
+      const myAtt = attList.filter((a: any) => a.student_id === s.id);
+      const owed = myAtt.reduce((sum: number, a: any) => {
+        const ev = evList.find((e: any) => e.id === a.event_id);
+        if (!ev) return sum;
+        const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || 0);
+        return sum + fee;
+      }, 0);
+      const paidAmt = payList
+        .filter((p: any) => p.student_id === s.id)
+        .reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+      const remaining = Math.max(0, owed - paidAmt);
+      if (owed > 0) {
+        const isPaid = remaining <= 0;
+        if (!isPaid) pendingTotal += remaining;
+        upcoming.push({
+          studentName: s.name,
+          due: today,
+          label: t.pendingRevenue,
+          amount: isPaid ? owed : remaining,
+          paid: isPaid,
+        });
+      }
+    }
+  });
+
+  const visibleUpcoming = upcoming.filter((u) =>
+    payFilter === "all" ? true : payFilter === "paid" ? u.paid : !u.paid,
+  );
+
+  const periodLabel =
+    preset === "thisMonth"
+      ? lang === "vi" ? "Tháng này" : "This month"
+      : preset === "lastMonth"
+      ? lang === "vi" ? "Tháng trước" : "Last month"
+      : preset === "last3"
+      ? lang === "vi" ? "3 tháng gần nhất" : "Last 3 months"
+      : preset === "thisYear"
+      ? lang === "vi" ? "Năm nay" : "This year"
+      : lang === "vi" ? "Tuỳ chỉnh" : "Custom";
+
+  const stats = [
+    {
+      label: lang === "vi" ? "Học sinh hoạt động" : "Active students",
+      value: activeStudents,
+      icon: Users,
+      to: "/students",
+      color: "from-blue-500/10 to-indigo-500/10 text-blue-600 hover:border-blue-200",
+      iconColor: "text-blue-600"
+    },
+    {
+      label: lang === "vi" ? "Lớp có hoạt động" : "Active classes",
+      value: activeClasses,
+      icon: GraduationCap,
+      to: "/classes",
+      color: "from-emerald-500/10 to-teal-500/10 text-emerald-600 hover:border-emerald-200",
+      iconColor: "text-emerald-600"
+    },
+    {
+      label: lang === "vi" ? "Học phí đã thu trong kỳ" : "Collected in period",
+      value: formatVND(totalRevenue),
+      icon: Wallet,
+      to: "/students",
+      color: "from-amber-500/10 to-orange-500/10 text-amber-600 hover:border-amber-200",
+      iconColor: "text-amber-600"
+    },
+    {
+      label: lang === "vi" ? "Số lần thanh toán" : "Payments count",
+      value: paymentsCount,
+      icon: CalendarClock,
+      to: "/students",
+      color: "from-pink-500/10 to-rose-500/10 text-pink-600 hover:border-pink-200",
+      iconColor: "text-pink-600"
+    },
+    {
+      label: lang === "vi" ? "Trung bình / lần thu" : "Average / payment",
+      value: formatVND(avgPayment),
+      icon: TrendingUp,
+      to: "/students",
+      color: "from-purple-500/10 to-indigo-500/10 text-purple-600 hover:border-purple-200",
+      iconColor: "text-purple-600"
+    },
+    {
+      label: lang === "vi" ? "Học phí dự kiến trong kỳ" : "Upcoming in period",
+      value: formatVND(pendingTotal),
+      icon: Hourglass,
+      to: "/students",
+      color: "is-gradient-accent",
+      iconColor: "text-white"
+    },
+  ];
 
   return (
-    <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-7 max-w-6xl pb-10">
       
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* HEADER TIÊU ĐỀ */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">{t.schedule}</h1>
-          <p className="text-xs font-semibold text-slate-400 mt-1">
-            {lang === "vi" ? "Quản lý lịch dạy, ca học và điểm danh học sinh" : "Manage your weekly teaching sessions and attendance"}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? -7 : -30))}>
-              <ChevronLeft className="h-4 w-4 text-slate-600" />
-            </Button>
-            <span className="px-3 text-xs font-bold text-slate-800 min-w-[90px] text-center">
-              {format(anchor, "MMM yyyy")}
+          <h1 className="text-2xl font-black tracking-tight text-slate-950">
+            {t.dashboard}{" "}
+            <span className="text-slate-400 font-medium text-lg">
+              · {(profile as any)?.brand_name || profile?.display_name || ""}
             </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? 7 : 30))}>
-              <ChevronRight className="h-4 w-4 text-slate-600" />
-            </Button>
-          </div>
-
-          <div className="flex items-center bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
-            <button
-              onClick={() => setView("week")}
-              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "week" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
-            >
-              {t.weekView}
-            </button>
-            <button
-              onClick={() => setView("month")}
-              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "month" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
-            >
-              {t.monthView}
-            </button>
-          </div>
-
-          <Button 
-            onClick={() => setEventDialog({ open: true, date: new Date() })}
-            className="h-10 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> {t.addEvent}
-          </Button>
+          </h1>
+          <p className="text-xs text-slate-400 font-medium mt-0.5">
+            {brandName} · <span className="text-blue-600 font-bold">{periodLabel}</span>
+          </p>
         </div>
       </div>
 
-      {googleCalendarBusy && (
-        <div className="text-xs font-semibold text-blue-600 bg-blue-50 p-3 rounded-2xl border border-blue-100 flex items-center gap-2">
-          <Clock className="h-4 w-4 animate-spin" /> Đang đồng bộ từ Google Calendar...
-        </div>
-      )}
+      {/* 🌟 WIDGET ĐIỂM DANH NHANH HÔM NAY */}
+      <Card className="p-6 border border-blue-100 shadow-sm rounded-2xl bg-white space-y-4 relative overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm">
+              <UserCheck className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
+                {lang === "vi" ? "Điểm danh nhanh hôm nay" : "Today's Quick Attendance"}
+                <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold border border-blue-100">
+                  {new Date().toLocaleDateString(lang === "vi" ? "vi-VN" : "en-US")}
+                </span>
+              </h3>
+              <p className="text-[11px] font-medium text-slate-400">
+                {lang === "vi" ? "Tích chọn học sinh có mặt và bấm lưu trực tiếp tại Dashboard" : "Mark present students and save directly"}
+              </p>
+            </div>
+          </div>
 
-      {/* WEEK VIEW */}
-      {view === "week" ? (
-        <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              <div className="sticky top-0 z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}>
-                <div className="p-3 text-right text-[10px] font-black uppercase text-slate-400 border-r border-slate-200/60">
-                  Giờ
-                </div>
-                {weekDays.map((d, i) => {
-                  const isToday = isSameDay(d, new Date());
+          {todayEvents.length > 1 && (
+            <select
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              {todayEvents.map((ev: any) => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.title || ev.notes || "Buổi học"} ({ev.start_time || "Cả ngày"})
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {todayEvents.length === 0 ? (
+          <div className="text-xs text-slate-400 italic text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center gap-2">
+            <CalendarCheck2 className="h-4 w-4 text-slate-400" />
+            {lang === "vi" ? "Hôm nay không có ca học nào!" : "No scheduled classes for today!"}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {activeEvent && (
+              <div className="flex items-center justify-between text-xs font-bold text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <span>📘 {(activeEvent as any).title || activeEvent.notes || "Buổi học chính"}</span>
+                <span className="text-slate-400 font-medium">Sĩ số: {classStudents.length} học sinh</span>
+              </div>
+            )}
+
+            {classStudents.length === 0 ? (
+              <p className="text-xs text-slate-400 italic text-center py-3">Chưa có danh sách học sinh cho lớp này.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[220px] overflow-y-auto pr-1">
+                {classStudents.map((student: any) => {
+                  const isPresent = !!attendanceMap[student.id];
                   return (
-                    <div key={i} className={cn("p-3 text-center border-r border-slate-200/60 last:border-r-0", isToday && "bg-blue-50/50")}>
-                      <div className="text-[11px] font-bold text-slate-400 uppercase">{t.daysLong[d.getDay()]}</div>
-                      <div className={cn("text-base font-black mt-0.5", isToday ? "text-blue-600" : "text-slate-800")}>
-                        {format(d, "dd/MM")}
+                    <div
+                      key={student.id}
+                      onClick={() => toggleStudentAttendance(student.id)}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all select-none",
+                        isPresent
+                          ? "bg-emerald-50/60 border-emerald-200/80 shadow-xs"
+                          : "bg-slate-50/50 border-slate-100 hover:bg-slate-50"
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <div className={cn(
+                          "h-7 w-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0",
+                          isPresent ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"
+                        )}>
+                          {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+                        </div>
+                        <span className={cn("text-xs font-bold truncate", isPresent ? "text-emerald-950" : "text-slate-700")}>
+                          {student.name}
+                        </span>
                       </div>
+
+                      <Checkbox
+                        checked={isPresent}
+                        onCheckedChange={() => toggleStudentAttendance(student.id)}
+                        className={cn(
+                          "rounded-md h-5 w-5 border-slate-300",
+                          isPresent && "bg-emerald-600 border-emerald-600 text-white"
+                        )}
+                      />
                     </div>
                   );
                 })}
               </div>
+            )}
 
-              <div ref={scrollContainerRef} className="overflow-y-auto" style={{ maxHeight: SCHEDULE_MAX_HEIGHT }}>
-                <div className="grid relative" style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}>
-                  <div className="border-r border-slate-200/60 bg-slate-50/50" style={{ height: totalH }}>
-                    {hours.map((h) => (
-                      <div key={h} style={{ height: HOUR_HEIGHT }} className="border-b border-slate-100 text-[11px] font-bold text-slate-400 text-right pr-3 pt-2">
-                        {String(h).padStart(2, "0")}:00
-                      </div>
-                    ))}
-                  </div>
-
-                  {weekDays.map((d, di) => {
-                    const evs = eventsForDay(d);
-                    const laid = layoutColumns(evs as any);
-                    return (
-                      <div
-                        key={di}
-                        className="relative border-r border-slate-200/60 last:border-r-0 group cursor-pointer"
-                        style={{ height: totalH }}
-                        onClick={(e) => {
-                          if ((e.target as HTMLElement).closest("[data-event]")) return;
-                          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                          const y = e.clientY - rect.top;
-                          const hour = Math.max(HOUR_START, Math.min(HOUR_END, Math.floor(y / HOUR_HEIGHT)));
-                          setEventDialog({ open: true, date: d, event: { _newHour: hour } });
-                        }}
-                      >
-                        {hours.map((h) => (
-                          <div key={h} className="border-b border-slate-100/80" style={{ height: HOUR_HEIGHT }} />
-                        ))}
-
-                        {laid.map(({ ev, col, cols }: any) => {
-                          const cls = classOf(ev.class_id);
-                          const isGoogleEvent = ev.source === "google";
-                          const startMin = toMinutes(ev.start_time) - HOUR_START * 60;
-                          const endMin = toMinutes(ev.end_time) - HOUR_START * 60;
-                          const top = (startMin / 60) * HOUR_HEIGHT;
-                          const height = Math.max(28, ((endMin - startMin) / 60) * HOUR_HEIGHT - 3);
-                          const widthPct = 100 / cols;
-
-                          return (
-                            <button
-                              key={ev.id}
-                              data-event
-                              className="absolute rounded-2xl p-2 text-xs text-left overflow-hidden shadow-xs hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer flex flex-col justify-between"
-                              style={{
-                                top,
-                                height,
-                                left: `calc(${col * widthPct}% + 3px)`,
-                                width: `calc(${widthPct}% - 6px)`,
-                                backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
-                                borderLeft: `4px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`,
-                                borderStyle: ev.virtual ? "dashed" : "solid",
-                                color: "#0f172a",
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (ev.source === "google") {
-                                  const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
-                                  if (!targetClass) {
-                                    toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
-                                    return;
-                                  }
-                                  setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
-                                } else {
-                                  setAttDialog({ open: true, event: ev });
-                                }
-                              }}
-                            >
-                              <div>
-                                <div className="font-black text-slate-900 truncate">
-                                  {isGoogleEvent ? ev.title : cls?.name || ev.title}
-                                </div>
-                                <div className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
-                                  <Clock className="h-3 w-3 text-blue-500 shrink-0" />
-                                  <span>{ev.start_time.slice(0,5)} - {ev.end_time.slice(0,5)}</span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+            <div className="flex justify-end pt-1">
+              <Button
+                onClick={handleSaveAttendance}
+                disabled={savingAttendance || classStudents.length === 0}
+                className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-all"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {savingAttendance 
+                  ? (lang === "vi" ? "Đang lưu..." : "Saving...") 
+                  : (lang === "vi" ? "Lưu điểm danh hôm nay" : "Save Today's Attendance")}
+              </Button>
             </div>
           </div>
-        </Card>
-      ) : (
-        /* MONTH VIEW */
-        <Card className="rounded-3xl border-slate-200/80 bg-white p-4 shadow-xs overflow-x-auto">
-          <div className="grid gap-2 grid-cols-7 min-w-[700px]">
-            {weekDays.map((d, i) => (
-              <div key={i} className="text-xs font-black uppercase text-slate-400 text-center py-2">
-                {t.daysLong[d.getDay()]}
+        )}
+      </Card>
+
+      {/* 🛠️ BỘ LỌC THỜI GIAN */}
+      <Card className="p-4 border border-slate-100 shadow-sm rounded-2xl space-y-4 bg-white">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <Filter className="h-3.5 w-3.5 text-slate-400" />
+          {lang === "vi" ? "Bộ lọc thời gian" : "Time filter"}
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-4 justify-between">
+          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200/40">
+            {(
+              [
+                { k: "thisMonth", vi: "Tháng này", en: "This month" },
+                { k: "lastMonth", vi: "Tháng trước", en: "Last month" },
+                { k: "last3", vi: "3 tháng gần nhất", en: "Last 3 months" },
+                { k: "thisYear", vi: "Năm nay", en: "This year" },
+              ] as { k: PresetKey; vi: string; en: string }[]
+            ).map((p) => (
+              <button
+                key={p.k}
+                onClick={() => applyPreset(p.k)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                  preset === p.k 
+                    ? "bg-white text-slate-950 shadow-sm" 
+                    : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                {lang === "vi" ? p.vi : p.en}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/60 rounded-xl px-2.5 py-1.5">
+              <span className="text-slate-400 font-medium">{lang === "vi" ? "Từ" : "From"}</span>
+              <input type="date" value={fromDate} onChange={(e) => onCustomChange("from", e.target.value)} className="bg-transparent border-none focus:outline-none text-slate-800" />
+            </div>
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/60 rounded-xl px-2.5 py-1.5">
+              <span className="text-slate-400 font-medium">{lang === "vi" ? "Đến" : "To"}</span>
+              <input type="date" value={toDate} onChange={(e) => onCustomChange("to", e.target.value)} className="bg-transparent border-none focus:outline-none text-slate-800" />
+            </div>
+            {preset === "custom" && (
+              <Button variant="ghost" size="sm" onClick={() => applyPreset("thisMonth")} className="h-8 rounded-lg text-xs text-red-500 hover:text-red-600 hover:bg-red-50 font-bold">
+                {lang === "vi" ? "Đặt lại" : "Reset"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {/* 📊 GRID CÁC THẺ CARD SỐ LIỆU */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {stats.map((s, i) => (
+          <div
+            key={s.label}
+            className="animate-in fade-in slide-in-from-bottom-2"
+            style={{ animationDelay: `${i * 40}ms`, animationFillMode: "both" }}
+          >
+            <Link to={s.to}>
+              {s.color === "is-gradient-accent" ? (
+                <Card className="p-5 rounded-2xl text-white shadow-md shadow-blue-500/10 border-0 bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-between relative overflow-hidden h-full transform hover:-translate-y-0.5 transition-transform duration-300 cursor-pointer">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_90%_10%,white/8%,transparent_30%)]" />
+                  <div className="space-y-1 z-10">
+                    <span className="text-xs font-bold text-blue-100/70">{s.label}</span>
+                    {loading ? (
+                      <Skeleton className="h-8 w-24 bg-white/20 mt-1" />
+                    ) : (
+                      <h3 className="text-2xl font-black tracking-tight mt-0.5">{s.value}</h3>
+                    )}
+                    <span className="text-[10px] font-bold text-white/80 hover:text-white underline inline-flex items-center gap-0.5 pt-1">
+                      {t.details} <ArrowUpRight className="h-3 w-3" />
+                    </span>
+                  </div>
+                  <div className="h-12 w-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center text-white z-10 shrink-0">
+                    <s.icon className="h-5 w-5" />
+                  </div>
+                </Card>
+              ) : (
+                <Card className={cn(
+                  "p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer",
+                  s.color.split(" ").pop()
+                )}>
+                  <div className="space-y-1">
+                    <span className="text-xs font-bold text-slate-400">{s.label}</span>
+                    {loading ? (
+                      <Skeleton className="h-8 w-20 mt-1" />
+                    ) : (
+                      <h3 className="text-2xl font-black text-slate-950 mt-0.5">{s.value}</h3>
+                    )}
+                    <span className="text-[10px] font-bold text-slate-500 inline-flex items-center gap-0.5 pt-1">
+                      {t.details} <ArrowUpRight className="h-3 w-3" />
+                    </span>
+                  </div>
+                  <div className={cn("h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr", s.color.split(" ").slice(0, 2).join(" "))}>
+                    <s.icon className="h-5 w-5" />
+                  </div>
+                </Card>
+              )}
+            </Link>
+          </div>
+        ))}
+      </div>
+
+      {/* 🔔 SECTION HÓA ĐƠN SẮP TỚI */}
+      <Card className="p-6 border border-slate-100 shadow-sm rounded-2xl bg-white space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
+              <BellRing className="h-4 w-4 text-amber-500 animate-pulse" />
+              {t.upcomingBills}
+            </h3>
+            <p className="text-[11px] font-medium text-slate-400">{t.upcomingBillsHint}</p>
+          </div>
+          
+          <div className="flex items-center bg-slate-50 border p-1 rounded-xl text-xs font-bold">
+            {(["unpaid", "paid", "all"] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setPayFilter(k)}
+                className={cn(
+                  "px-3 py-1 rounded-lg transition-all",
+                  payFilter === k 
+                    ? "bg-blue-600 text-white shadow-sm" 
+                    : "text-slate-500 hover:text-slate-900"
+                )}
+              >
+                {k === "unpaid"
+                  ? lang === "vi" ? "Chưa thu" : "Unpaid"
+                  : k === "paid"
+                  ? lang === "vi" ? "Đã thu" : "Paid"
+                  : lang === "vi" ? "Tất cả" : "All"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {visibleUpcoming.length === 0 ? (
+          <div className="text-xs text-slate-400 italic text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+            {t.nothingHere}
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+            {visibleUpcoming.map((u, i) => (
+              <div 
+                key={i} 
+                className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50 p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "h-9 w-9 rounded-lg flex items-center justify-center text-xs font-bold shadow-sm",
+                    u.paid ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                  )}>
+                    {u.studentName.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">{u.studentName}</h4>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {u.label} · {u.due.toLocaleDateString(lang === "vi" ? "vi-VN" : "en-US")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 ml-auto sm:ml-0">
+                  <span className="text-sm font-black text-slate-950">{formatVND(u.amount)}</span>
+                  <span className={cn(
+                    "text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border",
+                    u.paid 
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200/50" 
+                      : "bg-amber-50 text-amber-700 border-amber-200/50",
+                  )}>
+                    {u.paid
+                      ? lang === "vi" ? "Đã thu" : "Paid"
+                      : lang === "vi" ? "Chưa thu" : "Unpaid"}
+                  </span>
+                </div>
               </div>
             ))}
-            {days.map((d, i) => {
-              const evs = eventsForDay(d);
-              const isToday = isSameDay(d, new Date());
-              return (
-                <div
-                  key={i}
-                  className={cn(
-                    "min-h-[110px] rounded-2xl border p-2 cursor-pointer hover:border-blue-400 transition-all",
-                    isToday ? "border-blue-500 bg-blue-50/30" : "border-slate-100 bg-slate-50/50"
-                  )}
-                  onClick={(e) => {
-                    if ((e.target as HTMLElement).closest("[data-event]")) return;
-                    setEventDialog({ open: true, date: d });
-                  }}
-                >
-                  <div className={cn("text-xs font-black mb-2", isToday ? "text-blue-600" : "text-slate-700")}>
-                    {format(d, "d/M")}
-                  </div>
-                  <div className="space-y-1">
-                    {evs.map((ev: any) => {
-                      const cls = classOf(ev.class_id);
-                      const isGoogleEvent = ev.source === "google";
-                      return (
-                        <div
-                          key={ev.id}
-                          data-event
-                          className="text-[10px] font-bold p-1.5 rounded-xl truncate hover:opacity-80 transition-opacity"
-                          style={{
-                            backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
-                            color: "#0f172a",
-                            borderLeft: `3px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (ev.source === "google") {
-                              const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
-                              if (!targetClass) {
-                                toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
-                                return;
-                              }
-                              setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
-                            } else {
-                              setAttDialog({ open: true, event: ev });
-                            }
-                          }}
-                        >
-                          {ev.start_time.slice(0,5)} {isGoogleEvent ? ev.title : cls?.name || ev.title}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
           </div>
-        </Card>
-      )}
-
-      {/* DIALOG THÊM SỰ KIỆN */}
-      <EventDialog
-        open={eventDialog.open}
-        onOpenChange={(o) => setEventDialog({ open: o })}
-        date={eventDialog.date}
-        defaultHour={(eventDialog as any).event?._newHour}
-        classes={classes.data || []}
-      />
-
-      {/* DIALOG ĐIỂM DANH */}
-      <AttendanceDialog
-        open={attDialog.open}
-        onOpenChange={(o) => setAttDialog({ open: o })}
-        event={attDialog.event}
-        students={students.data || []}
-        enrollments={enrollments.data || []}
-        classes={classes.data || []}
-        onDelete={requestDelete}
-      />
-
-      {/* ALERT DIALOG XÓA */}
-      <AlertDialog open={confirmDel.open} onOpenChange={(o) => setConfirmDel({ open: o, ev: o ? confirmDel.ev : undefined })}>
-        <AlertDialogContent className="rounded-3xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-black text-slate-900">{(t as any).confirmDeleteTitle || t.confirmDelete}</AlertDialogTitle>
-            <AlertDialogDescription className="text-xs font-semibold text-slate-500">{(t as any).confirmDeleteDesc || "Hành động này không thể hoàn tác."}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl font-bold">{t.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              className="rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
-              onClick={async () => {
-                const ev = confirmDel.ev;
-                setConfirmDel({ open: false });
-                if (ev) await deleteEvent(ev);
-              }}
-            >
-              {t.delete}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
+        )}
+      </Card>
     </div>
-  );
-}
-
-function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
-  const { t, user } = useApp();
-  const qc = useQueryClient();
-  const [addToFixed, setAddToFixed] = useState(false);
-  const [classId, setClassId] = useState("");
-  const [start, setStart] = useState("18:00");
-  const [end, setEnd] = useState("19:30");
-  const [d, setD] = useState(format(date || new Date(), "yyyy-MM-dd"));
-  const [notes, setNotes] = useState("");
-
-  useEffect(() => {
-    if (date) setD(format(date, "yyyy-MM-dd"));
-    if (typeof defaultHour === "number") {
-      const h = String(defaultHour).padStart(2, "0");
-      const h2 = String(defaultHour + 1).padStart(2, "0");
-      setStart(`${h}:00`);
-      setEnd(`${h2}:30`);
-    }
-  }, [date, defaultHour, open]);
-
-  const submit = async () => {
-    if (!user || !classId) return;
-
-    const { error } = await supabase.from("schedule_events").insert({
-      user_id: user.id,
-      class_id: classId,
-      event_date: d,
-      start_time: start,
-      end_time: end,
-      notes,
-    });
-
-    if (addToFixed) {
-      const dayOfWeek = new Date(d).getDay();
-      await supabase.from("class_schedules").insert({
-        user_id: user.id,
-        class_id: classId,
-        day_of_week: dayOfWeek,
-        start_time: start,
-        end_time: end,
-      });
-    }
-
-    if (error) toast.error(error.message);
-    else {
-      toast.success(t.save);
-      qc.invalidateQueries({ queryKey: ["events"] });
-      qc.invalidateQueries({ queryKey: ["class-schedules"] });
-      onOpenChange(false);
-      setClassId(""); setNotes(""); setAddToFixed(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl max-w-md">
-        <DialogHeader><DialogTitle className="font-black text-slate-900">{t.addEvent}</DialogTitle></DialogHeader>
-        <div className="space-y-4 pt-2">
-          <div>
-            <Label className="text-xs font-bold text-slate-600 mb-1 block">{t.class}</Label>
-            <Select value={classId} onValueChange={setClassId}>
-              <SelectTrigger className="rounded-2xl h-10 border-slate-200 text-xs font-semibold"><SelectValue placeholder={t.class} /></SelectTrigger>
-              <SelectContent className="rounded-2xl">
-                {classes.map((c: any) => <SelectItem key={c.id} value={c.id} className="rounded-xl text-xs font-semibold">{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center space-x-2 pt-1">
-            <Checkbox id="fixed-schedule" checked={addToFixed} onCheckedChange={(v) => setAddToFixed(!!v)} className="rounded-lg" />
-            <Label htmlFor="fixed-schedule" className="text-xs font-bold text-slate-600 cursor-pointer">Thêm vào lịch cố định hàng tuần</Label>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">{t.startDate}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={d} onChange={(e) => setD(e.target.value)} /></div>
-            <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Bắt đầu</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Kết thúc</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
-          </div>
-          <div><Label className="text-xs font-bold text-slate-600 mb-1 block">{t.notes}</Label><Textarea className="rounded-2xl border-slate-200 text-xs" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
-        </div>
-        <DialogFooter className="pt-2">
-          <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
-          <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={submit}>{t.save}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AttendanceDialog({ open, onOpenChange, event, students, enrollments, classes, onDelete }: any) {
-  const { t, user } = useApp();
-  const qc = useQueryClient();
-  const att = useAttendance(event?.id);
-  const [rows, setRows] = useState<Record<string, { present: boolean; note: string }>>({});
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [evDate, setEvDate] = useState("");
-
-  const enrolled = useMemo(() => {
-    if (!event) return [];
-    const sids = enrollments.filter((e: any) => e.class_id === event.class_id).map((e: any) => e.student_id);
-    return students.filter((s: any) => sids.includes(s.id));
-  }, [event, enrollments, students]);
-
-  useEffect(() => {
-    const init: any = {};
-    enrolled.forEach((s: any) => {
-      const a = (att.data || []).find((x: any) => x.student_id === s.id);
-      init[s.id] = { present: a ? a.present : true, note: a?.homework_note || "" };
-    });
-    setRows(init);
-  }, [enrolled, att.data]);
-
-  useEffect(() => {
-    if (event) {
-      setStart((event.start_time || "").slice(0, 5));
-      setEnd((event.end_time || "").slice(0, 5));
-      setEvDate(event.event_date || "");
-    }
-  }, [event]);
-
-  const cls = event && classes.find((c: any) => c.id === event.class_id);
-
-  const save = async () => {
-    if (!event || !user) return;
-    let targetEventId = event.id;
-
-    if (event.virtual || event.source === "google") {
-      const { data: newEvent, error: insertError } = await supabase
-        .from("schedule_events")
-        .insert({
-          user_id: user.id,
-          class_id: event.class_id,
-          event_date: evDate,
-          start_time: start,
-          end_time: end,
-          notes: "Google Event Attendance"
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        toast.error("Không thể tạo sự kiện điểm danh: " + insertError.message);
-        return;
-      }
-      targetEventId = newEvent.id;
-    } else {
-      await supabase
-        .from("schedule_events")
-        .update({ start_time: start, end_time: end, event_date: evDate })
-        .eq("id", targetEventId);
-    }
-
-    for (const s of enrolled) {
-      const r = rows[s.id];
-      const existing = (att.data || []).find((x: any) => x.student_id === s.id);
-      
-      if (existing) {
-        await supabase.from("attendance").update({ 
-          present: r.present, 
-          homework_note: r.note,
-          attendance_start_time: start as any,
-          attendance_end_time: end as any
-        } as any).eq("id", existing.id);
-      } else {
-        await supabase.from("attendance").insert({
-          user_id: user.id,
-          event_id: targetEventId,
-          student_id: s.id,
-          present: r.present,
-          homework_note: r.note,
-          attendance_date: evDate,
-          attendance_start_time: start as any,
-          attendance_end_time: end as any
-        } as any);
-      }
-    }
-
-    qc.invalidateQueries({ queryKey: ["events"] });
-    qc.invalidateQueries({ queryKey: ["student-attendance"] });
-    toast.success("Đã lưu điểm danh thành công!");
-    onOpenChange(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base font-black text-slate-900">
-            <span className="h-3 w-3 rounded-full" style={{ background: cls?.color || "#3b82f6" }} />
-            {cls?.name || event?.title}
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="grid grid-cols-3 gap-2 my-2">
-          <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.date}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={evDate} onChange={(e) => setEvDate(e.target.value)} /></div>
-          <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.startDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-          <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.endDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
-        </div>
-
-        <div className="space-y-3 pt-2">
-          <Label className="text-xs font-bold text-slate-700">Danh sách điểm danh</Label>
-          {enrolled.length === 0 ? (
-            <div className="text-xs font-semibold text-slate-400 py-4 text-center">{t.nothingHere}</div>
-          ) : enrolled.map((s: any) => (
-            <div key={s.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100/80 space-y-2">
-              <label className="flex items-center gap-2.5 font-bold text-xs text-slate-800 cursor-pointer">
-                <Checkbox
-                  className="rounded-lg"
-                  checked={rows[s.id]?.present ?? true}
-                  onCheckedChange={(v) => setRows({ ...rows, [s.id]: { ...rows[s.id], present: !!v } })}
-                />
-                {s.name}
-              </label>
-              <Textarea
-                placeholder={t.homework}
-                className="text-xs rounded-xl bg-white border-slate-200"
-                value={rows[s.id]?.note || ""}
-                onChange={(e) => setRows({ ...rows, [s.id]: { ...rows[s.id], note: e.target.value } })}
-              />
-            </div>
-          ))}
-        </div>
-
-        <DialogFooter className="flex justify-between gap-2 sm:justify-between pt-4">
-          <Button variant="ghost" className="rounded-xl text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => { onOpenChange(false); onDelete(event); }}>
-            <Trash2 className="h-4 w-4" /> {t.delete}
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
-            <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={save}><Check className="h-4 w-4" /> {t.save}</Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
