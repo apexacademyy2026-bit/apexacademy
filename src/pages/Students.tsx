@@ -57,8 +57,7 @@ export default function Students() {
         .from("students")
         .select("*")
         // Lấy học sinh thuộc user này HOẶC chưa có user_id
-        .or(`user_id.eq.${user.id},user_id.is.null`) 
-        .order("name");
+.eq("user_id", user.id)        .order("name");
 
       if (error) throw error;
       return data || [];
