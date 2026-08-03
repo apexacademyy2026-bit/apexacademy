@@ -293,14 +293,16 @@ export default function StudentDetail() {
   const accent = student?.color || "#3b82f6";
   const billNum = (displayBill?.cycle_label || student?.id || "").slice(0, 100).toUpperCase();
 
+// 1. Hàm đánh dấu 1 kỳ (togglePaid)
 const togglePaid = async (b: any) => {
   if (!student || !b) return;
 
-  // Lấy userId an toàn tương tự
-  const activeUserId = user?.id || student.user_id || (await supabase.auth.getUser()).data.user?.id;
+  // Lấy ID người dùng hiện tại từ Supabase session
+  const { data: { session } } = await supabase.auth.getSession();
+  const activeUserId = user?.id || student.user_id || session?.user?.id;
 
   if (!activeUserId) {
-    toast.error("Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại!");
+    toast.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!");
     return;
   }
 
@@ -310,7 +312,7 @@ const togglePaid = async (b: any) => {
     await supabase.from("payments").delete().eq("id", recorded.id);
   } else {
     const { error } = await supabase.from("payments").insert({
-      user_id: activeUserId, // 👈 Đảm bảo không bao giờ bị null
+      user_id: activeUserId, // Đảm bảo luôn có giá trị ID
       student_id: student.id,
       cycle_type: b.cycle_type,
       cycle_label: b.cycle_label,
@@ -319,10 +321,10 @@ const togglePaid = async (b: any) => {
       session_count: b.session_count ?? null,
       amount: effectiveAmount(b),
     });
-    
-    if (error) { 
-      toast.error(error.message); 
-      return; 
+
+    if (error) {
+      toast.error(error.message);
+      return;
     }
   }
 
@@ -330,14 +332,15 @@ const togglePaid = async (b: any) => {
   toast.success(t?.save || "Đã cập nhật thanh toán");
 };
 
-  const paySelected = async () => {
+// 2. Hàm đánh dấu nhiều kỳ (paySelected)
+const paySelected = async () => {
   if (!student) return;
-  
-  // Lấy userId an toàn nhất (Ưu tiên user hiện tại -> student.user_id -> Auth session)
-  const activeUserId = user?.id || student.user_id || (await supabase.auth.getUser()).data.user?.id;
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const activeUserId = user?.id || student.user_id || session?.user?.id;
 
   if (!activeUserId) {
-    toast.error("Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại!");
+    toast.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!");
     return;
   }
 
@@ -345,7 +348,7 @@ const togglePaid = async (b: any) => {
   if (toPay.length === 0) return;
 
   const rows = toPay.map((b) => ({
-    user_id: activeUserId, // 👈 Đảm bảo luôn luôn có giá trị ID hợp lệ
+    user_id: activeUserId,
     student_id: student.id,
     cycle_type: b.cycle_type,
     cycle_label: b.cycle_label,
@@ -356,9 +359,9 @@ const togglePaid = async (b: any) => {
   }));
 
   const { error } = await supabase.from("payments").insert(rows);
-  if (error) { 
-    toast.error(error.message); 
-    return; 
+  if (error) {
+    toast.error(error.message);
+    return;
   }
 
   setSelectedBills(new Set());
