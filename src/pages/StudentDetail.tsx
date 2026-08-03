@@ -14,9 +14,6 @@ import {
   GraduationCap, 
   BookOpen, 
   Clock, 
-  FileText,
-  CheckCircle2,
-  XCircle,
   Check,
   Eye,
   EyeOff,
@@ -60,7 +57,7 @@ export default function StudentDetail() {
   const [billOpen, setBillOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
-  // Bill States (được tích hợp từ StudentBill)
+  // Bill States
   const [selectedBillCycle, setSelectedBillCycle] = useState<string | null>(null);
   const [mode, setMode] = useState<"monthly" | "by_session" | null>(null);
   const [showAtt, setShowAtt] = useState(true);
@@ -71,7 +68,7 @@ export default function StudentDetail() {
   const [selectedBills, setSelectedBills] = useState<Set<string>>(new Set());
   const billRef = useRef<HTMLDivElement | null>(null);
 
-  // Form states cho Điểm danh ở trang chính
+  // Form states cho Điểm danh
   const [addForm, setAddForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     class_id: "",
@@ -83,7 +80,7 @@ export default function StudentDetail() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("all");
 
-  // 1. Fetch thông tin học sinh
+  // Fetch thông tin học sinh
   const { data: student, isLoading: studentLoading } = useQuery({
     queryKey: ["student", id],
     queryFn: async () => {
@@ -94,7 +91,7 @@ export default function StudentDetail() {
     enabled: !!id,
   });
 
-  // 2. Fetch điểm danh & schedule_events
+  // Fetch điểm danh
   const { data: attendance = [], isLoading: attendanceLoading } = useQuery({
     queryKey: ["student-attendance-all", id],
     queryFn: async () => {
@@ -116,7 +113,7 @@ export default function StudentDetail() {
     enabled: !!id,
   });
 
-  // 3. Fetch thanh toán
+  // Fetch thanh toán
   const { data: payments = [] } = useQuery({
     queryKey: ["payments", id],
     queryFn: async () => {
@@ -147,7 +144,6 @@ export default function StudentDetail() {
     localStorage.setItem(`bill_footnote_${student.id}`, footnote);
   }, [footnote, student?.id]);
 
-  // Lớp học sinh đang tham gia
   const myClasses = useMemo(() => {
     if (!student) return [];
     const cids = (enrollments.data || []).filter((e: any) => e.student_id === student.id).map((e: any) => e.class_id);
@@ -165,7 +161,6 @@ export default function StudentDetail() {
     [attendance]
   );
 
-  // Tính danh sách các Kỳ Bill
   const bills = useMemo(() => {
     if (!student || !mode) return [] as any[];
     const safeName = student.name ? student.name.replace(/\s+/g, "") : "Student";
@@ -365,7 +360,6 @@ export default function StudentDetail() {
     }
   };
 
-  // Logic Thêm Điểm Danh
   const addAttendance = async () => {
     if (!user || !addForm.class_id) return;
     const { data: ev, error: e1 } = await supabase
@@ -493,7 +487,38 @@ export default function StudentDetail() {
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12 text-slate-800">
       
-      {/* 1. HEADER KHU VỰC HỌC SINH */}
+      {/* CẤU HÌNH CSS ĐẶC BIỆT KHI IN (PRINT CSS) */}
+      <style>{`
+        @media print {
+          /* Ẩn tất cả các phần tử trên trang ngoại trừ bill printable */
+          body * {
+            visibility: hidden !important;
+          }
+          /* Chỉ hiển thị duy nhất vùng billRef */
+          .printable-bill, .printable-bill * {
+            visibility: visible !important;
+          }
+          /* Đưa thẻ in ra góc trên cùng của trang giấy */
+          .printable-bill {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            box-shadow: none !important;
+            border: none !important;
+            background: white !important;
+          }
+          /* Loại bỏ bớt lề mặc định của trình duyệt */
+          @page {
+            size: auto;
+            margin: 10mm;
+          }
+        }
+      `}</style>
+
+      {/* HEADER HỌC SINH */}
       <Card className="p-5 border border-slate-200/70 rounded-2xl bg-white shadow-2xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -539,10 +564,8 @@ export default function StudentDetail() {
         </div>
       </Card>
 
-      {/* 2. KHU VỰC NỘI DUNG CHÍNH (2 CỘT) */}
+      {/* KHU VỰC 2 CỘT CHI TIẾT HỌC SINH */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        
-        {/* CỘT TRÁI */}
         <div className="lg:col-span-2 space-y-6">
           <Card className="p-6 border border-slate-200/70 rounded-2xl bg-white shadow-2xs space-y-4">
             <h2 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center gap-2">
@@ -581,7 +604,6 @@ export default function StudentDetail() {
             </div>
           </Card>
 
-          {/* CARD LỊCH SỬ ĐIỂM DANH */}
           <Card className="p-6 border border-slate-200/70 rounded-2xl bg-white shadow-2xs space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <h2 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center gap-2">
@@ -607,7 +629,6 @@ export default function StudentDetail() {
               </div>
             </div>
 
-            {/* Form Thêm nhanh */}
             {addOpen && (
               <div className="grid sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
                 <div>
@@ -632,7 +653,6 @@ export default function StudentDetail() {
               </div>
             )}
 
-            {/* List */}
             {attendanceLoading ? (
               <div className="text-center py-6 text-slate-400 text-xs">Đang tải...</div>
             ) : visibleAttendance.length === 0 ? (
@@ -691,7 +711,6 @@ export default function StudentDetail() {
           </Card>
         </div>
 
-        {/* CỘT PHẢI */}
         <div>
           <Card className="p-6 border border-slate-200/70 rounded-2xl bg-white shadow-2xs space-y-4">
             <h2 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center gap-2">
@@ -718,14 +737,11 @@ export default function StudentDetail() {
         </div>
       </div>
 
-      {/* MODAL EDIT HỌC SINH */}
       <StudentDialog open={editing} onOpenChange={(o) => { setEditing(o); if (!o) qc.invalidateQueries({ queryKey: ["student", id] }); }} student={student} />
 
-      {/* ========================================================= */}
-      {/* FULL STUDENT BILL DIALOG (CODE ĐÃ TÍNH TÍCH HỢP TỪ STUDENTBILL) */}
-      {/* ========================================================= */}
+      {/* DIALOG VIEW BILL */}
       <Dialog open={billOpen} onOpenChange={setBillOpen}>
-        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto p-4 md:p-6 bg-slate-50/90 rounded-2xl print:bg-white print:p-0 print:border-none">
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto p-4 md:p-6 bg-slate-50/90 rounded-2xl">
           <DialogHeader className="border-b pb-3 print:hidden">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <DialogTitle className="text-base font-black text-slate-900 flex items-center gap-2">
@@ -750,10 +766,9 @@ export default function StudentDetail() {
             </div>
           </DialogHeader>
 
-          {/* MAIN 2 COLUMNS IN BILL DIALOG */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
             
-            {/* CỘT TRÁI: DÃY CÁC KỲ BILL */}
+            {/* CỘT TÌM CHỌN KỲ BILL */}
             <div className="lg:col-span-5 xl:col-span-4 space-y-4 print:hidden">
               <Card className="p-4 border border-slate-200/80 shadow-2xs space-y-3 bg-white rounded-xl">
                 <div className="flex justify-between items-center">
@@ -816,15 +831,14 @@ export default function StudentDetail() {
               </Card>
             </div>
 
-            {/* CỘT PHẢI: XEM TRƯỚC VÀ IN HÓA ĐƠN CHUẨN (PRINT AREA) */}
+            {/* KHU VỰC HIỂN THỊ VÀ IN (CÓ THÊM CLASS printable-bill) */}
             <div className="lg:col-span-7 xl:col-span-8 flex justify-center">
               {displayBill && (
                 <Card
                   ref={billRef as any}
-                  className="w-full p-6 md:p-8 border rounded-2xl shadow-sm print:shadow-none print:border-none print:p-0 bg-white text-slate-800 space-y-6" 
+                  className="printable-bill w-full p-6 md:p-8 border rounded-2xl shadow-sm bg-white text-slate-800 space-y-6" 
                   style={{ borderTop: `8px solid ${accent}` }}
                 >
-                  {/* Bill Header */}
                   <div className="flex items-start justify-between border-b pb-4">
                     <div>
                       <div className="text-xl font-black tracking-wider uppercase" style={{ color: accent }}>
@@ -840,7 +854,6 @@ export default function StudentDetail() {
                     </div>
                   </div>
 
-                  {/* Billed Info Grid */}
                   <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl text-xs border border-slate-100">
                     <div>
                       <div className="text-[10px] uppercase font-bold text-slate-400">HỌC SINH RECEIVER</div>
@@ -873,7 +886,6 @@ export default function StudentDetail() {
                     </div>
                   </div>
 
-                  {/* Note */}
                   {displayBill.cycle_type === "monthly" && (
                     <div className="print:hidden">
                       <Label className="text-xs font-bold mb-1 block text-slate-600">Ghi chú hóa đơn</Label>
@@ -887,7 +899,6 @@ export default function StudentDetail() {
                     </div>
                   )}
 
-                  {/* Danh sách điểm danh chi tiết */}
                   {displayBill.attendances?.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -949,7 +960,6 @@ export default function StudentDetail() {
                     </div>
                   )}
 
-                  {/* Tổng cộng */}
                   <div className="flex justify-end pt-2">
                     <div className="w-full sm:w-64 space-y-1.5 p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs">
                       <div className="flex justify-between text-slate-500 font-medium">
@@ -963,7 +973,7 @@ export default function StudentDetail() {
                     </div>
                   </div>
 
-                  {/* VietQR Payment Card */}
+                  {/* VietQR */}
                   <div className="border-t pt-4">
                     <div className="text-[10px] uppercase font-bold text-slate-400 mb-2">THANH TOÁN CHUYỂN KHOẢN (VIETQR)</div>
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -987,7 +997,6 @@ export default function StudentDetail() {
                     </div>
                   </div>
 
-                  {/* Trạng thái & Nút tác vụ thanh toán */}
                   <div className="print:hidden pt-2 flex flex-col items-end gap-2">
                     {displayBill.cycle_type === "combined" ? (
                       <Button onClick={paySelected} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-8">
@@ -1001,7 +1010,6 @@ export default function StudentDetail() {
                     )}
                   </div>
 
-                  {/* Chân trang Lời cảm ơn */}
                   <div className="border-t pt-4">
                     <Label className="text-xs font-bold print:hidden mb-1 block text-slate-500">Lời cảm ơn / Chân trang</Label>
                     <Textarea
