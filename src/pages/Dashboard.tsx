@@ -293,7 +293,7 @@ export default function Dashboard() {
   const paymentsCount = filteredPayments.length;
   const avgPayment = paymentsCount > 0 ? totalRevenue / paymentsCount : 0;
 
- // ==================== XỬ LÝ UPCOMING BILLS & PENDING REVENUE ====================
+// ==================== XỬ LÝ UPCOMING BILLS & PENDING REVENUE ====================
   const upcoming: { studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
   const today = new Date();
   let pendingTotal = 0;
@@ -360,6 +360,7 @@ export default function Dashboard() {
       }
     }
   });
+  // =================================================================================
   // =================================================================================
 
   const visibleUpcoming = upcoming.filter((u) =>
