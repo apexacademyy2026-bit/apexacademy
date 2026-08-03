@@ -20,7 +20,7 @@ import {
   UserCheck
 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
-import { useStudents, useClasses, usePayments, useEvents, useEnrollments } from "@/hooks/useData";
+import { useStudents, useClasses, usePayments, useEvents, useEnrollments, useClassSchedules } from "@/hooks/useData";
 import { formatVND, computeMonthlyCycles } from "@/lib/format";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,7 +36,12 @@ export default function Dashboard() {
   const classes = useClasses();
   const payments = usePayments();
   const events = useEvents();
-  const enrollments = useEnrollments(); // ➕ Thêm enrollments
+  const enrollments = useEnrollments();
+  // Lịch cố định hàng tuần — cần để tổng hợp "buổi ảo" giống hệt Schedule.tsx
+  // (buổi có lịch cố định nhưng chưa từng có dòng schedule_events riêng
+  // cho ngày hôm nay). Thiếu bảng này là lý do widget điểm danh trước đây
+  // luôn báo "không có ca học nào" dù Schedule.tsx vẫn hiện đúng buổi học.
+  const schedules = useClassSchedules();
   
   const attendanceAll = useQuery({
     queryKey: ["attendance", "all"],
@@ -83,15 +88,41 @@ export default function Dashboard() {
   const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("unpaid");
 
   const todayStr = useMemo(() => toISO(new Date()), []);
+
+  // Buổi học "thật" (đã có dòng schedule_events) diễn ra hôm nay, cộng thêm
+  // buổi "ảo" suy ra từ lịch cố định hàng tuần cho lớp nào chưa có dòng
+  // thật cho riêng hôm nay — đúng cách Schedule.tsx đang làm. Việc kiểm
+  // tra "đã có dòng thật chưa" phải tính trên TOÀN BỘ dòng thật (kể cả đã
+  // bị huỷ), nếu không sẽ vô tình hiện lại buổi mà giáo viên đã chủ động
+  // huỷ hôm nay; chỉ lọc bỏ "__cancelled__" ở bước hiển thị cuối cùng.
   const todayEvents = useMemo(() => {
-    return (events.data || []).filter((e: any) => {
+    const allTodayRealEvents = (events.data || []).filter((e: any) => {
       if (!e.event_date) return false;
-      // Cắt 10 ký tự đầu (YYYY-MM-DD) để so sánh trực tiếp hoặc qua hàm toISO
       const rawDateStr = String(e.event_date).slice(0, 10);
       const formattedDate = toISO(e.event_date);
       return rawDateStr === todayStr || formattedDate === todayStr;
     });
-  }, [events.data, todayStr]);
+
+    const todayDow = new Date().getDay();
+    const virtualTodayEvents = (schedules.data || [])
+      .filter((sched: any) => sched.day_of_week === todayDow)
+      .filter((sched: any) => !allTodayRealEvents.some((e: any) => e.class_id === sched.class_id))
+      .map((sched: any) => {
+        const cls = (classes.data || []).find((c: any) => c.id === sched.class_id);
+        return {
+          id: `virtual-${sched.id}-${todayStr}`,
+          class_id: sched.class_id,
+          event_date: todayStr,
+          start_time: sched.start_time,
+          end_time: sched.end_time,
+          virtual: true,
+          title: cls?.name || "Lớp học",
+        };
+      });
+
+    const merged: any[] = [...allTodayRealEvents, ...virtualTodayEvents];
+    return merged.filter((e: any) => e.notes !== "__cancelled__");
+  }, [events.data, schedules.data, classes.data, todayStr]);
 
   useEffect(() => {
     if (todayEvents.length > 0 && !selectedEventId) {
@@ -136,31 +167,54 @@ export default function Dashboard() {
       [studentId]: !prev[studentId]
     }));
   };
-const handleSaveAttendance = async () => {
-  if (!activeEvent || !user) return;
-  setSavingAttendance(true);
-  try {
-    const updates = Object.entries(attendanceMap).map(([studentId, present]) => ({
-      user_id: user.id,
-      event_id: activeEvent.id,
-      student_id: studentId,
-      present
-    }));
 
-    const { error } = await supabase
-      .from("attendance")
-      .upsert(updates as any, { onConflict: "event_id,student_id" });
+  const handleSaveAttendance = async () => {
+    if (!activeEvent || !user) return;
+    setSavingAttendance(true);
+    try {
+      let targetEventId = activeEvent.id;
 
-    if (error) throw error;
+      // Buổi "ảo" chưa từng có dòng schedule_events thật — bảng attendance
+      // cần event_id trỏ tới một dòng có thật, nên phải tạo trước (giống
+      // hệt cách AttendanceDialog trong Schedule.tsx xử lý buổi ảo/Google).
+      if (activeEvent.virtual) {
+        const { data: newEvent, error: insertError } = await supabase
+          .from("schedule_events")
+          .insert({
+            user_id: user.id,
+            class_id: activeEvent.class_id,
+            event_date: activeEvent.event_date,
+            start_time: activeEvent.start_time,
+            end_time: activeEvent.end_time,
+          })
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        targetEventId = newEvent.id;
+      }
 
-    toast.success(lang === "vi" ? "Đã cập nhật điểm danh thành công!" : "Attendance saved successfully!");
-    queryClient.invalidateQueries({ queryKey: ["attendance"] });
-  } catch (err: any) {
-    toast.error(err.message || "Lỗi khi lưu điểm danh");
-  } finally {
-    setSavingAttendance(false);
-  }
-};
+      const updates = Object.entries(attendanceMap).map(([studentId, present]) => ({
+        user_id: user.id,
+        event_id: targetEventId,
+        student_id: studentId,
+        present
+      }));
+
+      const { error } = await supabase
+        .from("attendance")
+        .upsert(updates as any, { onConflict: "event_id,student_id" });
+
+      if (error) throw error;
+
+      toast.success(lang === "vi" ? "Đã cập nhật điểm danh thành công!" : "Attendance saved successfully!");
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["events"] });
+    } catch (err: any) {
+      toast.error(err.message || "Lỗi khi lưu điểm danh");
+    } finally {
+      setSavingAttendance(false);
+    }
+  };
 
   const applyPreset = (key: PresetKey) => {
     const today = new Date();
