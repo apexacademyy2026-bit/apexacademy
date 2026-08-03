@@ -63,9 +63,16 @@ export default function Dashboard() {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth() + 1, 0);
   };
-  const toISO = (d: Date) => {
-    const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-    return tz.toISOString().slice(0, 10);
+// Hàm chuyển đổi ngày chuẩn theo giờ địa phương (local time)
+  const toISO = (d: Date | string) => {
+    if (!d) return "";
+    const dateObj = typeof d === "string" ? new Date(d) : d;
+    if (isNaN(dateObj.getTime())) return "";
+    
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+    const day = String(dateObj.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
   type PresetKey = "thisMonth" | "lastMonth" | "last3" | "thisYear" | "custom";
@@ -78,8 +85,11 @@ export default function Dashboard() {
   const todayStr = useMemo(() => toISO(new Date()), []);
   const todayEvents = useMemo(() => {
     return (events.data || []).filter((e: any) => {
-      const eDate = e.event_date ? toISO(new Date(e.event_date)) : "";
-      return eDate === todayStr;
+      if (!e.event_date) return false;
+      // Cắt 10 ký tự đầu (YYYY-MM-DD) để so sánh trực tiếp hoặc qua hàm toISO
+      const rawDateStr = String(e.event_date).slice(0, 10);
+      const formattedDate = toISO(e.event_date);
+      return rawDateStr === todayStr || formattedDate === todayStr;
     });
   }, [events.data, todayStr]);
 
