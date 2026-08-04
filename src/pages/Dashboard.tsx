@@ -259,21 +259,22 @@ export default function Dashboard() {
 const studentList = students?.data || students || [];
 
 // 2. Tính tổng học phí
+// Tính tổng học phí tất cả học sinh cho kỳ sắp tới
 const totalUpcomingFee = useMemo(() => {
-  if (!Array.isArray(studentList)) return 0;
+  const list = students?.data || [];
+  if (!Array.isArray(list)) return 0;
 
-  return studentList.reduce((sum: number, student: any) => {
-    // Thử tất cả các tên cột có thể có trong CSDL của bạn:
+  return list.reduce((sum: number, student: any) => {
     const fee = Number(
+      student?.fee_per_month || 
+      student?.fee_per_session || 
       student?.tuition_fee || 
       student?.fee || 
-      student?.tuition || 
-      student?.price || 
       0
     );
     return sum + fee;
   }, 0);
-}, [studentList]);
+}, [students.data]);
 
   const inRange = (iso: string | Date) => {
     const d = new Date(iso);
@@ -616,6 +617,7 @@ const totalUpcomingFee = useMemo(() => {
         
 
 {/* YÊU CẦU 2: Tổng học phí kỳ sắp tới kèm nút Chi tiết ↗ xem danh sách */}
+{/* Thẻ hiển thị tổng học phí ở ngoài Dashboard */}
 <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 hover:border-amber-200">
   <div className="space-y-1">
     <span className="text-xs font-bold text-slate-400">
@@ -625,8 +627,8 @@ const totalUpcomingFee = useMemo(() => {
       <Skeleton className="h-8 w-20 mt-1" />
     ) : (
       <h3 className="text-2xl font-black text-slate-950 mt-0.5">
-  {formatVND(totalUpcomingFee)}
-</h3>
+        {formatVND(totalUpcomingFee)}
+      </h3>
     )}
     <button 
       onClick={() => setShowCollectedModal(true)}
@@ -765,6 +767,7 @@ const totalUpcomingFee = useMemo(() => {
       </Card>
 
      {/* Modal danh sách học phí kỳ sắp tới */}
+{/* Modal danh sách học phí kỳ sắp tới */}
 <Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
   <DialogContent className="rounded-3xl max-w-md">
     <DialogHeader>
@@ -774,15 +777,21 @@ const totalUpcomingFee = useMemo(() => {
     </DialogHeader>
 
     <div className="space-y-3 my-2 max-h-[60vh] overflow-y-auto pr-1">
-  {students.data && students.data.length > 0 ? (
-    students.data.map((student: any) => {
-      // Lấy học phí chính xác từ cột fee_per_month hoặc fee_per_session
-      const fee = Number(student?.fee_per_month || student?.fee_per_session || 0);
+      {students.data && students.data.length > 0 ? (
+        students.data.map((student: any) => {
+          const fee = Number(
+            student?.fee_per_month || 
+            student?.fee_per_session || 
+            student?.tuition_fee || 
+            student?.fee || 
+            0
+          );
 
-      return (
-        <div key={student.id}>
+          return (
+            <div 
+              key={student.id} 
               className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-            
+            >
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
                   {student.name?.slice(0, 2).toUpperCase()}

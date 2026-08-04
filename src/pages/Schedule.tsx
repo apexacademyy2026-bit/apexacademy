@@ -627,16 +627,17 @@ export default function Schedule() {
                               key={ev.id}
                               data-event
                               className="absolute rounded-xl p-1.5 text-xs text-left overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between"
-                              style={{
-                                top,
-                                height,
-                                left: `calc(${col * widthPct}% + 2px)`,
-                                width: `calc(${widthPct}% - 4px)`,
-                                backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
-                                borderLeft: `3px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`,
-                                borderStyle: ev.virtual ? "dashed" : "solid",
-                                color: "#0f172a",
-                              }}
+                             style={{
+  top,
+  height,
+  left: `calc(${col * widthPct}% + 2px)`,
+  width: `calc(${widthPct}% - 4px)`,
+  // Tăng độ đậm nền: dùng mã màu gốc đầy đủ (đổi từ + "20" nhạt sang đậm đà + "35" hoặc đậm hơn)
+  backgroundColor: isGoogleEvent ? "#dbeafe" : (cls?.color ? cls.color + "35" : "#3b82f635"),
+  borderLeft: `4px solid ${isGoogleEvent ? "#2563eb" : (cls?.color || "#2563eb")}`,
+  borderStyle: ev.virtual ? "dashed" : "solid",
+  color: "#0f172a",
+}}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (ev.source === "google") {
@@ -651,15 +652,15 @@ export default function Schedule() {
                                 }
                               }}
                             >
-                              <div>
-                                <div className="font-black text-slate-900 truncate text-[11px]">
-                                  {isGoogleEvent ? ev.title : cls?.name || ev.title}
-                                </div>
-                                <div className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5 mt-0.5">
-                                  <Clock className="h-2.5 w-2.5 text-blue-500 shrink-0 print-hide" />
-                                  <span>{ev.start_time.slice(0,5)} - {ev.end_time.slice(0,5)}</span>
-                                </div>
-                              </div>
+                             <div>
+  <div className="font-black text-slate-950 truncate text-[11.5px] tracking-tight">
+    {isGoogleEvent ? ev.title : cls?.name || ev.title}
+  </div>
+  <div className="text-[9.5px] font-bold text-slate-700 flex items-center gap-0.5 mt-0.5">
+    <Clock className="h-2.5 w-2.5 text-blue-600 shrink-0 print-hide" />
+    <span>{ev.start_time.slice(0,5)} - {ev.end_time.slice(0,5)}</span>
+  </div>
+</div>
                             </button>
                           );
                         })}
@@ -708,10 +709,10 @@ export default function Schedule() {
                           data-event
                           className="text-[9px] font-bold p-1 rounded-lg truncate hover:opacity-80 transition-opacity"
                           style={{
-                            backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
-                            color: "#0f172a",
-                            borderLeft: `2.5px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`
-                          }}
+  backgroundColor: isGoogleEvent ? "#dbeafe" : (cls?.color ? cls.color + "35" : "#3b82f635"),
+  color: "#0f172a",
+  borderLeft: `3px solid ${isGoogleEvent ? "#2563eb" : (cls?.color || "#2563eb")}`
+}}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (ev.source === "google") {
