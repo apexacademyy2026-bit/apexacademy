@@ -1,23 +1,26 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Users, 
   GraduationCap, 
   Wallet, 
-  BellRing, 
-  ArrowUpRight, 
   CalendarClock, 
   TrendingUp, 
   Hourglass, 
   Filter,
   CheckCircle2,
   CalendarCheck2,
-  UserCheck
+  UserCheck,
+  ExternalLink
 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import { useStudents, useClasses, usePayments, useEvents, useEnrollments, useClassSchedules } from "@/hooks/useData";
@@ -37,10 +40,6 @@ export default function Dashboard() {
   const payments = usePayments();
   const events = useEvents();
   const enrollments = useEnrollments();
-  // Lịch cố định hàng tuần — cần để tổng hợp "buổi ảo" giống hệt Schedule.tsx
-  // (buổi có lịch cố định nhưng chưa từng có dòng schedule_events riêng
-  // cho ngày hôm nay). Thiếu bảng này là lý do widget điểm danh trước đây
-  // luôn báo "không có ca học nào" dù Schedule.tsx vẫn hiện đúng buổi học.
   const schedules = useClassSchedules();
   
   const attendanceAll = useQuery({
@@ -52,9 +51,9 @@ export default function Dashboard() {
     },
   });
 
-  const [selectedEventId, setSelectedEventId] = useState<string>("");
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, boolean>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, Record<string, boolean>>>({});
   const [savingAttendance, setSavingAttendance] = useState(false);
+  const [showCollectedModal, setShowCollectedModal] = useState(false);
 
   useEffect(() => {
     document.title = `${t.dashboard} — ${t.appName}`;
@@ -68,7 +67,7 @@ export default function Dashboard() {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth() + 1, 0);
   };
-// Hàm chuyển đổi ngày chuẩn theo giờ địa phương (local time)
+
   const toISO = (d: Date | string) => {
     if (!d) return "";
     const dateObj = typeof d === "string" ? new Date(d) : d;
@@ -86,15 +85,9 @@ export default function Dashboard() {
   const [toDate, setToDate] = useState<string>(toISO(endOfThisMonth()));
   const [loading, setLoading] = useState(false);
   const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("unpaid");
-
   const todayStr = useMemo(() => toISO(new Date()), []);
 
-  // Buổi học "thật" (đã có dòng schedule_events) diễn ra hôm nay, cộng thêm
-  // buổi "ảo" suy ra từ lịch cố định hàng tuần cho lớp nào chưa có dòng
-  // thật cho riêng hôm nay — đúng cách Schedule.tsx đang làm. Việc kiểm
-  // tra "đã có dòng thật chưa" phải tính trên TOÀN BỘ dòng thật (kể cả đã
-  // bị huỷ), nếu không sẽ vô tình hiện lại buổi mà giáo viên đã chủ động
-  // huỷ hôm nay; chỉ lọc bỏ "__cancelled__" ở bước hiển thị cuối cùng.
+  // Lấy toàn bộ các sự kiện hôm nay
   const todayEvents = useMemo(() => {
     const allTodayRealEvents = (events.data || []).filter((e: any) => {
       if (!e.event_date) return false;
@@ -102,7 +95,6 @@ export default function Dashboard() {
       const formattedDate = toISO(e.event_date);
       return rawDateStr === todayStr || formattedDate === todayStr;
     });
-
     const todayDow = new Date().getDay();
     const virtualTodayEvents = (schedules.data || [])
       .filter((sched: any) => sched.day_of_week === todayDow)
@@ -119,94 +111,110 @@ export default function Dashboard() {
           title: cls?.name || "Lớp học",
         };
       });
-
     const merged: any[] = [...allTodayRealEvents, ...virtualTodayEvents];
     return merged.filter((e: any) => e.notes !== "__cancelled__");
   }, [events.data, schedules.data, classes.data, todayStr]);
 
-  useEffect(() => {
-    if (todayEvents.length > 0 && !selectedEventId) {
-      setSelectedEventId(todayEvents[0].id);
-    }
-  }, [todayEvents, selectedEventId]);
+  // YÊU CẦU 1: Gom nhóm ca học hôm nay theo Khung giờ & Lớp
+  const todayShiftGroups = useMemo(() => {
+    if (!todayEvents.length || !students.data) return [];
 
-  const activeEvent = useMemo(() => {
-    return todayEvents.find((e: any) => e.id === selectedEventId) || todayEvents[0];
-  }, [todayEvents, selectedEventId]);
+    return todayEvents.map((ev: any) => {
+      const cls = (classes.data || []).find((c: any) => String(c.id) === String(ev.class_id));
+      const enrolledStudentIds = new Set(
+        (enrollments.data || [])
+          .filter((e: any) => String(e.class_id) === String(ev.class_id))
+          .map((e: any) => String(e.student_id))
+      );
+      const shiftStudents = students.data.filter((s: any) => enrolledStudentIds.has(String(s.id)));
+      
+      const timeLabel = ev.start_time 
+        ? `${ev.start_time.slice(0, 5)}${ev.end_time ? ` - ${ev.end_time.slice(0, 5)}` : ''}`
+        : "Cả ngày";
 
-  // ✅ SỬA ĐOẠN NÀY: Lọc danh sách học sinh chuẩn từ bảng enrollments
-  const classStudents = useMemo(() => {
-    if (!activeEvent || !students.data) return [];
-    if (!activeEvent.class_id) return students.data;
-
-    // Tìm tất cả student_id đã đăng ký lớp activeEvent.class_id
-    const enrolledStudentIds = new Set(
-      (enrollments.data || [])
-        .filter((e: any) => String(e.class_id) === String(activeEvent.class_id))
-        .map((e: any) => String(e.student_id))
-    );
-
-    return students.data.filter((s: any) => enrolledStudentIds.has(String(s.id)));
-  }, [activeEvent, students.data, enrollments.data]);
-
-  useEffect(() => {
-    if (!activeEvent || !attendanceAll.data) return;
-    const currentAtt = attendanceAll.data.filter((a: any) => String(a.event_id) === String(activeEvent.id));
-    const map: Record<string, boolean> = {};
-    
-    classStudents.forEach((s: any) => {
-      const found = currentAtt.find((a: any) => String(a.student_id) === String(s.id));
-      map[s.id] = found ? !!found.present : false;
+      return {
+        event: ev,
+        className: ev.title || cls?.name || "Lớp học",
+        timeLabel,
+        students: shiftStudents
+      };
     });
-    setAttendanceMap(map);
-  }, [activeEvent, attendanceAll.data, classStudents]);
+  }, [todayEvents, classes.data, students.data, enrollments.data]);
 
-  const toggleStudentAttendance = (studentId: string) => {
+  // Đồng bộ state điểm danh cho tất cả ca học
+  useEffect(() => {
+    if (!todayEvents.length || !attendanceAll.data) return;
+    const initialMap: Record<string, Record<string, boolean>> = {};
+
+    todayShiftGroups.forEach(group => {
+      const evId = group.event.id;
+      initialMap[evId] = {};
+      const currentAtt = attendanceAll.data.filter((a: any) => String(a.event_id) === String(evId));
+
+      group.students.forEach((s: any) => {
+        const found = currentAtt.find((a: any) => String(a.student_id) === String(s.id));
+        initialMap[evId][s.id] = found ? !!found.present : false;
+      });
+    });
+
+    setAttendanceMap(initialMap);
+  }, [todayShiftGroups, attendanceAll.data]);
+
+  const toggleStudentAttendance = (eventId: string, studentId: string) => {
     setAttendanceMap(prev => ({
       ...prev,
-      [studentId]: !prev[studentId]
+      [eventId]: {
+        ...(prev[eventId] || {}),
+        [studentId]: !prev[eventId]?.[studentId]
+      }
     }));
   };
 
-  const handleSaveAttendance = async () => {
-    if (!activeEvent || !user) return;
+  const handleSaveAllAttendance = async () => {
+    if (!user || todayShiftGroups.length === 0) return;
     setSavingAttendance(true);
     try {
-      let targetEventId = activeEvent.id;
+      const allUpdates: any[] = [];
 
-      // Buổi "ảo" chưa từng có dòng schedule_events thật — bảng attendance
-      // cần event_id trỏ tới một dòng có thật, nên phải tạo trước (giống
-      // hệt cách AttendanceDialog trong Schedule.tsx xử lý buổi ảo/Google).
-      if (activeEvent.virtual) {
-        const { data: newEvent, error: insertError } = await supabase
-          .from("schedule_events")
-          .insert({
+      for (const group of todayShiftGroups) {
+        let targetEventId = group.event.id;
+        
+        // Tạo sự kiện thật nếu là buổi ảo
+        if (group.event.virtual) {
+          const { data: newEvent, error: insertError } = await supabase
+            .from("schedule_events")
+            .insert({
+              user_id: user.id,
+              class_id: group.event.class_id,
+              event_date: group.event.event_date,
+              start_time: group.event.start_time,
+              end_time: group.event.end_time,
+            })
+            .select()
+            .single();
+          if (insertError) throw insertError;
+          targetEventId = newEvent.id;
+        }
+
+        const shiftAttMap = attendanceMap[group.event.id] || {};
+        Object.entries(shiftAttMap).forEach(([studentId, present]) => {
+          allUpdates.push({
             user_id: user.id,
-            class_id: activeEvent.class_id,
-            event_date: activeEvent.event_date,
-            start_time: activeEvent.start_time,
-            end_time: activeEvent.end_time,
-          })
-          .select()
-          .single();
-        if (insertError) throw insertError;
-        targetEventId = newEvent.id;
+            event_id: targetEventId,
+            student_id: studentId,
+            present
+          });
+        });
       }
 
-      const updates = Object.entries(attendanceMap).map(([studentId, present]) => ({
-        user_id: user.id,
-        event_id: targetEventId,
-        student_id: studentId,
-        present
-      }));
+      if (allUpdates.length > 0) {
+        const { error } = await supabase
+          .from("attendance")
+          .upsert(allUpdates, { onConflict: "event_id,student_id" });
+        if (error) throw error;
+      }
 
-      const { error } = await supabase
-        .from("attendance")
-        .upsert(updates as any, { onConflict: "event_id,student_id" });
-
-      if (error) throw error;
-
-      toast.success(lang === "vi" ? "Đã cập nhật điểm danh thành công!" : "Attendance saved successfully!");
+      toast.success(lang === "vi" ? "Đã lưu điểm danh tất cả các ca học!" : "Attendance saved for all shifts!");
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       queryClient.invalidateQueries({ queryKey: ["events"] });
     } catch (err: any) {
@@ -262,10 +270,12 @@ export default function Dashboard() {
     () => (payments.data || []).filter((p: any) => inRange(p.paid_at)),
     [payments.data, fromDate, toDate],
   );
+
   const filteredEvents = useMemo(
     () => (events.data || []).filter((e: any) => inRange(e.event_date)),
     [events.data, fromDate, toDate],
   );
+
   const filteredAttendance = useMemo(() => {
     const evIds = new Set(filteredEvents.map((e: any) => e.id));
     return (attendanceAll.data || []).filter((a: any) => evIds.has(a.event_id) && a.present);
@@ -293,21 +303,17 @@ export default function Dashboard() {
   const paymentsCount = filteredPayments.length;
   const avgPayment = paymentsCount > 0 ? totalRevenue / paymentsCount : 0;
 
-// ==================== XỬ LÝ UPCOMING BILLS (HIỆN THEO TỪNG KỲ HÓA ĐƠN) ====================
-  const upcoming: { studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
+  // Lấy danh sách hóa đơn
+  const rawUpcoming: { studentId: string; studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
   const today = new Date();
   let pendingTotal = 0;
-
   const evList = events.data || [];
   const allPresentAttendance = (attendanceAll.data || []).filter((a: any) => a.present);
   const payList = payments.data || [];
 
   (students.data || []).forEach((s: any) => {
-    // Lấy danh sách tất cả các tháng/chu kỳ có phát sinh học phí của học sinh
     const cycles = computeMonthlyCycles(s.start_date || "2026-04-01", today);
-
     cycles.forEach((c) => {
-      // 1. Kiểm tra xem chu kỳ/tháng này có buổi điểm danh nào không
       const attInCycle = allPresentAttendance.filter((a: any) => {
         if (a.student_id !== s.id) return false;
         const ev = evList.find((e: any) => e.id === a.event_id);
@@ -316,15 +322,12 @@ export default function Dashboard() {
         return evDate >= c.start && evDate <= c.end;
       });
 
-      // Nếu tháng này có điểm danh
       if (attInCycle.length > 0) {
-        // Tính tiền của tháng này (lấy theo số buổi x đơn giá hoặc fee_per_month)
         const cycleAmount = attInCycle.reduce((sum: number, a: any) => {
           const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.fee_per_month || 0);
           return sum + fee;
         }, 0);
 
-        // 2. Kiểm tra xem kỳ này ĐÃ ĐÓNG TIỀN CHƯA (khớp theo cycle_label, ví dụ: KhánhNgọc_Tháng7_2026)
         const isPaid = payList.some((p: any) => {
           return p.student_id === s.id && (p.cycle_label === c.label || p.cycle_label?.includes(c.label));
         });
@@ -333,25 +336,53 @@ export default function Dashboard() {
           pendingTotal += cycleAmount;
         }
 
-        // Đẩy kỳ này vào danh sách Upcoming Bills
-        upcoming.push({
+        rawUpcoming.push({
+          studentId: s.id,
           studentName: s.name,
           due: c.end,
-          label: c.label, // Tên kỳ: ví dụ KhánhNgọc_Tháng6_2026
+          label: c.label,
           amount: cycleAmount,
           paid: isPaid,
         });
       }
     });
   });
-  // =================================================================================
 
+  // YÊU CẦU 3: Gom nhóm (Group) Upcoming Bills theo từng Học sinh
+  const groupedUpcoming = useMemo(() => {
+    const filtered = rawUpcoming.filter((u) =>
+      payFilter === "all" ? true : payFilter === "paid" ? u.paid : !u.paid
+    );
 
+    const map: Record<string, {
+      studentId: string;
+      studentName: string;
+      totalAmount: number;
+      cycles: string[];
+      isPaid: boolean;
+      latestDue: Date;
+    }> = {};
 
+    filtered.forEach((item) => {
+      if (!map[item.studentId]) {
+        map[item.studentId] = {
+          studentId: item.studentId,
+          studentName: item.studentName,
+          totalAmount: 0,
+          cycles: [],
+          isPaid: item.paid,
+          latestDue: item.due,
+        };
+      }
+      map[item.studentId].totalAmount += item.amount;
+      map[item.studentId].cycles.push(item.label);
+      if (item.due > map[item.studentId].latestDue) {
+        map[item.studentId].latestDue = item.due;
+      }
+    });
 
-  const visibleUpcoming = upcoming.filter((u) =>
-    payFilter === "all" ? true : payFilter === "paid" ? u.paid : !u.paid,
-  );
+    return Object.values(map);
+  }, [rawUpcoming, payFilter]);
 
   const periodLabel =
     preset === "thisMonth"
@@ -363,57 +394,6 @@ export default function Dashboard() {
       : preset === "thisYear"
       ? lang === "vi" ? "Năm nay" : "This year"
       : lang === "vi" ? "Tuỳ chỉnh" : "Custom";
-
-  const stats = [
-    {
-      label: lang === "vi" ? "Học sinh hoạt động" : "Active students",
-      value: activeStudents,
-      icon: Users,
-      to: "/students",
-      color: "from-blue-500/10 to-indigo-500/10 text-blue-600 hover:border-blue-200",
-      iconColor: "text-blue-600"
-    },
-    {
-      label: lang === "vi" ? "Lớp có hoạt động" : "Active classes",
-      value: activeClasses,
-      icon: GraduationCap,
-      to: "/classes",
-      color: "from-emerald-500/10 to-teal-500/10 text-emerald-600 hover:border-emerald-200",
-      iconColor: "text-emerald-600"
-    },
-    {
-      label: lang === "vi" ? "Học phí đã thu trong kỳ" : "Collected in period",
-      value: formatVND(totalRevenue),
-      icon: Wallet,
-      to: "/students",
-      color: "from-amber-500/10 to-orange-500/10 text-amber-600 hover:border-amber-200",
-      iconColor: "text-amber-600"
-    },
-    {
-      label: lang === "vi" ? "Số lần thanh toán" : "Payments count",
-      value: paymentsCount,
-      icon: CalendarClock,
-      to: "/students",
-      color: "from-pink-500/10 to-rose-500/10 text-pink-600 hover:border-pink-200",
-      iconColor: "text-pink-600"
-    },
-    {
-      label: lang === "vi" ? "Trung bình / lần thu" : "Average / payment",
-      value: formatVND(avgPayment),
-      icon: TrendingUp,
-      to: "/students",
-      color: "from-purple-500/10 to-indigo-500/10 text-purple-600 hover:border-purple-200",
-      iconColor: "text-purple-600"
-    },
-    {
-      label: lang === "vi" ? "Học phí dự kiến trong kỳ" : "Upcoming in period",
-      value: formatVND(pendingTotal),
-      icon: Hourglass,
-      to: "/students",
-      color: "is-gradient-accent",
-      iconColor: "text-white"
-    },
-  ];
 
   return (
     <div className="space-y-7 max-w-6xl pb-10">
@@ -433,7 +413,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* 🌟 WIDGET ĐIỂM DANH NHANH HÔM NAY */}
+      {/* 🌟 YÊU CẦU 1: WIDGET ĐIỂM DANH HIỂN THỊ TẤT CẢ CA HỌC NGHĨA LÀ KHÔNG CẦN DROPDOWN */}
       <Card className="p-6 border border-blue-100 shadow-sm rounded-2xl bg-white space-y-4 relative overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
@@ -448,93 +428,90 @@ export default function Dashboard() {
                 </span>
               </h3>
               <p className="text-[11px] font-medium text-slate-400">
-                {lang === "vi" ? "Tích chọn học sinh có mặt và bấm lưu trực tiếp tại Dashboard" : "Mark present students and save directly"}
+                {lang === "vi" ? "Tích chọn học sinh có mặt cho tất cả ca học hôm nay" : "Mark present students for all shifts today"}
               </p>
             </div>
           </div>
-
-          {todayEvents.length > 1 && (
-            <select
-              value={selectedEventId}
-              onChange={(e) => setSelectedEventId(e.target.value)}
-              className="h-9 px-3 rounded-xl border border-slate-200 text-xs font-bold bg-slate-50 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              {todayEvents.map((ev: any) => (
-                <option key={ev.id} value={ev.id}>
-                  {ev.title || ev.notes || "Buổi học"} ({ev.start_time || "Cả ngày"})
-                </option>
-              ))}
-            </select>
-          )}
         </div>
 
-        {todayEvents.length === 0 ? (
+        {todayShiftGroups.length === 0 ? (
           <div className="text-xs text-slate-400 italic text-center py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center gap-2">
             <CalendarCheck2 className="h-4 w-4 text-slate-400" />
             {lang === "vi" ? "Hôm nay không có ca học nào!" : "No scheduled classes for today!"}
           </div>
         ) : (
-          <div className="space-y-4">
-            {activeEvent && (
-              <div className="flex items-center justify-between text-xs font-bold text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                <span>📘 {(activeEvent as any).title || activeEvent.notes || "Buổi học chính"}</span>
-                <span className="text-slate-400 font-medium">Sĩ số: {classStudents.length} học sinh</span>
-              </div>
-            )}
+          <div className="space-y-6">
+            {todayShiftGroups.map((group) => {
+              const evId = group.event.id;
+              const shiftMap = attendanceMap[evId] || {};
 
-            {classStudents.length === 0 ? (
-              <p className="text-xs text-slate-400 italic text-center py-3">Chưa có danh sách học sinh cho lớp này.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[220px] overflow-y-auto pr-1">
-                {classStudents.map((student: any) => {
-                  const isPresent = !!attendanceMap[student.id];
-                  return (
-                    <div
-                      key={student.id}
-                      onClick={() => toggleStudentAttendance(student.id)}
-                      className={cn(
-                        "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all select-none",
-                        isPresent
-                          ? "bg-emerald-50/60 border-emerald-200/80 shadow-xs"
-                          : "bg-slate-50/50 border-slate-100 hover:bg-slate-50"
-                      )}
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <div className={cn(
-                          "h-7 w-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0",
-                          isPresent ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"
-                        )}>
-                          {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
-                        </div>
-                        <span className={cn("text-xs font-bold truncate", isPresent ? "text-emerald-950" : "text-slate-700")}>
-                          {student.name}
-                        </span>
-                      </div>
-
-                      <Checkbox
-                        checked={isPresent}
-                        onCheckedChange={() => toggleStudentAttendance(student.id)}
-                        className={cn(
-                          "rounded-md h-5 w-5 border-slate-300",
-                          isPresent && "bg-emerald-600 border-emerald-600 text-white"
-                        )}
-                      />
+              return (
+                <div key={evId} className="space-y-3 bg-slate-50/50 p-3.5 rounded-2xl border border-slate-100">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700 bg-white p-2.5 rounded-xl border border-slate-100 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600 font-extrabold">📘 {group.className}</span>
+                      <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono">
+                        🕒 {group.timeLabel}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <span className="text-slate-400 font-medium text-[11px]">Sĩ số: {group.students.length} học sinh</span>
+                  </div>
+
+                  {group.students.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-2">Chưa có danh sách học sinh cho ca này.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {group.students.map((student: any) => {
+                        const isPresent = !!shiftMap[student.id];
+                        return (
+                          <div
+                            key={student.id}
+                            onClick={() => toggleStudentAttendance(evId, student.id)}
+                            className={cn(
+                              "flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all select-none bg-white",
+                              isPresent
+                                ? "bg-emerald-50/80 border-emerald-300 shadow-xs"
+                                : "border-slate-100 hover:bg-slate-50"
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 truncate">
+                              <div className={cn(
+                                "h-7 w-7 rounded-lg text-xs font-bold flex items-center justify-center shrink-0",
+                                isPresent ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"
+                              )}>
+                                {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+                              </div>
+                              <span className={cn("text-xs font-bold truncate", isPresent ? "text-emerald-950" : "text-slate-700")}>
+                                {student.name}
+                              </span>
+                            </div>
+                            <Checkbox
+                              checked={isPresent}
+                              onCheckedChange={() => toggleStudentAttendance(evId, student.id)}
+                              className={cn(
+                                "rounded-md h-5 w-5 border-slate-300",
+                                isPresent && "bg-emerald-600 border-emerald-600 text-white"
+                              )}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             <div className="flex justify-end pt-1">
               <Button
-                onClick={handleSaveAttendance}
-                disabled={savingAttendance || classStudents.length === 0}
+                onClick={handleSaveAllAttendance}
+                disabled={savingAttendance}
                 className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 transition-all"
               >
                 <CheckCircle2 className="h-4 w-4" />
                 {savingAttendance 
                   ? (lang === "vi" ? "Đang lưu..." : "Saving...") 
-                  : (lang === "vi" ? "Lưu điểm danh hôm nay" : "Save Today's Attendance")}
+                  : (lang === "vi" ? "Lưu tất cả điểm danh" : "Save All Attendance")}
               </Button>
             </div>
           </div>
@@ -572,7 +549,6 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-
           <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-slate-500">
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/60 rounded-xl px-2.5 py-1.5">
               <span className="text-slate-400 font-medium">{lang === "vi" ? "Từ" : "From"}</span>
@@ -593,66 +569,107 @@ export default function Dashboard() {
 
       {/* 📊 GRID CÁC THẺ CARD SỐ LIỆU */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {stats.map((s, i) => (
-          <div
-            key={s.label}
-            className="animate-in fade-in slide-in-from-bottom-2"
-            style={{ animationDelay: `${i * 40}ms`, animationFillMode: "both" }}
-          >
-            <Link to={s.to}>
-              {s.color === "is-gradient-accent" ? (
-                <Card className="p-5 rounded-2xl text-white shadow-md shadow-blue-500/10 border-0 bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-between relative overflow-hidden h-full transform hover:-translate-y-0.5 transition-transform duration-300 cursor-pointer">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_90%_10%,white/8%,transparent_30%)]" />
-                  <div className="space-y-1 z-10">
-                    <span className="text-xs font-bold text-blue-100/70">{s.label}</span>
-                    {loading ? (
-                      <Skeleton className="h-8 w-24 bg-white/20 mt-1" />
-                    ) : (
-                      <h3 className="text-2xl font-black tracking-tight mt-0.5">{s.value}</h3>
-                    )}
-                    <span className="text-[10px] font-bold text-white/80 hover:text-white underline inline-flex items-center gap-0.5 pt-1">
-                      {t.details} <ArrowUpRight className="h-3 w-3" />
-                    </span>
-                  </div>
-                  <div className="h-12 w-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center text-white z-10 shrink-0">
-                    <s.icon className="h-5 w-5" />
-                  </div>
-                </Card>
-              ) : (
-                <Card className={cn(
-                  "p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer",
-                  s.color.split(" ").pop()
-                )}>
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-slate-400">{s.label}</span>
-                    {loading ? (
-                      <Skeleton className="h-8 w-20 mt-1" />
-                    ) : (
-                      <h3 className="text-2xl font-black text-slate-950 mt-0.5">{s.value}</h3>
-                    )}
-                    <span className="text-[10px] font-bold text-slate-500 inline-flex items-center gap-0.5 pt-1">
-                      {t.details} <ArrowUpRight className="h-3 w-3" />
-                    </span>
-                  </div>
-                  <div className={cn("h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr", s.color.split(" ").slice(0, 2).join(" "))}>
-                    <s.icon className="h-5 w-5" />
-                  </div>
-                </Card>
-              )}
-            </Link>
+        
+        {/* Active students */}
+        <Link to="/students">
+          <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer hover:border-blue-200">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400">{lang === "vi" ? "Học sinh hoạt động" : "Active students"}</span>
+              {loading ? <Skeleton className="h-8 w-20 mt-1" /> : <h3 className="text-2xl font-black text-slate-950 mt-0.5">{activeStudents}</h3>}
+              <span className="text-[10px] font-bold text-slate-500 inline-flex items-center gap-0.5 pt-1">{t.details} ↗</span>
+            </div>
+            <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-blue-500/10 to-indigo-500/10 text-blue-600">
+              <Users className="h-5 w-5" />
+            </div>
+          </Card>
+        </Link>
+
+        {/* Active classes */}
+        <Link to="/classes">
+          <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer hover:border-emerald-200">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400">{lang === "vi" ? "Lớp có hoạt động" : "Active classes"}</span>
+              {loading ? <Skeleton className="h-8 w-20 mt-1" /> : <h3 className="text-2xl font-black text-slate-950 mt-0.5">{activeClasses}</h3>}
+              <span className="text-[10px] font-bold text-slate-500 inline-flex items-center gap-0.5 pt-1">{t.details} ↗</span>
+            </div>
+            <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-emerald-500/10 to-teal-500/10 text-emerald-600">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+          </Card>
+        </Link>
+
+        {/* YÊU CẦU 2: Collected in period kèm nút Click Details ↗ xem danh sách đóng tiền */}
+        <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 hover:border-amber-200">
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-slate-400">{lang === "vi" ? "Học phí đã thu trong kỳ" : "Collected in period"}</span>
+            {loading ? <Skeleton className="h-8 w-20 mt-1" /> : <h3 className="text-2xl font-black text-slate-950 mt-0.5">{formatVND(totalRevenue)}</h3>}
+            <button 
+              onClick={() => setShowCollectedModal(true)}
+              className="text-[10px] font-bold text-amber-600 hover:text-amber-700 inline-flex items-center gap-1 pt-1 underline cursor-pointer"
+            >
+              Details ↗
+            </button>
           </div>
-        ))}
+          <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-amber-500/10 to-orange-500/10 text-amber-600">
+            <Wallet className="h-5 w-5" />
+          </div>
+        </Card>
+
+        {/* Payments count */}
+        <Link to="/students">
+          <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer hover:border-pink-200">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400">{lang === "vi" ? "Số lần thanh toán" : "Payments count"}</span>
+              {loading ? <Skeleton className="h-8 w-20 mt-1" /> : <h3 className="text-2xl font-black text-slate-950 mt-0.5">{paymentsCount}</h3>}
+              <span className="text-[10px] font-bold text-slate-500 inline-flex items-center gap-0.5 pt-1">{t.details} ↗</span>
+            </div>
+            <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-pink-500/10 to-rose-500/10 text-pink-600">
+              <CalendarClock className="h-5 w-5" />
+            </div>
+          </Card>
+        </Link>
+
+        {/* Average / payment */}
+        <Link to="/students">
+          <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer hover:border-purple-200">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-slate-400">{lang === "vi" ? "Trung bình / lần thu" : "Average / payment"}</span>
+              {loading ? <Skeleton className="h-8 w-20 mt-1" /> : <h3 className="text-2xl font-black text-slate-950 mt-0.5">{formatVND(avgPayment)}</h3>}
+              <span className="text-[10px] font-bold text-slate-500 inline-flex items-center gap-0.5 pt-1">{t.details} ↗</span>
+            </div>
+            <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-purple-500/10 to-indigo-500/10 text-purple-600">
+              <TrendingUp className="h-5 w-5" />
+            </div>
+          </Card>
+        </Link>
+
+        {/* Upcoming in period */}
+        <Link to="/students">
+          <Card className="p-5 rounded-2xl text-white shadow-md shadow-blue-500/10 border-0 bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-between relative overflow-hidden h-full transform hover:-translate-y-0.5 transition-transform duration-300 cursor-pointer">
+            <div className="space-y-1 z-10">
+              <span className="text-xs font-bold text-blue-100/70">{lang === "vi" ? "Học phí dự kiến trong kỳ" : "Upcoming in period"}</span>
+              {loading ? <Skeleton className="h-8 w-24 bg-white/20 mt-1" /> : <h3 className="text-2xl font-black tracking-tight mt-0.5">{formatVND(pendingTotal)}</h3>}
+              <span className="text-[10px] font-bold text-white/80 hover:text-white underline inline-flex items-center gap-0.5 pt-1">{t.details} ↗</span>
+            </div>
+            <div className="h-12 w-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center text-white z-10 shrink-0">
+              <Hourglass className="h-5 w-5" />
+            </div>
+          </Card>
+        </Link>
+
       </div>
 
-      {/* 🔔 SECTION HÓA ĐƠN SẮP TỚI */}
+      {/* 🔔 YÊU CẦU 3: SECTION UPCOMING BILLS GOM NHÓM THEO HỌC SINH */}
       <Card className="p-6 border border-slate-100 shadow-sm rounded-2xl bg-white space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-0.5">
             <h3 className="text-sm font-black text-slate-950 flex items-center gap-2">
-              <BellRing className="h-4 w-4 text-amber-500 animate-pulse" />
+              <ExternalLink className="h-4 w-4 text-amber-500" />
               {t.upcomingBills}
             </h3>
-            <p className="text-[11px] font-medium text-slate-400">{t.upcomingBillsHint}</p>
+            <p className="text-[11px] font-medium text-slate-400">
+              {lang === "vi" ? "Danh sách học phí tổng hợp gộp theo từng học sinh" : "Aggregated fee list grouped by student"}
+            </p>
           </div>
           
           <div className="flex items-center bg-slate-50 border p-1 rounded-xl text-xs font-bold">
@@ -677,50 +694,89 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {visibleUpcoming.length === 0 ? (
+        {groupedUpcoming.length === 0 ? (
           <div className="text-xs text-slate-400 italic text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
             {t.nothingHere}
           </div>
         ) : (
           <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
-            {visibleUpcoming.map((u, i) => (
-              <div 
-                key={i} 
-                className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50 p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-slate-50 transition-colors"
+            {groupedUpcoming.map((item) => (
+              <Link
+                to={`/students`}
+                key={item.studentId} 
+                className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50 p-4 flex flex-wrap items-center justify-between gap-4 hover:bg-slate-100/80 transition-all cursor-pointer block"
               >
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     "h-9 w-9 rounded-lg flex items-center justify-center text-xs font-bold shadow-sm",
-                    u.paid ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                    item.isPaid ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
                   )}>
-                    {u.studentName.slice(0, 2).toUpperCase()}
+                    {item.studentName.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900">{u.studentName}</h4>
-                    <p className="text-[10px] text-slate-400 font-medium">
-                      {u.label} · {u.due.toLocaleDateString(lang === "vi" ? "vi-VN" : "en-US")}
+                    <h4 className="text-xs font-bold text-slate-900">{item.studentName}</h4>
+                    <p className="text-[10px] text-slate-500 font-medium">
+                      Gộp {item.cycles.length} kỳ ({item.cycles.join(", ")})
                     </p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-4 ml-auto sm:ml-0">
-                  <span className="text-sm font-black text-slate-950">{formatVND(u.amount)}</span>
+                  <span className="text-sm font-black text-slate-950">{formatVND(item.totalAmount)}</span>
                   <span className={cn(
                     "text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border",
-                    u.paid 
+                    item.isPaid 
                       ? "bg-emerald-50 text-emerald-700 border-emerald-200/50" 
                       : "bg-amber-50 text-amber-700 border-amber-200/50",
                   )}>
-                    {u.paid
+                    {item.isPaid
                       ? lang === "vi" ? "Đã thu" : "Paid"
                       : lang === "vi" ? "Chưa thu" : "Unpaid"}
                   </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
       </Card>
+
+      {/* 🔮 YÊU CẦU 2: POPUP DIALOG XEM CHI TIẾT DANH SÁCH ĐÃ THU TIỀN */}
+      <Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-emerald-600" />
+              Chi tiết đã thu trong kỳ
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+            {filteredPayments.map((p: any) => {
+              const studentName = students.data?.find((s: any) => String(s.id) === String(p.student_id))?.name || p.student_name || "Học sinh";
+              return (
+                <div key={p.id} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                      {studentName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-800">{studentName}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">
+                        {p.cycle_label || (p.paid_at ? new Date(p.paid_at).toLocaleDateString("vi-VN") : "Đã thanh toán")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs font-black text-emerald-600">
+                    +{formatVND(p.amount || 0)}
+                  </div>
+                </div>
+              );
+            })}
+            {filteredPayments.length === 0 && (
+              <p className="text-center text-xs text-slate-400 py-6">Chưa có giao dịch thu tiền nào trong thời gian này.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
