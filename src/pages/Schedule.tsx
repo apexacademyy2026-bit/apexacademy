@@ -434,41 +434,39 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-<style>{`
-  @media print {
-    @page {
-      size: A4 landscape;
-      margin: 4mm;
-    }
-    body {
-      background: white !important;
-      color: black !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-    header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
-      display: none !important;
-    }
-    .print-area, .overflow-x-auto, .overflow-y-auto {
-      overflow: visible !important;
-      max-height: none !important;
-      height: auto !important;
-      box-shadow: none !important;
-      border: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-    .print-scroll-container {
-      max-height: none !important;
-      overflow: visible !important;
-      height: auto !important;
-    }
-    [data-event] {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-  }
-`}</style>
+{/* CSS DÀNH RIÊNG CHO IN A4 - KHÔNG DÙNG POSITION ABSOLUTE KHI IN */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 6mm;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          #print-only-schedule, #print-only-schedule * {
+            visibility: visible !important;
+          }
+          #print-only-schedule {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+        #print-only-schedule {
+          display: none;
+        }
+        @media print {
+          #print-only-schedule {
+            display: block !important;
+          }
+        }
+      `}</style>
 
       {/* HEADER WEBSITE */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
@@ -735,6 +733,73 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {/* KHUNG DÀNH RIÊNG CHO IN A4 (Hiển thị dạng bảng thuần, 100% ăn màu và không bị mất chữ) */}
+      <div id="print-only-schedule">
+        <div style={{ textAlign: "center", marginBottom: "12px" }}>
+          <h2 style={{ fontSize: "18px", fontWeight: "bold", textTransform: "uppercase", margin: 0 }}>
+            THỜI KHÓA BIỂU GIẢNG DẠY
+          </h2>
+          <p style={{ fontSize: "12px", margin: "4px 0 0 0", color: "#475569" }}>
+            Tuần: {format(weekDays[0], "dd/MM/yyyy")} - {format(weekDays[6], "dd/MM/yyyy")}
+          </p>
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", tableLayout: "fixed" }}>
+          <thead>
+            <tr>
+              <th style={{ border: "1px solid #cbd5e1", padding: "6px", width: "50px", background: "#f8fafc" }}>
+                GIỜ
+              </th>
+              {weekDays.map((d, i) => (
+                <th key={i} style={{ border: "1px solid #cbd5e1", padding: "6px", background: "#f8fafc", textTransform: "uppercase" }}>
+                  <div>{t.daysLong[d.getDay()]}</div>
+                  <div style={{ fontSize: "12px", fontWeight: "bold", color: "#2563eb" }}>{format(d, "dd/MM")}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {hours.map((h) => (
+              <tr key={h}>
+                <td style={{ border: "1px solid #cbd5e1", padding: "4px", textAlign: "center", fontWeight: "bold", color: "#64748b", height: "36px" }}>
+                  {String(h).padStart(2, "0")}:00
+                </td>
+                {weekDays.map((d, di) => {
+                  const evs = eventsForDay(d).filter((e: any) => {
+                    const startH = parseInt(e.start_time.split(":")[0]);
+                    return startH === h;
+                  });
+                  return (
+                    <td key={di} style={{ border: "1px solid #cbd5e1", padding: "2px", verticalAlign: "top", background: "#fff" }}>
+                      {evs.map((ev: any) => {
+                        const cls = classOf(ev.class_id);
+                        return (
+                          <div
+                            key={ev.id}
+                            style={{
+                              backgroundColor: (cls?.color || "#3b82f6") + "20",
+                              borderLeft: `3px solid ${cls?.color || "#3b82f6"}`,
+                              padding: "4px",
+                              borderRadius: "4px",
+                              marginBottom: "2px",
+                              color: "#0f172a"
+                            }}
+                          >
+                            <div style={{ fontWeight: "bold", fontSize: "10px" }}>{cls?.name || ev.title}</div>
+                            <div style={{ fontSize: "9px", color: "#475569" }}>
+                              {ev.start_time.slice(0, 5)} - {ev.end_time.slice(0, 5)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
