@@ -434,30 +434,37 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-{/* CSS DÀNH RIÊNG CHO IN A4 - KHÔNG DÙNG POSITION ABSOLUTE KHI IN */}
+{/* CSS IN DÀNH RIÊNG CHO KHỔ A4 */}
       <style>{`
         @media print {
           @page {
             size: A4 landscape;
-            margin: 6mm;
+            margin: 5mm;
           }
+          /* 1. Ẩn toàn bộ phần tử trên trang web */
           body * {
             visibility: hidden !important;
           }
+          /* 2. Chỉ cho phép duy nhất khung bảng in #print-only-schedule hiển thị */
           #print-only-schedule, #print-only-schedule * {
             visibility: visible !important;
           }
+          /* 3. Đặt vị trí khung in lên góc trên cùng màn hình */
           #print-only-schedule {
-            position: absolute !important;
+            position: fixed !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: white !important;
-            color: black !important;
+            z-index: 999999 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
         }
+        /* Ẩn hoàn toàn khung bảng in khi xem ở chế độ web bình thường */
         #print-only-schedule {
           display: none;
         }
@@ -528,13 +535,7 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
       )}
 
       {/* HEADER KHI IN BAN TRANG A4 */}
-      <div className="print-header">
-        <h2 className="text-2xl font-black uppercase text-slate-900">Thời khóa biểu giảng dạy</h2>
-        <p className="text-xs font-bold text-slate-600">
-          Tuần: {format(weekDays[0], "dd/MM/yyyy")} - {format(weekDays[6], "dd/MM/yyyy")}
-        </p>
-      </div>
-
+    
       {/* WEEK VIEW */}
       {view === "week" ? (
         <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print-area">
