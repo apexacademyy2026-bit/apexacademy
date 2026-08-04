@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Pencil, Copy, RefreshCw, Plus, Link2, Upload, FileText, Trash2, Eye, BookOpen, ChevronDown } from "lucide-react";
+import { ArrowLeft, Pencil, Copy, RefreshCw, Plus, Link2, FileText, Trash2, BookOpen, ChevronDown, StickyNote, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,12 +28,6 @@ export default function ClassDetail() {
     enabled: !!id,
   });
 
-  const { data: tests = [] } = useQuery({
-    queryKey: ["tests", id],
-    queryFn: async () => (await supabase.from("tests").select("*").eq("class_id", id).order("created_at", { ascending: false })).data || [],
-    enabled: !!id,
-  });
-
   const { data: members = [] } = useQuery({
     queryKey: ["class_members", id],
     queryFn: async () => (await supabase.from("class_members").select("*").eq("class_id", id)).data || [],
@@ -51,7 +45,6 @@ export default function ClassDetail() {
     enabled: memberIds.length > 0,
   });
 
-  // Teacher's roster enrolled in this class (for linking)
   const { data: rosterInClass = [] } = useQuery({
     queryKey: ["roster_in_class", id],
     queryFn: async () => {
@@ -65,7 +58,6 @@ export default function ClassDetail() {
   });
 
   const [linkChoice, setLinkChoice] = useState<Record<string, string>>({});
-  const [uploading, setUploading] = useState(false);
   const [newChapter, setNewChapter] = useState("");
   const [newLessonName, setNewLessonName] = useState<Record<string, string>>({});
   const [openChapter, setOpenChapter] = useState<Record<string, boolean>>({});
@@ -117,40 +109,6 @@ export default function ClassDetail() {
     qc.invalidateQueries({ queryKey: ["lessons", id] });
   };
 
-  const { data: docs = [] } = useQuery({
-    queryKey: ["class_docs", id],
-    queryFn: async () => (await supabase.from("class_documents").select("*").eq("class_id", id).order("created_at", { ascending: false })).data || [],
-    enabled: !!id,
-  });
-
-  const uploadDoc = async (file: File) => {
-    if (!id || !cls) return;
-    setUploading(true);
-    try {
-      const path = `${id}/${Date.now()}-${file.name}`;
-      const { error: upErr } = await supabase.storage.from("class-docs").upload(path, file, { contentType: file.type });
-      if (upErr) throw upErr;
-      const { data: { user } } = await supabase.auth.getUser();
-      const { error: insErr } = await supabase.from("class_documents").insert({
-        class_id: id, uploaded_by: user!.id, name: file.name, storage_path: path,
-        mime_type: file.type, size_bytes: file.size,
-      });
-      if (insErr) throw insErr;
-      toast.success(t.save);
-      qc.invalidateQueries({ queryKey: ["class_docs", id] });
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const deleteDoc = async (d: any) => {
-    await supabase.storage.from("class-docs").remove([d.storage_path]);
-    await supabase.from("class_documents").delete().eq("id", d.id);
-    qc.invalidateQueries({ queryKey: ["class_docs", id] });
-  };
-
   const linkedUserIds = new Set(
     (rosterInClass as any[]).map((r: any) => r.linked_user_id).filter(Boolean),
   );
@@ -192,6 +150,16 @@ export default function ClassDetail() {
     toast.success("Copied");
   };
 
+  // Hàm hỗ trợ kiểm tra xem note có phải đường link hay không
+  const isUrl = (str: string) => {
+    try {
+      new URL(str);
+      return true;
+    } catch {
+      return str.startsWith("http://") || str.startsWith("https://");
+    }
+  };
+
   useEffect(() => { document.title = cls ? `${cls.name} — ${t.appName}` : t.appName; }, [cls, t]);
 
   if (!cls) return <div className="text-muted-foreground">…</div>;
@@ -204,26 +172,51 @@ export default function ClassDetail() {
       </Button>
 
       {/* --- 1. HEADER LỚP HỌC MỚI --- */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-6 sm:p-8 bg-white rounded-2xl shadow-sm border border-slate-100 gap-4">
-        <div className="flex items-center space-x-4">
-          <div className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-md shadow-inner" style={{ background: cls.color || '#0ea5e9' }}>
-            {cls.subject ? cls.subject.charAt(0).toUpperCase() : 'M'}
-          </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight uppercase">{cls.name}</h1>
-            <div className="text-slate-500 font-medium mt-0.5">
-              {cls.subject} {cls.grade && `· ${lang === "vi" ? "Lớp" : "Grade"} ${cls.grade}`}
+      <div className="p-6 sm:p-8 bg-white rounded-2xl shadow-sm border border-slate-100 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-4">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-md shadow-inner shrink-0" style={{ background: cls.color || '#0ea5e9' }}>
+              {cls.subject ? cls.subject.charAt(0).toUpperCase() : 'M'}
             </div>
-            {cls.start_date && (
-              <div className="text-xs text-slate-400 mt-1">
-                {fmtDate(cls.start_date)} {cls.end_date && `– ${fmtDate(cls.end_date)}`}
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-950 tracking-tight uppercase">{cls.name}</h1>
+              <div className="text-slate-500 font-medium mt-0.5">
+                {cls.subject} {cls.grade && `· ${lang === "vi" ? "Lớp" : "Grade"} ${cls.grade}`}
               </div>
-            )}
+              {cls.start_date && (
+                <div className="text-xs text-slate-400 mt-1">
+                  {fmtDate(cls.start_date)} {cls.end_date && `– ${fmtDate(cls.end_date)}`}
+                </div>
+              )}
+            </div>
           </div>
+          <Button variant="outline" onClick={() => setEditing(true)} className="rounded-xl border-slate-200 hover:bg-slate-50 self-start sm:self-center">
+            <Pencil className="h-4 w-4 mr-2 text-slate-500" /> {t.edit}
+          </Button>
         </div>
-        <Button variant="outline" onClick={() => setEditing(true)} className="rounded-xl border-slate-200 hover:bg-slate-50 self-start sm:self-center">
-          <Pencil className="h-4 w-4 mr-2 text-slate-500" /> {t.edit}
-        </Button>
+
+        {/* 🌟 HIỂN THỊ NOTES Ở ĐÂY 🌟 */}
+        {cls.notes && (
+          <div className="pt-3 border-t border-slate-100 flex items-start gap-2.5 text-xs text-slate-600 bg-slate-50/80 p-3 rounded-xl">
+            <StickyNote className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 break-all">
+              <span className="font-bold text-slate-700 mr-1.5">{lang === "vi" ? "Ghi chú:" : "Notes:"}</span>
+              {isUrl(cls.notes) ? (
+                <a
+                  href={cls.notes.startsWith("http") ? cls.notes : `https://${cls.notes}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 hover:underline font-medium inline-flex items-center gap-1"
+                >
+                  {cls.notes}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              ) : (
+                <span>{cls.notes}</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- 2. BỐ CỤC LƯỚI 3 CỘT: MÃ, HỌC PHÍ, LỊCH HỌC --- */}
@@ -392,7 +385,7 @@ export default function ClassDetail() {
         </Card>
       </div>
 
-      {/* --- 4. LIÊN KẾT TÀI KHOẢN (Đưa xuống dưới cùng để đỡ rối) --- */}
+      {/* --- 4. LIÊN KẾT TÀI KHOẢN --- */}
       <Card className="p-5 bg-white rounded-2xl shadow-sm border border-slate-100">
         <div className="flex items-center gap-2 mb-2">
           <Link2 className="h-4 w-4 text-primary" />
@@ -467,4 +460,4 @@ export default function ClassDetail() {
       />
     </div>
   );
-  }
+}
