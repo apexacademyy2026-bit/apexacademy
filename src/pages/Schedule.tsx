@@ -434,44 +434,50 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-      {/* CSS DÀNH RIÊNG CHO KHI IN A4 */}
+{/* CSS DÀNH RIÊNG CHO KHI IN A4 */}
       <style>{`
-    
-  @media print {
-    @page {
-      size: A4 landscape; /* In khổ ngang */
-      margin: 5mm;        /* Tối ưu lề siêu gọn */
-    }
-    html, body {
-      height: 100%;
-      background: white !important;
-      color: black !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-    /* Ẩn giao diện web thừa */
-    header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
-      display: none !important;
-    }
-    .print-area {
-      box-shadow: none !important;
-      border: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      width: 100% !important;
-    }
-    .print-scroll-container {
-      max-height: none !important;
-      overflow: visible !important;
-    }
-    .print-header {
-      display: block !important;
-      margin-bottom: 6px;
-      text-align: center;
-    }
-  }
-  .print-header { display: none; }
-`}</style>
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 5mm;
+          }
+          body {
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          /* Ẩn các thành phần thừa trên giao diện web */
+          header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
+            display: none !important;
+          }
+          /* Cho phép hiển thị toàn bộ nội dung, tránh bị cắt xén */
+          .print-area, .overflow-x-auto {
+            overflow: visible !important;
+            box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          .print-scroll-container {
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          /* Ép hiển thị màu nền và màu viền của các thẻ lớp học */
+          [data-event] {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print-header {
+            display: block !important;
+            margin-bottom: 6px;
+            text-align: center;
+          }
+        }
+        .print-header { display: none; }
+      `}</style>
 
       {/* HEADER WEBSITE */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
