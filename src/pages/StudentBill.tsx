@@ -575,35 +575,39 @@ const togglePaid = async (b: any) => {
               </div>
 
               {/* Billed Info Grid */}
-              <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-xl text-sm border">
-                <div>
-                  <div className="text-xs uppercase font-semibold text-muted-foreground">{(t as any)?.billedTo || "BILLED TO"}</div>
-                  <div className="font-bold text-lg mt-1 inline-block px-2 py-0.5 rounded" style={{ background: `${accent}33` }}>
-                    {student.name}
-                  </div>
-                  {student.grade && (
-                    <div className="mt-2 text-xs">
-                      <span className="px-2 py-0.5 rounded-full font-medium" style={{ background: `${accent}44` }}>
-                        {student.grade}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-xs uppercase font-semibold text-muted-foreground">
-                    {mode === "monthly" ? (t?.feePerMonth || "FEE PER MONTH") : (t?.feePerSession || "FEE PER SESSION")}
-                  </div>
-                  <div className="font-bold text-lg mt-1">
-                    {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
-                  </div>
-                  <div className="text-xs uppercase font-semibold text-muted-foreground mt-2">
-                    {mode === "monthly" ? (t?.period || "PERIOD") : (t?.sessions || "SESSIONS")}
-                  </div>
-                  <div className="font-bold text-base mt-1">
-                    {mode === "monthly" ? displayBill.description : `${displayBill.attendances?.length || 0} buổi`}
-                  </div>
-                </div>
-              </div>
+             <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50/80 border border-slate-100">
+  <div>
+    <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">BILLED TO</span>
+    <h3 className="text-base font-bold text-slate-800">{student?.name}</h3>
+{(student as any)?.phone && <p className="text-xs text-slate-500">{(student as any).phone}</p>}  </div>
+
+  <div className="text-right space-y-1">
+    <div>
+      <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">
+        {mode === "by_session" ? "HỌC PHÍ / BUỔI" : "FEE PER MONTH"}
+      </span>
+      <span className="text-base font-bold text-slate-800">
+        {formatVND(mode === "by_session" ? (student?.fee_per_session || 0) : (student?.fee_per_month || 0))}
+      </span>
+    </div>
+
+    {mode === "by_session" ? (
+      <div>
+        <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">SỐ BUỔI TÍNH TIỀN</span>
+        <span className="text-xs font-semibold text-slate-700">
+          {(displayBill?.attendances || []).length} buổi
+        </span>
+      </div>
+    ) : (
+      <div>
+        <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">PERIOD</span>
+        <span className="text-xs font-semibold text-slate-700">
+          {displayBill?.period_start ? `${fmtDate(displayBill.period_start)} – ${fmtDate(displayBill.period_end)}` : "—"}
+        </span>
+      </div>
+    )}
+  </div>
+</div>
 
               {/* Sessions table */}
               {displayBill.attendances?.length > 0 && (
@@ -761,7 +765,24 @@ const togglePaid = async (b: any) => {
                   </Button>
                 )}
               </div>
-
+<style>{`
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+  @media print {
+    body {
+      background: white !important;
+    }
+    .print-container {
+      box-shadow: none !important;
+      border: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      width: 100% !important;
+    }
+  }
+`}</style>
               {/* Footnote */}
               <div className="border-t pt-4">
                 <Label className="text-xs font-semibold no-print mb-1 block">{(t as any)?.footnote || "Bill footnote"}</Label>
