@@ -231,34 +231,20 @@ export default function StudentBill() {
   const accent = student?.color || "#3b82f6";
   const billNum = (displayBill?.cycle_label || student?.id || "").slice(0, 100).toUpperCase();
 
-  const togglePaid = async (b: any) => {
-    if (!student || !b) return;
-    const recorded = (payments || []).find((p: any) => p.cycle_label === b.cycle_label);
-    if (recorded) {
-      await supabase.from("payments").delete().eq("id", recorded.id);
-    } else {
-      const { error } = await supabase.from("payments").insert({
-        user_id: student.user_id,
-        student_id: student.id,
-        cycle_type: b.cycle_type,
-        cycle_label: b.cycle_label,
-        period_start: b.period_start,
-        period_end: b.period_end,
-        session_count: b.session_count ?? null,
-        amount: effectiveAmount(b),
-      });
-      if (error) { toast.error(error.message); return; }
-    }
-    qc.invalidateQueries({ queryKey: ["payments", id] });
-    toast.success(t?.save || "Saved");
-  };
-
-  const paySelected = async () => {
-    if (!student) return;
-    const toPay = bills.filter((b) => selectedBills.has(b.cycle_label) && !isPaid(b));
-    if (toPay.length === 0) return;
-    const rows = toPay.map((b) => ({
-      user_id: student.user_id,
+ const togglePaid = async (b: any) => {
+  if (!student || !b) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  const activeUserId = user?.id || student.user_id || session?.user?.id;
+  if (!activeUserId) {
+    toast.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!");
+    return;
+  }
+  const recorded = (payments || []).find((p: any) => p.cycle_label === b.cycle_label);
+  if (recorded) {
+    await supabase.from("payments").delete().eq("id", recorded.id);
+  } else {
+    const { error } = await supabase.from("payments").insert({
+      user_id: activeUserId,
       student_id: student.id,
       cycle_type: b.cycle_type,
       cycle_label: b.cycle_label,
@@ -266,13 +252,39 @@ export default function StudentBill() {
       period_end: b.period_end,
       session_count: b.session_count ?? null,
       amount: effectiveAmount(b),
-    }));
-    const { error } = await supabase.from("payments").insert(rows);
+    });
     if (error) { toast.error(error.message); return; }
-    setSelectedBills(new Set());
-    qc.invalidateQueries({ queryKey: ["payments", id] });
-    toast.success(t?.save || "Saved");
-  };
+  }
+  qc.invalidateQueries({ queryKey: ["payments", id] });
+  toast.success(t?.save || "Saved");
+};
+
+const paySelected = async () => {
+  if (!student) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  const activeUserId = user?.id || student.user_id || session?.user?.id;
+  if (!activeUserId) {
+    toast.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!");
+    return;
+  }
+  const toPay = bills.filter((b) => selectedBills.has(b.cycle_label) && !isPaid(b));
+  if (toPay.length === 0) return;
+  const rows = toPay.map((b) => ({
+    user_id: activeUserId,
+    student_id: student.id,
+    cycle_type: b.cycle_type,
+    cycle_label: b.cycle_label,
+    period_start: b.period_start,
+    period_end: b.period_end,
+    session_count: b.session_count ?? null,
+    amount: effectiveAmount(b),
+  }));
+  const { error } = await supabase.from("payments").insert(rows);
+  if (error) { toast.error(error.message); return; }
+  setSelectedBills(new Set());
+  qc.invalidateQueries({ queryKey: ["payments", id] });
+  toast.success(t?.save || "Saved");
+};
 
   const updateFee = async (a: any, val: string) => {
     const num = val === "" ? null : Number(val);
