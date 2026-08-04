@@ -243,13 +243,18 @@ const availableAttendance = useMemo(() => {
     }, 0);
   }, [selectedSessionsArray, student]);
 
-  const displayBill: any = mode === "by_session" ? {
-    cycle_type: "session_combined",
-    cycle_label: `${student?.name || "Student"}_BuoiLe`,
-    description: `Thanh toán ${selectedSessionIds.size || availableAttendance.length} buổi học`,
-    amount: selectedSessionIds.size > 0 ? selectedSessionsAmount : availableAttendance.reduce((s, a) => s + Number(a.fee_override ?? student?.fee_per_session ?? 0), 0),
-    attendances: selectedSessionIds.size > 0 ? selectedSessionsArray : availableAttendance,
-  } : current;
+// Chỉ lấy danh sách các buổi CHƯA ĐÓNG để đưa vào Hóa đơn
+const displayBill: any = mode === "by_session" ? {
+  cycle_type: "session_combined",
+  cycle_label: `${student?.name || "Student"}_BuoiLe`,
+  description: `Thanh toán ${selectedSessionIds.size || availableAttendance.length} buổi học`,
+  amount: selectedSessionIds.size > 0 
+    ? selectedSessionsAmount 
+    : availableAttendance.reduce((s, a) => s + Number(a.fee_override ?? student?.fee_per_session ?? 0), 0),
+  // Khi người dùng có chọn check_box -> chỉ hiển thị các buổi được chọn
+  // Khi chưa chọn check_box nào -> hiển thị tất cả các buổi CHƯA ĐÓNG
+  attendances: selectedSessionIds.size > 0 ? selectedSessionsArray : availableAttendance,
+} : current;
 
   const billTotal = mode === "by_session"
     ? (selectedSessionIds.size > 0 ? selectedSessionsAmount : displayBill?.amount || 0)
@@ -493,66 +498,54 @@ const togglePaid = async (b: any) => {
                   );
                 })
               ) : (
-                /* CHẾ ĐỘ CHỌN THEO BUỔI LẺ */
-                availableAttendance.map((a: any, idx: number) => {
-                  const paid = (payments || []).some((p: any) => {
-                    if (p.attendance_id === a.id) return true;
-                    if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
-                    return false;
-                  });
-                  const isChecked = selectedSessionIds.has(a.id);
-                  const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
+        
+    availableAttendance.map((a: any, idx: number) => {
+      const isChecked = selectedSessionIds.has(a.id);
+      const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
 
-                  return (
-                    <div
-                      key={a.id}
-                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-primary/10 border-primary/40" : "hover:bg-muted/60 border-transparent"
-                      }`}
-                      onClick={() => {
-                        if (paid) return;
-                        setSelectedSessionIds((s) => {
-                          const n = new Set(s);
-                          if (n.has(a.id)) n.delete(a.id);
-                          else n.add(a.id);
-                          return n;
-                        });
-                      }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Checkbox
-                          checked={paid || isChecked}
-                          disabled={paid}
-                          onCheckedChange={(v) => {
-                            if (paid) return;
-                            setSelectedSessionIds((s) => {
-                              const n = new Set(s);
-                              if (v) n.add(a.id);
-                              else n.delete(a.id);
-                              return n;
-                            });
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <div>
-                          <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                            #{idx + 1} - {fmtDate(a.schedule_events?.event_date)}
-                            {paid && (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 text-emerald-700 uppercase">
-                                Đã đóng
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
-                            {a.homework_note || "Không có ghi chú"}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-xs font-bold">{formatVND(fee)}</div>
-                    </div>
-                  );
-                })
-              )}
+      return (
+        <div
+          key={a.id}
+          className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+            isChecked ? "bg-primary/10 border-primary/40" : "hover:bg-muted/60 border-transparent"
+          }`}
+          onClick={() => {
+            setSelectedSessionIds((s) => {
+              const n = new Set(s);
+              if (n.has(a.id)) n.delete(a.id);
+              else n.add(a.id);
+              return n;
+            });
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <Checkbox
+              checked={isChecked}
+              onCheckedChange={(v) => {
+                setSelectedSessionIds((s) => {
+                  const n = new Set(s);
+                  if (v) n.add(a.id);
+                  else n.delete(a.id);
+                  return n;
+                });
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div>
+              <div className="text-xs font-bold text-slate-800">
+                #{idx + 1} - {fmtDate(a.schedule_events?.event_date)}
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                {a.homework_note || "Không có ghi chú"}
+              </div>
+            </div>
+          </div>
+          <div className="text-xs font-bold">{formatVND(fee)}</div>
+        </div>
+      );
+    })
+  )}
+
 
               {((mode === "monthly" && bills.length === 0) || (mode === "by_session" && availableAttendance.length === 0)) && (
                 <div className="text-sm text-muted-foreground py-4 text-center">{t?.nothingHere || "Nothing here"}</div>
