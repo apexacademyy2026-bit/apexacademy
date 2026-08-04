@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 // Giảm chiều cao khung giờ chuẩn in ấn
 const HOUR_START = 6;    // Bắt đầu từ 06:00 sáng để tiết kiệm diện tích trang A4
 const HOUR_END = 23;      // Kết thúc 21:00 tối
-const HOUR_HEIGHT = 48;   // Giảm từ 56px xuống 48px để vừa khít 1 trang A4
+const HOUR_HEIGHT = 40;   // Giảm từ 56px xuống 48px để vừa khít 1 trang A4
 const SCHEDULE_MAX_HEIGHT = 700;
 
 const toMinutes = (t: string) => {
@@ -434,50 +434,41 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-{/* CSS DÀNH RIÊNG CHO KHI IN A4 */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4 landscape;
-            margin: 5mm;
-          }
-          body {
-            background: white !important;
-            color: black !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          /* Ẩn các thành phần thừa trên giao diện web */
-          header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
-            display: none !important;
-          }
-          /* Cho phép hiển thị toàn bộ nội dung, tránh bị cắt xén */
-          .print-area, .overflow-x-auto {
-            overflow: visible !important;
-            box-shadow: none !important;
-            border: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-          }
-          .print-scroll-container {
-            max-height: none !important;
-            overflow: visible !important;
-          }
-          /* Ép hiển thị màu nền và màu viền của các thẻ lớp học */
-          [data-event] {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .print-header {
-            display: block !important;
-            margin-bottom: 6px;
-            text-align: center;
-          }
-        }
-        .print-header { display: none; }
-      `}</style>
+<style>{`
+  @media print {
+    @page {
+      size: A4 landscape;
+      margin: 4mm;
+    }
+    body {
+      background: white !important;
+      color: black !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
+      display: none !important;
+    }
+    .print-area, .overflow-x-auto, .overflow-y-auto {
+      overflow: visible !important;
+      max-height: none !important;
+      height: auto !important;
+      box-shadow: none !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .print-scroll-container {
+      max-height: none !important;
+      overflow: visible !important;
+      height: auto !important;
+    }
+    [data-event] {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+`}</style>
 
       {/* HEADER WEBSITE */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
