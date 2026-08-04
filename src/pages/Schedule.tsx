@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 // Cấu hình khung giờ gọn gàng vừa khít 1 trang A4 Landscape (08:00 - 20:00)
 const HOUR_START = 8;     // Bắt đầu từ 08:00
 const HOUR_END = 20;      // Kết thúc 20:00
-const HOUR_HEIGHT = 32;   // Thu gọn chiều cao ô giờ xuống 32px
+const HOUR_HEIGHT = 40;   // Thu gọn chiều cao ô giờ xuống 32px
 const SCHEDULE_MAX_HEIGHT = 700;
 
 const toMinutes = (t: string) => {
@@ -431,52 +431,68 @@ export default function Schedule() {
 
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
-      {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE TIMELINE WEB */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4 landscape;
-            margin: 4mm;
-          }
-          html, body {
-            background: #fff !important;
-            color: #000 !important;
-            height: auto !important;
-            overflow: visible !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          /* Ẩn các thành phần không cần thiết */
-          header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
-            display: none !important;
-          }
-          /* Mở rộng khung lịch đầy trang */
-          .p-2, .sm\\:p-6, .max-w-7xl {
-            padding: 0 !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-          }
-          /* Tắt hiệu ứng cuộn và sticky để không tách tiêu đề trang */
-          .sticky, [class*="sticky"] {
-            position: static !important;
-            top: auto !important;
-          }
-          .print-area, .overflow-x-auto, .overflow-y-auto, .print-scroll-container {
-            overflow: visible !important;
-            max-height: none !important;
-            height: auto !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-          /* Giữ nguyên màu sắc các thẻ lớp học */
-          [data-event] {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            box-shadow: none !important;
-          }
-        }
-      `}</style>
+     {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE & ÉP HIỂN THỊ SỰ KIỆN */}
+<style>{`
+  @media print {
+    @page {
+      size: A4 landscape;
+      margin: 5mm;
+    }
+    
+    /* Reset toàn bộ khung chứa để tràn 100% trang in */
+    html, body, #root, main, .print-area {
+      background: #fff !important;
+      color: #000 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    /* Ẩn các thành phần giao diện không dùng khi in */
+    header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
+      display: none !important;
+    }
+
+    /* Mở rộng bảng thời khóa biểu ra 100% chiều rộng trang */
+    .print-area {
+      display: block !important;
+      width: 100% !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    .print-area > div, 
+    .print-area .min-w-\\[900px\\] {
+      min-width: 100% !important;
+      width: 100% !important;
+    }
+
+    /* Tắt scrollbar và sticky */
+    .sticky, [class*="sticky"] {
+      position: static !important;
+    }
+    
+    .print-scroll-container {
+      max-height: none !important;
+      overflow: visible !important;
+    }
+
+    /* Ép hiển thị các sự kiện (thẻ lịch) và giữ nguyên màu sắc khi in */
+    [data-event] {
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      box-shadow: none !important;
+    }
+  }
+`}</style>
 
       {/* HEADER WEBSITE */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
