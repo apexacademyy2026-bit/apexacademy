@@ -113,7 +113,7 @@ export default function Schedule() {
     return () => { active = false; };
   }, [fromISO, toISO]);
 
-  // LOGIC ĐỒNG BỘ LỊCH CỐ ĐỊNH TỪ CLASSES SANG SCHEDULE
+// LOGIC ĐỒNG BỘ LỊCH CỐ ĐỊNH TỪ CLASSES SANG SCHEDULE
   const allEvents = useMemo(() => {
     const realEvents = (events.data || []).map((e: any) => ({ ...e, virtual: false }));
     const virtualEvents: any[] = [];
@@ -129,7 +129,13 @@ export default function Schedule() {
           // Lấy thông tin lớp học tương ứng
           const targetClass = (classes.data || []).find((c: any) => c.id === sched.class_id);
           
-          // Kiểm tra xem ngày này đã có sự kiện thực tế trong DB chưa
+          // 💡 ĐIỀU KIỆN MỚI: Chỉ hiển thị nếu ngày đang xét >= ngày bắt đầu của lớp
+          const classStartDate = targetClass?.start_date ? format(new Date(targetClass.start_date), "yyyy-MM-dd") : null;
+          if (classStartDate && dateStr < classStartDate) {
+            return; // Nếu ngày trên lịch nhỏ hơn ngày bắt đầu -> Bỏ qua, không hiện
+          }
+
+          // Kiểm tra xem ngày này đã có sự kiện thực tế/điểm danh trong DB chưa
           const hasRealEvent = realEvents.some(
             (re) => re.class_id === sched.class_id && re.event_date === dateStr
           );
@@ -154,7 +160,6 @@ export default function Schedule() {
     const savedGoogleEventIds = new Set(
       realEvents.filter((r) => r.source === "google").map((r) => r.google_event_id)
     );
-
     const filteredGoogleEvents = googleEvents
       .filter((e) => !savedGoogleEventIds.has(e.id))
       .map((e) => {
