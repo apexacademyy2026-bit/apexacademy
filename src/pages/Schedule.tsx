@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { Plus, ChevronLeft, ChevronRight, Trash2, Check, Clock } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Trash2, Check, Clock, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -21,9 +21,10 @@ import { addDays, startOfWeek, format, isSameDay } from "date-fns";
 import { getStoredGoogleCalendarSelection, getStoredGoogleCalendarToken, listGoogleCalendarEvents } from "@/lib/google-calendar";
 import { cn } from "@/lib/utils";
 
-const HOUR_START = 0;   // 00:00 AM
-const HOUR_END = 23;     // 23:00 PM
-const HOUR_HEIGHT = 56;
+// Giảm chiều cao khung giờ chuẩn in ấn
+const HOUR_START = 6;    // Bắt đầu từ 06:00 sáng để tiết kiệm diện tích trang A4
+const HOUR_END = 21;      // Kết thúc 21:00 tối
+const HOUR_HEIGHT = 48;   // Giảm từ 56px xuống 48px để vừa khít 1 trang A4
 const SCHEDULE_MAX_HEIGHT = 700;
 
 const toMinutes = (t: string) => {
@@ -66,432 +67,9 @@ export default function Schedule() {
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { document.title = `${t.schedule} — ${t.appName}`; }, [t]);
-
-  useEffect(() => {
-    if (view === "week" && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 7 * HOUR_HEIGHT;
-    }
-  }, [view]);
-
-  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
-  const days = Array.from({ length: view === "week" ? 7 : 35 }, (_, i) => 
-    addDays(view === "week" ? weekStart : startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1), { weekStartsOn: 1 }), i)
-  );
-  const fromISO = format(days[0], "yyyy-MM-dd");
-  const toISO = format(days[days.length - 1], "yyyy-MM-dd");
-
-  const events = useEvents(fromISO, toISO);
-  const classes = useClasses();
-  const schedules = useClassSchedules();
-  const enrollments = useEnrollments();
-  const students = useStudents();
-
-  // Load Google Calendar
-  useEffect(() => {
-    const token = getStoredGoogleCalendarToken();
-    const selected = getStoredGoogleCalendarSelection();
-    if (!token || !selected.length) {
-      setGoogleEvents([]);
-      return;
-    }
-
-    let active = true;
-    (async () => {
-      try {
-        setGoogleCalendarBusy(true);
-        const items = await listGoogleCalendarEvents(token, selected, fromISO, toISO);
-        if (active) setGoogleEvents(items);
-      } catch {
-        if (active) setGoogleEvents([]);
-      } finally {
-        if (active) setGoogleCalendarBusy(false);
-      }
-    })();
-
-    return () => { active = false; };
-  }, [fromISO, toISO]);
-
-// LOGIC ĐỒNG BỘ LỊCH CỐ ĐỊNH TỪ CLASSES SANG SCHEDULE
-  const allEvents = useMemo(() => {
-    const realEvents = (events.data || []).map((e: any) => ({ ...e, virtual: false }));
-    const virtualEvents: any[] = [];
-
-    // 1. Quét từng ngày đang hiển thị trên màn hình
-    days.forEach((dayDate) => {
-      const dateStr = format(dayDate, "yyyy-MM-dd");
-      const dayOfWeek = dayDate.getDay(); // 0: CN, 1: T2, ..., 6: T7
-
-      // 2. Tìm tất cả ca học cố định trùng với thứ của ngày này
-      (schedules.data || []).forEach((sched: any) => {
-        if (sched.day_of_week === dayOfWeek) {
-          // Lấy thông tin lớp học tương ứng
-          const targetClass = (classes.data || []).find((c: any) => c.id === sched.class_id);
-          
-          // 💡 ĐIỀU KIỆN MỚI: Chỉ hiển thị nếu ngày đang xét >= ngày bắt đầu của lớp
-          const classStartDate = targetClass?.start_date ? format(new Date(targetClass.start_date), "yyyy-MM-dd") : null;
-          if (classStartDate && dateStr < classStartDate) {
-            return; // Nếu ngày trên lịch nhỏ hơn ngày bắt đầu -> Bỏ qua, không hiện
-          }
-
-          // Kiểm tra xem ngày này đã có sự kiện thực tế/điểm danh trong DB chưa
-          const hasRealEvent = realEvents.some(
-            (re) => re.class_id === sched.class_id && re.event_date === dateStr
-          );
-
-          // Nếu chưa có sự kiện riêng lẻ, tạo lịch ảo dựa trên Class Schedule
-          if (!hasRealEvent) {
-            virtualEvents.push({
-              id: `virtual-${sched.id}-${dateStr}`,
-              class_id: sched.class_id,
-              event_date: dateStr,
-              start_time: sched.start_time,
-              end_time: sched.end_time,
-              virtual: true,
-              title: targetClass?.name || "Lớp học",
-            });
-          }
-        }
-      });
-    });
-
-    // 3. Tích hợp Google Calendar
-    const savedGoogleEventIds = new Set(
-      realEvents.filter((r) => r.source === "google").map((r) => r.google_event_id)
-    );
-    const filteredGoogleEvents = googleEvents
-      .filter((e) => !savedGoogleEventIds.has(e.id))
-      .map((e) => {
-        const linkedClass = (classes.data || []).find((c: any) => c.google_calendar_id === e.calendarId);
-        return linkedClass 
-          ? { ...e, title: linkedClass.name, class_id: linkedClass.id, source: "google", virtual: false }
-          : { ...e, virtual: false };
-      });
-
-    return [...realEvents, ...virtualEvents, ...filteredGoogleEvents];
-  }, [events.data, schedules.data, classes.data, days, googleEvents]);
-
-  const classOf = (cid: string) => (classes.data || []).find((c: any) => c.id === cid);
-  
-  const hasFixedSlot = (ev: any) =>
-    (schedules.data || []).some((s: any) => {
-      const eventDay = new Date(`${ev.event_date}T00:00:00`).getDay();
-      return s.class_id === ev.class_id && s.day_of_week === eventDay;
-    });
-
-  const requestDelete = (ev: any) => setConfirmDel({ open: true, ev });
-
-  const deleteEvent = async (ev: any) => {
-    if (ev.virtual) {
-      const { error } = await supabase.from("schedule_events").insert({
-        user_id: user!.id,
-        class_id: ev.class_id,
-        event_date: ev.event_date,
-        start_time: ev.start_time,
-        end_time: ev.end_time,
-        notes: "__cancelled__",
-      });
-      if (error) toast.error(error.message);
-      qc.invalidateQueries({ queryKey: ["events"] });
-      return;
-    }
-    if (hasFixedSlot(ev)) {
-      await supabase.from("schedule_events").update({ notes: "__cancelled__" }).eq("id", ev.id);
-    } else {
-      await supabase.from("schedule_events").delete().eq("id", ev.id);
-    }
-    qc.invalidateQueries({ queryKey: ["events"] });
-  };
-
-  const visibleEvents = allEvents.filter((e: any) => e.notes !== "__cancelled__" && e.notes !== "__google_master__");
-  const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
-  const totalH = hours.length * HOUR_HEIGHT;
-  const weekDays = days.slice(0, 7);
-
-  const eventsForDay = (d: Date) =>
-    visibleEvents
-      .filter((e: any) => e.event_date === format(d, "yyyy-MM-dd"))
-      .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
-
-  return (
-    <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
-      
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">{t.schedule}</h1>
-          <p className="text-xs font-semibold text-slate-400 mt-1">
-            {lang === "vi" ? "Quản lý lịch dạy, ca học và điểm danh học sinh" : "Manage your weekly teaching sessions and attendance"}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? -7 : -30))}>
-              <ChevronLeft className="h-4 w-4 text-slate-600" />
-            </Button>
-            <span className="px-3 text-xs font-bold text-slate-800 min-w-[90px] text-center">
-              {format(anchor, "MMM yyyy")}
-            </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? 7 : 30))}>
-              <ChevronRight className="h-4 w-4 text-slate-600" />
-            </Button>
-          </div>
-
-          <div className="flex items-center bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
-            <button
-              onClick={() => setView("week")}
-              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "week" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
-            >
-              {t.weekView}
-            </button>
-            <button
-              onClick={() => setView("month")}
-              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "month" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
-            >
-              {t.monthView}
-            </button>
-          </div>
-
-          <Button 
-            onClick={() => setEventDialog({ open: true, date: new Date() })}
-            className="h-10 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" /> {t.addEvent}
-          </Button>
-        </div>
-      </div>
-
-      {googleCalendarBusy && (
-        <div className="text-xs font-semibold text-blue-600 bg-blue-50 p-3 rounded-2xl border border-blue-100 flex items-center gap-2">
-          <Clock className="h-4 w-4 animate-spin" /> Đang đồng bộ từ Google Calendar...
-        </div>
-      )}
-
-      {/* WEEK VIEW */}
-      {view === "week" ? (
-        <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              <div className="sticky top-0 z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}>
-                <div className="p-3 text-right text-[10px] font-black uppercase text-slate-400 border-r border-slate-200/60">
-                  Giờ
-                </div>
-                {weekDays.map((d, i) => {
-                  const isToday = isSameDay(d, new Date());
-                  return (
-                    <div key={i} className={cn("p-3 text-center border-r border-slate-200/60 last:border-r-0", isToday && "bg-blue-50/50")}>
-                      <div className="text-[11px] font-bold text-slate-400 uppercase">{t.daysLong[d.getDay()]}</div>
-                      <div className={cn("text-base font-black mt-0.5", isToday ? "text-blue-600" : "text-slate-800")}>
-                        {format(d, "dd/MM")}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div ref={scrollContainerRef} className="overflow-y-auto" style={{ maxHeight: SCHEDULE_MAX_HEIGHT }}>
-                <div className="grid relative" style={{ gridTemplateColumns: "72px repeat(7, minmax(0, 1fr))" }}>
-                  <div className="border-r border-slate-200/60 bg-slate-50/50" style={{ height: totalH }}>
-                    {hours.map((h) => (
-                      <div key={h} style={{ height: HOUR_HEIGHT }} className="border-b border-slate-100 text-[11px] font-bold text-slate-400 text-right pr-3 pt-2">
-                        {String(h).padStart(2, "0")}:00
-                      </div>
-                    ))}
-                  </div>
-
-                  {weekDays.map((d, di) => {
-                    const evs = eventsForDay(d);
-                    const laid = layoutColumns(evs as any);
-                    return (
-                      <div
-                        key={di}
-                        className="relative border-r border-slate-200/60 last:border-r-0 group cursor-pointer"
-                        style={{ height: totalH }}
-                        onClick={(e) => {
-                          if ((e.target as HTMLElement).closest("[data-event]")) return;
-                          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                          const y = e.clientY - rect.top;
-                          const hour = Math.max(HOUR_START, Math.min(HOUR_END, Math.floor(y / HOUR_HEIGHT)));
-                          setEventDialog({ open: true, date: d, event: { _newHour: hour } });
-                        }}
-                      >
-                        {hours.map((h) => (
-                          <div key={h} className="border-b border-slate-100/80" style={{ height: HOUR_HEIGHT }} />
-                        ))}
-
-                        {laid.map(({ ev, col, cols }: any) => {
-                          const cls = classOf(ev.class_id);
-                          const isGoogleEvent = ev.source === "google";
-                          const startMin = toMinutes(ev.start_time) - HOUR_START * 60;
-                          const endMin = toMinutes(ev.end_time) - HOUR_START * 60;
-                          const top = (startMin / 60) * HOUR_HEIGHT;
-                          const height = Math.max(28, ((endMin - startMin) / 60) * HOUR_HEIGHT - 3);
-                          const widthPct = 100 / cols;
-
-                          return (
-                            <button
-                              key={ev.id}
-                              data-event
-                              className="absolute rounded-2xl p-2 text-xs text-left overflow-hidden shadow-xs hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer flex flex-col justify-between"
-                              style={{
-                                top,
-                                height,
-                                left: `calc(${col * widthPct}% + 3px)`,
-                                width: `calc(${widthPct}% - 6px)`,
-                                backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
-                                borderLeft: `4px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`,
-                                borderStyle: ev.virtual ? "dashed" : "solid",
-                                color: "#0f172a",
-                              }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (ev.source === "google") {
-                                  const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
-                                  if (!targetClass) {
-                                    toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
-                                    return;
-                                  }
-                                  setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
-                                } else {
-                                  setAttDialog({ open: true, event: ev });
-                                }
-                              }}
-                            >
-                              <div>
-                                <div className="font-black text-slate-900 truncate">
-                                  {isGoogleEvent ? ev.title : cls?.name || ev.title}
-                                </div>
-                                <div className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
-                                  <Clock className="h-3 w-3 text-blue-500 shrink-0" />
-                                  <span>{ev.start_time.slice(0,5)} - {ev.end_time.slice(0,5)}</span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      ) : (
-        /* MONTH VIEW */
-        <Card className="rounded-3xl border-slate-200/80 bg-white p-4 shadow-xs overflow-x-auto">
-          <div className="grid gap-2 grid-cols-7 min-w-[700px]">
-            {weekDays.map((d, i) => (
-              <div key={i} className="text-xs font-black uppercase text-slate-400 text-center py-2">
-                {t.daysLong[d.getDay()]}
-              </div>
-            ))}
-            {days.map((d, i) => {
-              const evs = eventsForDay(d);
-              const isToday = isSameDay(d, new Date());
-              return (
-                <div
-                  key={i}
-                  className={cn(
-                    "min-h-[110px] rounded-2xl border p-2 cursor-pointer hover:border-blue-400 transition-all",
-                    isToday ? "border-blue-500 bg-blue-50/30" : "border-slate-100 bg-slate-50/50"
-                  )}
-                  onClick={(e) => {
-                    if ((e.target as HTMLElement).closest("[data-event]")) return;
-                    setEventDialog({ open: true, date: d });
-                  }}
-                >
-                  <div className={cn("text-xs font-black mb-2", isToday ? "text-blue-600" : "text-slate-700")}>
-                    {format(d, "d/M")}
-                  </div>
-                  <div className="space-y-1">
-                    {evs.map((ev: any) => {
-                      const cls = classOf(ev.class_id);
-                      const isGoogleEvent = ev.source === "google";
-                      return (
-                        <div
-                          key={ev.id}
-                          data-event
-                          className="text-[10px] font-bold p-1.5 rounded-xl truncate hover:opacity-80 transition-opacity"
-                          style={{
-                            backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
-                            color: "#0f172a",
-                            borderLeft: `3px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (ev.source === "google") {
-                              const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
-                              if (!targetClass) {
-                                toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
-                                return;
-                              }
-                              setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
-                            } else {
-                              setAttDialog({ open: true, event: ev });
-                            }
-                          }}
-                        >
-                          {ev.start_time.slice(0,5)} {isGoogleEvent ? ev.title : cls?.name || ev.title}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* DIALOG THÊM SỰ KIỆN */}
-      <EventDialog
-        open={eventDialog.open}
-        onOpenChange={(o) => setEventDialog({ open: o })}
-        date={eventDialog.date}
-        defaultHour={(eventDialog as any).event?._newHour}
-        classes={classes.data || []}
-      />
-
-      {/* DIALOG ĐIỂM DANH */}
-      <AttendanceDialog
-        open={attDialog.open}
-        onOpenChange={(o) => setAttDialog({ open: o })}
-        event={attDialog.event}
-        students={students.data || []}
-        enrollments={enrollments.data || []}
-        classes={classes.data || []}
-        onDelete={requestDelete}
-      />
-
-      {/* ALERT DIALOG XÓA */}
-      <AlertDialog open={confirmDel.open} onOpenChange={(o) => setConfirmDel({ open: o, ev: o ? confirmDel.ev : undefined })}>
-        <AlertDialogContent className="rounded-3xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-black text-slate-900">{(t as any).confirmDeleteTitle || t.confirmDelete}</AlertDialogTitle>
-            <AlertDialogDescription className="text-xs font-semibold text-slate-500">{(t as any).confirmDeleteDesc || "Hành động này không thể hoàn tác."}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl font-bold">{t.cancel}</AlertDialogCancel>
-            <AlertDialogAction
-              className="rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
-              onClick={async () => {
-                const ev = confirmDel.ev;
-                setConfirmDel({ open: false });
-                if (ev) await deleteEvent(ev);
-              }}
-            >
-              {t.delete}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-    </div>
-  );
-}
+/* -------------------------------------------------------------------------- */
+/*                          COMPONENTS DIALOG BỔ SUNG                         */
+/* -------------------------------------------------------------------------- */
 
 function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
   const { t, user } = useApp();
@@ -515,7 +93,6 @@ function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
 
   const submit = async () => {
     if (!user || !classId) return;
-
     const { error } = await supabase.from("schedule_events").insert({
       user_id: user.id,
       class_id: classId,
@@ -524,7 +101,6 @@ function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
       end_time: end,
       notes,
     });
-
     if (addToFixed) {
       const dayOfWeek = new Date(d).getDay();
       await supabase.from("class_schedules").insert({
@@ -535,7 +111,6 @@ function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
         end_time: end,
       });
     }
-
     if (error) toast.error(error.message);
     else {
       toast.success(t.save);
@@ -617,7 +192,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   const save = async () => {
     if (!event || !user) return;
     let targetEventId = event.id;
-
     if (event.virtual || event.source === "google") {
       const { data: newEvent, error: insertError } = await supabase
         .from("schedule_events")
@@ -631,7 +205,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
         })
         .select()
         .single();
-
       if (insertError) {
         toast.error("Không thể tạo sự kiện điểm danh: " + insertError.message);
         return;
@@ -643,7 +216,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
         .update({ start_time: start, end_time: end, event_date: evDate })
         .eq("id", targetEventId);
     }
-
     for (const s of enrolled) {
       const r = rows[s.id];
       const existing = (att.data || []).find((x: any) => x.student_id === s.id);
@@ -668,7 +240,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
         } as any);
       }
     }
-
     qc.invalidateQueries({ queryKey: ["events"] });
     qc.invalidateQueries({ queryKey: ["student-attendance"] });
     toast.success("Đã lưu điểm danh thành công!");
@@ -684,13 +255,11 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
             {cls?.name || event?.title}
           </DialogTitle>
         </DialogHeader>
-
         <div className="grid grid-cols-3 gap-2 my-2">
           <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.date}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={evDate} onChange={(e) => setEvDate(e.target.value)} /></div>
           <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.startDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
           <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.endDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
         </div>
-
         <div className="space-y-3 pt-2">
           <Label className="text-xs font-bold text-slate-700">Danh sách điểm danh</Label>
           {enrolled.length === 0 ? (
@@ -714,7 +283,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
             </div>
           ))}
         </div>
-
         <DialogFooter className="flex justify-between gap-2 sm:justify-between pt-4">
           <Button variant="ghost" className="rounded-xl text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => { onOpenChange(false); onDelete(event); }}>
             <Trash2 className="h-4 w-4" /> {t.delete}
@@ -726,5 +294,450 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+  useEffect(() => { document.title = `${t.schedule} — ${t.appName}`; }, [t]);
+  useEffect(() => {
+    if (view === "week" && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 1 * HOUR_HEIGHT;
+    }
+  }, [view]);
+
+  const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
+  const days = Array.from({ length: view === "week" ? 7 : 35 }, (_, i) => 
+    addDays(view === "week" ? weekStart : startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1), { weekStartsOn: 1 }), i)
+  );
+
+  const fromISO = format(days[0], "yyyy-MM-dd");
+  const toISO = format(days[days.length - 1], "yyyy-MM-dd");
+
+  const events = useEvents(fromISO, toISO);
+  const classes = useClasses();
+  const schedules = useClassSchedules();
+  const enrollments = useEnrollments();
+  const students = useStudents();
+
+  // Load Google Calendar
+  useEffect(() => {
+    const token = getStoredGoogleCalendarToken();
+    const selected = getStoredGoogleCalendarSelection();
+    if (!token || !selected.length) {
+      setGoogleEvents([]);
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        setGoogleCalendarBusy(true);
+        const items = await listGoogleCalendarEvents(token, selected, fromISO, toISO);
+        if (active) setGoogleEvents(items);
+      } catch {
+        if (active) setGoogleEvents([]);
+      } finally {
+        if (active) setGoogleCalendarBusy(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [fromISO, toISO]);
+
+  // LOGIC ĐỒNG BỘ LỊCH
+  const allEvents = useMemo(() => {
+    const realEvents = (events.data || []).map((e: any) => ({ ...e, virtual: false }));
+    const virtualEvents: any[] = [];
+    days.forEach((dayDate) => {
+      const dateStr = format(dayDate, "yyyy-MM-dd");
+      const dayOfWeek = dayDate.getDay();
+      (schedules.data || []).forEach((sched: any) => {
+        if (sched.day_of_week === dayOfWeek) {
+          const targetClass = (classes.data || []).find((c: any) => c.id === sched.class_id);
+          const classStartDate = targetClass?.start_date ? format(new Date(targetClass.start_date), "yyyy-MM-dd") : null;
+          if (classStartDate && dateStr < classStartDate) return;
+
+          const hasRealEvent = realEvents.some(
+            (re) => re.class_id === sched.class_id && re.event_date === dateStr
+          );
+          if (!hasRealEvent) {
+            virtualEvents.push({
+              id: `virtual-${sched.id}-${dateStr}`,
+              class_id: sched.class_id,
+              event_date: dateStr,
+              start_time: sched.start_time,
+              end_time: sched.end_time,
+              virtual: true,
+              title: targetClass?.name || "Lớp học",
+            });
+          }
+        }
+      });
+    });
+
+    const savedGoogleEventIds = new Set(
+      realEvents.filter((r) => r.source === "google").map((r) => r.google_event_id)
+    );
+    const filteredGoogleEvents = googleEvents
+      .filter((e) => !savedGoogleEventIds.has(e.id))
+      .map((e) => {
+        const linkedClass = (classes.data || []).find((c: any) => c.google_calendar_id === e.calendarId);
+        return linkedClass 
+          ? { ...e, title: linkedClass.name, class_id: linkedClass.id, source: "google", virtual: false }
+          : { ...e, virtual: false };
+      });
+
+    return [...realEvents, ...virtualEvents, ...filteredGoogleEvents];
+  }, [events.data, schedules.data, classes.data, days, googleEvents]);
+
+  const classOf = (cid: string) => (classes.data || []).find((c: any) => c.id === cid);
+  
+  const hasFixedSlot = (ev: any) =>
+    (schedules.data || []).some((s: any) => {
+      const eventDay = new Date(`${ev.event_date}T00:00:00`).getDay();
+      return s.class_id === ev.class_id && s.day_of_week === eventDay;
+    });
+
+  const requestDelete = (ev: any) => setConfirmDel({ open: true, ev });
+
+  const deleteEvent = async (ev: any) => {
+    if (ev.virtual) {
+      const { error } = await supabase.from("schedule_events").insert({
+        user_id: user!.id,
+        class_id: ev.class_id,
+        event_date: ev.event_date,
+        start_time: ev.start_time,
+        end_time: ev.end_time,
+        notes: "__cancelled__",
+      });
+      if (error) toast.error(error.message);
+      qc.invalidateQueries({ queryKey: ["events"] });
+      return;
+    }
+    if (hasFixedSlot(ev)) {
+      await supabase.from("schedule_events").update({ notes: "__cancelled__" }).eq("id", ev.id);
+    } else {
+      await supabase.from("schedule_events").delete().eq("id", ev.id);
+    }
+    qc.invalidateQueries({ queryKey: ["events"] });
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const visibleEvents = allEvents.filter((e: any) => e.notes !== "__cancelled__" && e.notes !== "__google_master__");
+  const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
+  const totalH = hours.length * HOUR_HEIGHT;
+  const weekDays = days.slice(0, 7);
+  const eventsForDay = (d: Date) =>
+    visibleEvents
+      .filter((e: any) => e.event_date === format(d, "yyyy-MM-dd"))
+      .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
+
+  return (
+    <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
+      
+      {/* CSS DÀNH RIÊNG CHO KHI IN A4 */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape; /* Mặc định in khổ ngang để vừa 7 ngày */
+            margin: 8mm;
+          }
+          body {
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          /* Ẩn tất cả UI ngoại trừ vùng lịch */
+          header, sidebar, nav, button, .print-hide {
+            display: none !important;
+          }
+          .print-area {
+            box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          .print-scroll-container {
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          /* Tiêu đề in */
+          .print-header {
+            display: block !important;
+            margin-bottom: 12px;
+            text-align: center;
+          }
+        }
+        .print-header { display: none; }
+      `}</style>
+
+      {/* HEADER WEBSITE */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">{t.schedule}</h1>
+          <p className="text-xs font-semibold text-slate-400 mt-1">
+            {lang === "vi" ? "Quản lý lịch dạy, ca học và điểm danh học sinh" : "Manage your weekly teaching sessions and attendance"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? -7 : -30))}>
+              <ChevronLeft className="h-4 w-4 text-slate-600" />
+            </Button>
+            <span className="px-3 text-xs font-bold text-slate-800 min-w-[90px] text-center">
+              {format(anchor, "MMM yyyy")}
+            </span>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? 7 : 30))}>
+              <ChevronRight className="h-4 w-4 text-slate-600" />
+            </Button>
+          </div>
+          <div className="flex items-center bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
+            <button
+              onClick={() => setView("week")}
+              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "week" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
+            >
+              {t.weekView}
+            </button>
+            <button
+              onClick={() => setView("month")}
+              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "month" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
+            >
+              {t.monthView}
+            </button>
+          </div>
+
+          {/* 🖨️ NÚT IN LỊCH DẠY */}
+          <Button 
+            onClick={handlePrint}
+            variant="outline"
+            className="h-10 px-3.5 rounded-2xl border-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer"
+          >
+            <Printer className="h-4 w-4 text-slate-600" /> In lịch dạy
+          </Button>
+
+          <Button 
+            onClick={() => setEventDialog({ open: true, date: new Date() })}
+            className="h-10 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" /> {t.addEvent}
+          </Button>
+        </div>
+      </div>
+
+      {googleCalendarBusy && (
+        <div className="text-xs font-semibold text-blue-600 bg-blue-50 p-3 rounded-2xl border border-blue-100 flex items-center gap-2 print-hide">
+          <Clock className="h-4 w-4 animate-spin" /> Đang đồng bộ từ Google Calendar...
+        </div>
+      )}
+
+      {/* HEADER KHI IN BAN TRANG A4 */}
+      <div className="print-header">
+        <h2 className="text-2xl font-black uppercase text-slate-900">Thời khóa biểu giảng dạy</h2>
+        <p className="text-xs font-bold text-slate-600">
+          Tuần: {format(weekDays[0], "dd/MM/yyyy")} - {format(weekDays[6], "dd/MM/yyyy")}
+        </p>
+      </div>
+
+      {/* WEEK VIEW */}
+      {view === "week" ? (
+        <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print-area">
+          <div className="overflow-x-auto">
+            <div className="min-w-[900px] print:min-w-full">
+              <div className="sticky top-0 z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
+                <div className="p-2 text-right text-[10px] font-black uppercase text-slate-400 border-r border-slate-200/60">
+                  Giờ
+                </div>
+                {weekDays.map((d, i) => {
+                  const isToday = isSameDay(d, new Date());
+                  return (
+                    <div key={i} className={cn("p-2 text-center border-r border-slate-200/60 last:border-r-0", isToday && "bg-blue-50/50")}>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">{t.daysLong[d.getDay()]}</div>
+                      <div className={cn("text-sm font-black mt-0.5", isToday ? "text-blue-600" : "text-slate-800")}>
+                        {format(d, "dd/MM")}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div ref={scrollContainerRef} className="overflow-y-auto print-scroll-container" style={{ maxHeight: SCHEDULE_MAX_HEIGHT }}>
+                <div className="grid relative" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
+                  <div className="border-r border-slate-200/60 bg-slate-50/50" style={{ height: totalH }}>
+                    {hours.map((h) => (
+                      <div key={h} style={{ height: HOUR_HEIGHT }} className="border-b border-slate-100 text-[10px] font-bold text-slate-400 text-right pr-2 pt-1">
+                        {String(h).padStart(2, "0")}:00
+                      </div>
+                    ))}
+                  </div>
+                  {weekDays.map((d, di) => {
+                    const evs = eventsForDay(d);
+                    const laid = layoutColumns(evs as any);
+                    return (
+                      <div
+                        key={di}
+                        className="relative border-r border-slate-200/60 last:border-r-0 group cursor-pointer"
+                        style={{ height: totalH }}
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest("[data-event]")) return;
+                          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                          const y = e.clientY - rect.top;
+                          const hour = Math.max(HOUR_START, Math.min(HOUR_END, Math.floor(y / HOUR_HEIGHT)));
+                          setEventDialog({ open: true, date: d, event: { _newHour: hour } });
+                        }}
+                      >
+                        {hours.map((h) => (
+                          <div key={h} className="border-b border-slate-100/80" style={{ height: HOUR_HEIGHT }} />
+                        ))}
+                        {laid.map(({ ev, col, cols }: any) => {
+                          const cls = classOf(ev.class_id);
+                          const isGoogleEvent = ev.source === "google";
+                          const startMin = toMinutes(ev.start_time) - HOUR_START * 60;
+                          const endMin = toMinutes(ev.end_time) - HOUR_START * 60;
+                          const top = (startMin / 60) * HOUR_HEIGHT;
+                          const height = Math.max(24, ((endMin - startMin) / 60) * HOUR_HEIGHT - 2);
+                          const widthPct = 100 / cols;
+                          return (
+                            <button
+                              key={ev.id}
+                              data-event
+                              className="absolute rounded-xl p-1.5 text-xs text-left overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between"
+                              style={{
+                                top,
+                                height,
+                                left: `calc(${col * widthPct}% + 2px)`,
+                                width: `calc(${widthPct}% - 4px)`,
+                                backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
+                                borderLeft: `3px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`,
+                                borderStyle: ev.virtual ? "dashed" : "solid",
+                                color: "#0f172a",
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (ev.source === "google") {
+                                  const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
+                                  if (!targetClass) {
+                                    toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
+                                    return;
+                                  }
+                                  setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
+                                } else {
+                                  setAttDialog({ open: true, event: ev });
+                                }
+                              }}
+                            >
+                              <div>
+                                <div className="font-black text-slate-900 truncate text-[11px]">
+                                  {isGoogleEvent ? ev.title : cls?.name || ev.title}
+                                </div>
+                                <div className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5 mt-0.5">
+                                  <Clock className="h-2.5 w-2.5 text-blue-500 shrink-0 print-hide" />
+                                  <span>{ev.start_time.slice(0,5)} - {ev.end_time.slice(0,5)}</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        /* MONTH VIEW */
+        <Card className="rounded-3xl border-slate-200/80 bg-white p-4 shadow-xs overflow-x-auto print-area">
+          <div className="grid gap-2 grid-cols-7 min-w-[700px] print:min-w-full">
+            {weekDays.map((d, i) => (
+              <div key={i} className="text-xs font-black uppercase text-slate-400 text-center py-2">
+                {t.daysLong[d.getDay()]}
+              </div>
+            ))}
+            {days.map((d, i) => {
+              const evs = eventsForDay(d);
+              const isToday = isSameDay(d, new Date());
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "min-h-[100px] rounded-2xl border p-1.5 cursor-pointer hover:border-blue-400 transition-all",
+                    isToday ? "border-blue-500 bg-blue-50/30" : "border-slate-100 bg-slate-50/50"
+                  )}
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest("[data-event]")) return;
+                    setEventDialog({ open: true, date: d });
+                  }}
+                >
+                  <div className={cn("text-xs font-black mb-1", isToday ? "text-blue-600" : "text-slate-700")}>
+                    {format(d, "d/M")}
+                  </div>
+                  <div className="space-y-1">
+                    {evs.map((ev: any) => {
+                      const cls = classOf(ev.class_id);
+                      const isGoogleEvent = ev.source === "google";
+                      return (
+                        <div
+                          key={ev.id}
+                          data-event
+                          className="text-[9px] font-bold p-1 rounded-lg truncate hover:opacity-80 transition-opacity"
+                          style={{
+                            backgroundColor: isGoogleEvent ? "#eff6ff" : (cls?.color || "#3b82f6") + "20",
+                            color: "#0f172a",
+                            borderLeft: `2.5px solid ${isGoogleEvent ? "#3b82f6" : (cls?.color || "#3b82f6")}`
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (ev.source === "google") {
+                              const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
+                              if (!targetClass) {
+                                toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
+                                return;
+                              }
+                              setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
+                            } else {
+                              setAttDialog({ open: true, event: ev });
+                            }
+                          }}
+                        >
+                          {ev.start_time.slice(0,5)} {isGoogleEvent ? ev.title : cls?.name || ev.title}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* DIALOGS giữ nguyên */}
+      <EventDialog open={eventDialog.open} onOpenChange={(o) => setEventDialog({ open: o })} date={eventDialog.date} defaultHour={(eventDialog as any).event?._newHour} classes={classes.data || []} />
+      <AttendanceDialog open={attDialog.open} onOpenChange={(o) => setAttDialog({ open: o })} event={attDialog.event} students={students.data || []} enrollments={enrollments.data || []} classes={classes.data || []} onDelete={requestDelete} />
+      
+      <AlertDialog open={confirmDel.open} onOpenChange={(o) => setConfirmDel({ open: o, ev: o ? confirmDel.ev : undefined })}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-black text-slate-900">{(t as any).confirmDeleteTitle || t.confirmDelete}</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs font-semibold text-slate-500">{(t as any).confirmDeleteDesc || "Hành động này không thể hoàn tác."}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl font-bold">{t.cancel}</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
+              onClick={async () => {
+                const ev = confirmDel.ev;
+                setConfirmDel({ open: false });
+                if (ev) await deleteEvent(ev);
+              }}
+            >
+              {t.delete}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
