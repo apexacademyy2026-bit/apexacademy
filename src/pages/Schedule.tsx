@@ -21,10 +21,10 @@ import { addDays, startOfWeek, format, isSameDay } from "date-fns";
 import { getStoredGoogleCalendarSelection, getStoredGoogleCalendarToken, listGoogleCalendarEvents } from "@/lib/google-calendar";
 import { cn } from "@/lib/utils";
 
-// Giảm chiều cao khung giờ chuẩn in ấn
-const HOUR_START = 6;    // Bắt đầu từ 06:00 sáng để tiết kiệm diện tích trang A4
-const HOUR_END = 23;      // Kết thúc 21:00 tối
-const HOUR_HEIGHT = 40;   // Giảm từ 56px xuống 48px để vừa khít 1 trang A4
+// Cấu hình khung giờ gọn gàng vừa khít 1 trang A4 Landscape (08:00 - 20:00)
+const HOUR_START = 8;     // Bắt đầu từ 08:00
+const HOUR_END = 20;      // Kết thúc 20:00
+const HOUR_HEIGHT = 32;   // Thu gọn chiều cao ô giờ xuống 32px
 const SCHEDULE_MAX_HEIGHT = 700;
 
 const toMinutes = (t: string) => {
@@ -67,239 +67,240 @@ export default function Schedule() {
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
   
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-/* -------------------------------------------------------------------------- */
-/*                          COMPONENTS DIALOG BỔ SUNG                         */
-/* -------------------------------------------------------------------------- */
 
-function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
-  const { t, user } = useApp();
-  const qc = useQueryClient();
-  const [addToFixed, setAddToFixed] = useState(false);
-  const [classId, setClassId] = useState("");
-  const [start, setStart] = useState("18:00");
-  const [end, setEnd] = useState("19:30");
-  const [d, setD] = useState(format(date || new Date(), "yyyy-MM-dd"));
-  const [notes, setNotes] = useState("");
+  /* ---------------- DIALOG THÊM SỰ KIỆN ---------------- */
+  function EventDialog({ open, onOpenChange, date, classes, defaultHour }: any) {
+    const { t, user } = useApp();
+    const qc = useQueryClient();
+    const [addToFixed, setAddToFixed] = useState(false);
+    const [classId, setClassId] = useState("");
+    const [start, setStart] = useState("18:00");
+    const [end, setEnd] = useState("19:30");
+    const [d, setD] = useState(format(date || new Date(), "yyyy-MM-dd"));
+    const [notes, setNotes] = useState("");
 
-  useEffect(() => {
-    if (date) setD(format(date, "yyyy-MM-dd"));
-    if (typeof defaultHour === "number") {
-      const h = String(defaultHour).padStart(2, "0");
-      const h2 = String(defaultHour + 1).padStart(2, "0");
-      setStart(`${h}:00`);
-      setEnd(`${h2}:30`);
-    }
-  }, [date, defaultHour, open]);
+    useEffect(() => {
+      if (date) setD(format(date, "yyyy-MM-dd"));
+      if (typeof defaultHour === "number") {
+        const h = String(defaultHour).padStart(2, "0");
+        const h2 = String(defaultHour + 1).padStart(2, "0");
+        setStart(`${h}:00`);
+        setEnd(`${h2}:30`);
+      }
+    }, [date, defaultHour, open]);
 
-  const submit = async () => {
-    if (!user || !classId) return;
-    const { error } = await supabase.from("schedule_events").insert({
-      user_id: user.id,
-      class_id: classId,
-      event_date: d,
-      start_time: start,
-      end_time: end,
-      notes,
-    });
-    if (addToFixed) {
-      const dayOfWeek = new Date(d).getDay();
-      await supabase.from("class_schedules").insert({
+    const submit = async () => {
+      if (!user || !classId) return;
+      const { error } = await supabase.from("schedule_events").insert({
         user_id: user.id,
         class_id: classId,
-        day_of_week: dayOfWeek,
+        event_date: d,
         start_time: start,
         end_time: end,
+        notes,
       });
-    }
-    if (error) toast.error(error.message);
-    else {
-      toast.success(t.save);
-      qc.invalidateQueries({ queryKey: ["events"] });
-      qc.invalidateQueries({ queryKey: ["class-schedules"] });
-      onOpenChange(false);
-      setClassId(""); setNotes(""); setAddToFixed(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl max-w-md">
-        <DialogHeader><DialogTitle className="font-black text-slate-900">{t.addEvent}</DialogTitle></DialogHeader>
-        <div className="space-y-4 pt-2">
-          <div>
-            <Label className="text-xs font-bold text-slate-600 mb-1 block">{t.class}</Label>
-            <Select value={classId} onValueChange={setClassId}>
-              <SelectTrigger className="rounded-2xl h-10 border-slate-200 text-xs font-semibold"><SelectValue placeholder={t.class} /></SelectTrigger>
-              <SelectContent className="rounded-2xl">
-                {classes.map((c: any) => <SelectItem key={c.id} value={c.id} className="rounded-xl text-xs font-semibold">{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center space-x-2 pt-1">
-            <Checkbox id="fixed-schedule" checked={addToFixed} onCheckedChange={(v) => setAddToFixed(!!v)} className="rounded-lg" />
-            <Label htmlFor="fixed-schedule" className="text-xs font-bold text-slate-600 cursor-pointer">Thêm vào lịch cố định hàng tuần</Label>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">{t.startDate}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={d} onChange={(e) => setD(e.target.value)} /></div>
-            <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Bắt đầu</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Kết thúc</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
-          </div>
-          <div><Label className="text-xs font-bold text-slate-600 mb-1 block">{t.notes}</Label><Textarea className="rounded-2xl border-slate-200 text-xs" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
-        </div>
-        <DialogFooter className="pt-2">
-          <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
-          <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={submit}>{t.save}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AttendanceDialog({ open, onOpenChange, event, students, enrollments, classes, onDelete }: any) {
-  const { t, user } = useApp();
-  const qc = useQueryClient();
-  const att = useAttendance(event?.id);
-  const [rows, setRows] = useState<Record<string, { present: boolean; note: string }>>({});
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [evDate, setEvDate] = useState("");
-
-  const enrolled = useMemo(() => {
-    if (!event) return [];
-    const sids = enrollments.filter((e: any) => e.class_id === event.class_id).map((e: any) => e.student_id);
-    return students.filter((s: any) => sids.includes(s.id));
-  }, [event, enrollments, students]);
-
-  useEffect(() => {
-    const init: any = {};
-    enrolled.forEach((s: any) => {
-      const a = (att.data || []).find((x: any) => x.student_id === s.id);
-      init[s.id] = { present: a ? a.present : true, note: a?.homework_note || "" };
-    });
-    setRows(init);
-  }, [enrolled, att.data]);
-
-  useEffect(() => {
-    if (event) {
-      setStart((event.start_time || "").slice(0, 5));
-      setEnd((event.end_time || "").slice(0, 5));
-      setEvDate(event.event_date || "");
-    }
-  }, [event]);
-
-  const cls = event && classes.find((c: any) => c.id === event.class_id);
-
-  const save = async () => {
-    if (!event || !user) return;
-    let targetEventId = event.id;
-    if (event.virtual || event.source === "google") {
-      const { data: newEvent, error: insertError } = await supabase
-        .from("schedule_events")
-        .insert({
+      if (addToFixed) {
+        const dayOfWeek = new Date(d).getDay();
+        await supabase.from("class_schedules").insert({
           user_id: user.id,
-          class_id: event.class_id,
-          event_date: evDate,
+          class_id: classId,
+          day_of_week: dayOfWeek,
           start_time: start,
           end_time: end,
-          notes: "Google Event Attendance"
-        })
-        .select()
-        .single();
-      if (insertError) {
-        toast.error("Không thể tạo sự kiện điểm danh: " + insertError.message);
-        return;
+        });
       }
-      targetEventId = newEvent.id;
-    } else {
-      await supabase
-        .from("schedule_events")
-        .update({ start_time: start, end_time: end, event_date: evDate })
-        .eq("id", targetEventId);
-    }
-    for (const s of enrolled) {
-      const r = rows[s.id];
-      const existing = (att.data || []).find((x: any) => x.student_id === s.id);
-      
-      if (existing) {
-        await supabase.from("attendance").update({ 
-          present: r.present, 
-          homework_note: r.note,
-          attendance_start_time: start as any,
-          attendance_end_time: end as any
-        } as any).eq("id", existing.id);
-      } else {
-        await supabase.from("attendance").insert({
-          user_id: user.id,
-          event_id: targetEventId,
-          student_id: s.id,
-          present: r.present,
-          homework_note: r.note,
-          attendance_date: evDate,
-          attendance_start_time: start as any,
-          attendance_end_time: end as any
-        } as any);
+      if (error) toast.error(error.message);
+      else {
+        toast.success(t.save);
+        qc.invalidateQueries({ queryKey: ["events"] });
+        qc.invalidateQueries({ queryKey: ["class-schedules"] });
+        onOpenChange(false);
+        setClassId(""); setNotes(""); setAddToFixed(false);
       }
-    }
-    qc.invalidateQueries({ queryKey: ["events"] });
-    qc.invalidateQueries({ queryKey: ["student-attendance"] });
-    toast.success("Đã lưu điểm danh thành công!");
-    onOpenChange(false);
-  };
+    };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base font-black text-slate-900">
-            <span className="h-3 w-3 rounded-full" style={{ background: cls?.color || "#3b82f6" }} />
-            {cls?.name || event?.title}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="grid grid-cols-3 gap-2 my-2">
-          <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.date}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={evDate} onChange={(e) => setEvDate(e.target.value)} /></div>
-          <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.startDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-          <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.endDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
-        </div>
-        <div className="space-y-3 pt-2">
-          <Label className="text-xs font-bold text-slate-700">Danh sách điểm danh</Label>
-          {enrolled.length === 0 ? (
-            <div className="text-xs font-semibold text-slate-400 py-4 text-center">{t.nothingHere}</div>
-          ) : enrolled.map((s: any) => (
-            <div key={s.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100/80 space-y-2">
-              <label className="flex items-center gap-2.5 font-bold text-xs text-slate-800 cursor-pointer">
-                <Checkbox
-                  className="rounded-lg"
-                  checked={rows[s.id]?.present ?? true}
-                  onCheckedChange={(v) => setRows({ ...rows, [s.id]: { ...rows[s.id], present: !!v } })}
-                />
-                {s.name}
-              </label>
-              <Textarea
-                placeholder={t.homework}
-                className="text-xs rounded-xl bg-white border-slate-200"
-                value={rows[s.id]?.note || ""}
-                onChange={(e) => setRows({ ...rows, [s.id]: { ...rows[s.id], note: e.target.value } })}
-              />
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="rounded-3xl max-w-md">
+          <DialogHeader><DialogTitle className="font-black text-slate-900">{t.addEvent}</DialogTitle></DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label className="text-xs font-bold text-slate-600 mb-1 block">{t.class}</Label>
+              <Select value={classId} onValueChange={setClassId}>
+                <SelectTrigger className="rounded-2xl h-10 border-slate-200 text-xs font-semibold"><SelectValue placeholder={t.class} /></SelectTrigger>
+                <SelectContent className="rounded-2xl">
+                  {classes.map((c: any) => <SelectItem key={c.id} value={c.id} className="rounded-xl text-xs font-semibold">{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
-          ))}
-        </div>
-        <DialogFooter className="flex justify-between gap-2 sm:justify-between pt-4">
-          <Button variant="ghost" className="rounded-xl text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => { onOpenChange(false); onDelete(event); }}>
-            <Trash2 className="h-4 w-4" /> {t.delete}
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
-            <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={save}><Check className="h-4 w-4" /> {t.save}</Button>
+            <div className="flex items-center space-x-2 pt-1">
+              <Checkbox id="fixed-schedule" checked={addToFixed} onCheckedChange={(v) => setAddToFixed(!!v)} className="rounded-lg" />
+              <Label htmlFor="fixed-schedule" className="text-xs font-bold text-slate-600 cursor-pointer">Thêm vào lịch cố định hàng tuần</Label>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">{t.startDate}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={d} onChange={(e) => setD(e.target.value)} /></div>
+              <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Bắt đầu</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+              <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Kết thúc</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+            </div>
+            <div><Label className="text-xs font-bold text-slate-600 mb-1 block">{t.notes}</Label><Textarea className="rounded-2xl border-slate-200 text-xs" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+          <DialogFooter className="pt-2">
+            <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+            <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={submit}>{t.save}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  /* ---------------- DIALOG ĐIỂM DANH ---------------- */
+  function AttendanceDialog({ open, onOpenChange, event, students, enrollments, classes, onDelete }: any) {
+    const { t, user } = useApp();
+    const qc = useQueryClient();
+    const att = useAttendance(event?.id);
+    const [rows, setRows] = useState<Record<string, { present: boolean; note: string }>>({});
+    const [start, setStart] = useState("");
+    const [end, setEnd] = useState("");
+    const [evDate, setEvDate] = useState("");
+
+    const enrolled = useMemo(() => {
+      if (!event) return [];
+      const sids = enrollments.filter((e: any) => e.class_id === event.class_id).map((e: any) => e.student_id);
+      return students.filter((s: any) => sids.includes(s.id));
+    }, [event, enrollments, students]);
+
+    useEffect(() => {
+      const init: any = {};
+      enrolled.forEach((s: any) => {
+        const a = (att.data || []).find((x: any) => x.student_id === s.id);
+        init[s.id] = { present: a ? a.present : true, note: a?.homework_note || "" };
+      });
+      setRows(init);
+    }, [enrolled, att.data]);
+
+    useEffect(() => {
+      if (event) {
+        setStart((event.start_time || "").slice(0, 5));
+        setEnd((event.end_time || "").slice(0, 5));
+        setEvDate(event.event_date || "");
+      }
+    }, [event]);
+
+    const cls = event && classes.find((c: any) => c.id === event.class_id);
+
+    const save = async () => {
+      if (!event || !user) return;
+      let targetEventId = event.id;
+      if (event.virtual || event.source === "google") {
+        const { data: newEvent, error: insertError } = await supabase
+          .from("schedule_events")
+          .insert({
+            user_id: user.id,
+            class_id: event.class_id,
+            event_date: evDate,
+            start_time: start,
+            end_time: end,
+            notes: "Google Event Attendance"
+          })
+          .select()
+          .single();
+        if (insertError) {
+          toast.error("Không thể tạo sự kiện điểm danh: " + insertError.message);
+          return;
+        }
+        targetEventId = newEvent.id;
+      } else {
+        await supabase
+          .from("schedule_events")
+          .update({ start_time: start, end_time: end, event_date: evDate })
+          .eq("id", targetEventId);
+      }
+      for (const s of enrolled) {
+        const r = rows[s.id];
+        const existing = (att.data || []).find((x: any) => x.student_id === s.id);
+        
+        if (existing) {
+          await supabase.from("attendance").update({ 
+            present: r.present, 
+            homework_note: r.note,
+            attendance_start_time: start as any,
+            attendance_end_time: end as any
+          } as any).eq("id", existing.id);
+        } else {
+          await supabase.from("attendance").insert({
+            user_id: user.id,
+            event_id: targetEventId,
+            student_id: s.id,
+            present: r.present,
+            homework_note: r.note,
+            attendance_date: evDate,
+            attendance_start_time: start as any,
+            attendance_end_time: end as any
+          } as any);
+        }
+      }
+      qc.invalidateQueries({ queryKey: ["events"] });
+      qc.invalidateQueries({ queryKey: ["student-attendance"] });
+      toast.success("Đã lưu điểm danh thành công!");
+      onOpenChange(false);
+    };
+
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="rounded-3xl max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-black text-slate-900">
+              <span className="h-3 w-3 rounded-full" style={{ background: cls?.color || "#3b82f6" }} />
+              {cls?.name || event?.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-3 gap-2 my-2">
+            <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.date}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={evDate} onChange={(e) => setEvDate(e.target.value)} /></div>
+            <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.startDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+            <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.endDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+          </div>
+          <div className="space-y-3 pt-2">
+            <Label className="text-xs font-bold text-slate-700">Danh sách điểm danh</Label>
+            {enrolled.length === 0 ? (
+              <div className="text-xs font-semibold text-slate-400 py-4 text-center">{t.nothingHere}</div>
+            ) : enrolled.map((s: any) => (
+              <div key={s.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100/80 space-y-2">
+                <label className="flex items-center gap-2.5 font-bold text-xs text-slate-800 cursor-pointer">
+                  <Checkbox
+                    className="rounded-lg"
+                    checked={rows[s.id]?.present ?? true}
+                    onCheckedChange={(v) => setRows({ ...rows, [s.id]: { ...rows[s.id], present: !!v } })}
+                  />
+                  {s.name}
+                </label>
+                <Textarea
+                  placeholder={t.homework}
+                  className="text-xs rounded-xl bg-white border-slate-200"
+                  value={rows[s.id]?.note || ""}
+                  onChange={(e) => setRows({ ...rows, [s.id]: { ...rows[s.id], note: e.target.value } })}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="flex justify-between gap-2 sm:justify-between pt-4">
+            <Button variant="ghost" className="rounded-xl text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => { onOpenChange(false); onDelete(event); }}>
+              <Trash2 className="h-4 w-4" /> {t.delete}
+            </Button>
+            <div className="flex gap-2">
+              <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+              <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={save}><Check className="h-4 w-4" /> {t.save}</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   useEffect(() => { document.title = `${t.schedule} — ${t.appName}`; }, [t]);
+  
   useEffect(() => {
     if (view === "week" && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = 1 * HOUR_HEIGHT;
+      scrollContainerRef.current.scrollTop = 0;
     }
   }, [view]);
 
@@ -307,10 +308,9 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   const days = Array.from({ length: view === "week" ? 7 : 35 }, (_, i) => 
     addDays(view === "week" ? weekStart : startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1), { weekStartsOn: 1 }), i)
   );
-
+  
   const fromISO = format(days[0], "yyyy-MM-dd");
   const toISO = format(days[days.length - 1], "yyyy-MM-dd");
-
   const events = useEvents(fromISO, toISO);
   const classes = useClasses();
   const schedules = useClassSchedules();
@@ -352,7 +352,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
           const targetClass = (classes.data || []).find((c: any) => c.id === sched.class_id);
           const classStartDate = targetClass?.start_date ? format(new Date(targetClass.start_date), "yyyy-MM-dd") : null;
           if (classStartDate && dateStr < classStartDate) return;
-
           const hasRealEvent = realEvents.some(
             (re) => re.class_id === sched.class_id && re.event_date === dateStr
           );
@@ -382,7 +381,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
           ? { ...e, title: linkedClass.name, class_id: linkedClass.id, source: "google", virtual: false }
           : { ...e, virtual: false };
       });
-
     return [...realEvents, ...virtualEvents, ...filteredGoogleEvents];
   }, [events.data, schedules.data, classes.data, days, googleEvents]);
 
@@ -434,7 +432,7 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-{/* CSS IN GIỮ NGUYÊN GIAO DIỆN TIMELINE WEB */}
+      {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE TIMELINE WEB */}
       <style>{`
         @media print {
           @page {
@@ -444,32 +442,34 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
           html, body {
             background: #fff !important;
             color: #000 !important;
+            height: auto !important;
+            overflow: visible !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          /* Ẩn Sidebar, Header, Nút bấm */
+          /* Ẩn các thành phần không cần thiết */
           header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
             display: none !important;
           }
-          /* Cấu hình khung lịch phủ trọn trang in */
+          /* Mở rộng khung lịch đầy trang */
           .p-2, .sm\\:p-6, .max-w-7xl {
             padding: 0 !important;
             max-width: 100% !important;
             margin: 0 !important;
           }
-          .print-area {
-            box-shadow: none !important;
-            border: 1px solid #e2e8f0 !important;
-            border-radius: 12px !important;
-            overflow: visible !important;
-            width: 100% !important;
+          /* Tắt hiệu ứng cuộn và sticky để không tách tiêu đề trang */
+          .sticky, [class*="sticky"] {
+            position: static !important;
+            top: auto !important;
           }
-          .print-scroll-container {
+          .print-area, .overflow-x-auto, .overflow-y-auto, .print-scroll-container {
+            overflow: visible !important;
             max-height: none !important;
-            overflow: visible !important;
             height: auto !important;
+            box-shadow: none !important;
+            border: none !important;
           }
-          /* Giữ màu sắc thẻ lớp học khi in */
+          /* Giữ nguyên màu sắc các thẻ lớp học */
           [data-event] {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
@@ -512,8 +512,7 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
               {t.monthView}
             </button>
           </div>
-
-          {/* 🖨️ NÚT IN LỊCH DẠY */}
+          
           <Button 
             onClick={handlePrint}
             variant="outline"
@@ -521,7 +520,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
           >
             <Printer className="h-4 w-4 text-slate-600" /> In lịch dạy
           </Button>
-
           <Button 
             onClick={() => setEventDialog({ open: true, date: new Date() })}
             className="h-10 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
@@ -537,14 +535,24 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
         </div>
       )}
 
-      {/* HEADER KHI IN BAN TRANG A4 */}
-    
+      {/* TIÊU ĐỀ BẢN IN (Chỉ hiển thị khi in) */}
+      <div className="hidden print:block text-center mb-2">
+        <h2 className="text-base font-black uppercase text-slate-900 tracking-wide">
+          THỜI KHÓA BIỂU GIẢNG DẠY
+        </h2>
+        <p className="text-[11px] font-bold text-slate-600 mt-0.5">
+          Tuần: {format(weekDays[0], "dd/MM/yyyy")} - {format(weekDays[6], "dd/MM/yyyy")}
+        </p>
+      </div>
+
       {/* WEEK VIEW */}
       {view === "week" ? (
-<Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print:overflow-visible print-area">
-          <div className="overflow-x-auto">
+        <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print:overflow-visible print-area">
+          <div className="overflow-x-auto print:overflow-visible">
             <div className="min-w-[900px] print:min-w-full">
-              <div className="sticky top-0 z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
+              
+              {/* Header Thứ / Ngày - Loại bỏ sticky khi in */}
+              <div className="sticky top-0 print:static z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
                 <div className="p-2 text-right text-[10px] font-black uppercase text-slate-400 border-r border-slate-200/60">
                   Giờ
                 </div>
@@ -560,6 +568,8 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
                   );
                 })}
               </div>
+
+              {/* Thân bảng giờ và các lớp học */}
               <div ref={scrollContainerRef} className="overflow-y-auto print-scroll-container" style={{ maxHeight: SCHEDULE_MAX_HEIGHT }}>
                 <div className="grid relative" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
                   <div className="border-r border-slate-200/60 bg-slate-50/50" style={{ height: totalH }}>
@@ -594,7 +604,7 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
                           const startMin = toMinutes(ev.start_time) - HOUR_START * 60;
                           const endMin = toMinutes(ev.end_time) - HOUR_START * 60;
                           const top = (startMin / 60) * HOUR_HEIGHT;
-                          const height = Math.max(24, ((endMin - startMin) / 60) * HOUR_HEIGHT - 2);
+                          const height = Math.max(22, ((endMin - startMin) / 60) * HOUR_HEIGHT - 2);
                           const widthPct = 100 / cols;
                           return (
                             <button
@@ -712,7 +722,7 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
         </Card>
       )}
 
-      {/* DIALOGS giữ nguyên */}
+      {/* DIALOGS */}
       <EventDialog open={eventDialog.open} onOpenChange={(o) => setEventDialog({ open: o })} date={eventDialog.date} defaultHour={(eventDialog as any).event?._newHour} classes={classes.data || []} />
       <AttendanceDialog open={attDialog.open} onOpenChange={(o) => setAttDialog({ open: o })} event={attDialog.event} students={students.data || []} enrollments={enrollments.data || []} classes={classes.data || []} onDelete={requestDelete} />
       
@@ -737,73 +747,6 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {/* KHUNG DÀNH RIÊNG CHO IN A4 (Hiển thị dạng bảng thuần, 100% ăn màu và không bị mất chữ) */}
-      <div id="print-only-schedule">
-        <div style={{ textAlign: "center", marginBottom: "12px" }}>
-          <h2 style={{ fontSize: "18px", fontWeight: "bold", textTransform: "uppercase", margin: 0 }}>
-            THỜI KHÓA BIỂU GIẢNG DẠY
-          </h2>
-          <p style={{ fontSize: "12px", margin: "4px 0 0 0", color: "#475569" }}>
-            Tuần: {format(weekDays[0], "dd/MM/yyyy")} - {format(weekDays[6], "dd/MM/yyyy")}
-          </p>
-        </div>
-
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px", tableLayout: "fixed" }}>
-          <thead>
-            <tr>
-              <th style={{ border: "1px solid #cbd5e1", padding: "6px", width: "50px", background: "#f8fafc" }}>
-                GIỜ
-              </th>
-              {weekDays.map((d, i) => (
-                <th key={i} style={{ border: "1px solid #cbd5e1", padding: "6px", background: "#f8fafc", textTransform: "uppercase" }}>
-                  <div>{t.daysLong[d.getDay()]}</div>
-                  <div style={{ fontSize: "12px", fontWeight: "bold", color: "#2563eb" }}>{format(d, "dd/MM")}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {hours.map((h) => (
-              <tr key={h}>
-                <td style={{ border: "1px solid #cbd5e1", padding: "4px", textAlign: "center", fontWeight: "bold", color: "#64748b", height: "36px" }}>
-                  {String(h).padStart(2, "0")}:00
-                </td>
-                {weekDays.map((d, di) => {
-                  const evs = eventsForDay(d).filter((e: any) => {
-                    const startH = parseInt(e.start_time.split(":")[0]);
-                    return startH === h;
-                  });
-                  return (
-                    <td key={di} style={{ border: "1px solid #cbd5e1", padding: "2px", verticalAlign: "top", background: "#fff" }}>
-                      {evs.map((ev: any) => {
-                        const cls = classOf(ev.class_id);
-                        return (
-                          <div
-                            key={ev.id}
-                            style={{
-                              backgroundColor: (cls?.color || "#3b82f6") + "20",
-                              borderLeft: `3px solid ${cls?.color || "#3b82f6"}`,
-                              padding: "4px",
-                              borderRadius: "4px",
-                              marginBottom: "2px",
-                              color: "#0f172a"
-                            }}
-                          >
-                            <div style={{ fontWeight: "bold", fontSize: "10px" }}>{cls?.name || ev.title}</div>
-                            <div style={{ fontSize: "9px", color: "#475569" }}>
-                              {ev.start_time.slice(0, 5)} - {ev.end_time.slice(0, 5)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
