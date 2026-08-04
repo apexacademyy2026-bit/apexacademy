@@ -255,21 +255,26 @@ export default function Dashboard() {
     setLoading(true);
     setTimeout(() => setLoading(false), 350);
   };
-// Tính tổng học phí của tất cả học sinh cho kỳ sắp tới
-const totalUpcomingFee = useMemo(() => {
-  if (!students || !Array.isArray(students)) return 0;
+// 1. Kiểm tra danh sách học sinh (đảm bảo truyền đúng mảng)
+const studentList = students?.data || students || [];
 
-  return students.reduce((sum, student) => {
-    // Lấy giá trị học phí từ thuộc tính của học sinh (tuition_fee / fee / tuition)
+// 2. Tính tổng học phí
+const totalUpcomingFee = useMemo(() => {
+  if (!Array.isArray(studentList)) return 0;
+
+  return studentList.reduce((sum: number, student: any) => {
+    // Thử tất cả các tên cột có thể có trong CSDL của bạn:
     const fee = Number(
-      student?.tuition_fee ?? 
-      student?.fee ?? 
-      student?.tuition ?? 
+      student?.tuition_fee || 
+      student?.fee || 
+      student?.tuition || 
+      student?.price || 
       0
     );
-    return sum + (isNaN(fee) ? 0 : fee);
+    return sum + fee;
   }, 0);
-}, [students]);
+}, [studentList]);
+
   const inRange = (iso: string | Date) => {
     const d = new Date(iso);
     const from = fromDate ? new Date(fromDate) : null;
@@ -620,8 +625,8 @@ const totalUpcomingFee = useMemo(() => {
       <Skeleton className="h-8 w-20 mt-1" />
     ) : (
       <h3 className="text-2xl font-black text-slate-950 mt-0.5">
-        {formatVND(totalUpcomingFee)}
-      </h3>
+  {formatVND(totalUpcomingFee)}
+</h3>
     )}
     <button 
       onClick={() => setShowCollectedModal(true)}
@@ -759,43 +764,48 @@ const totalUpcomingFee = useMemo(() => {
         )}
       </Card>
 
-      {/* 🔮 YÊU CẦU 2: POPUP DIALOG XEM CHI TIẾT DANH SÁCH ĐÃ THU TIỀN */}
-      <Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
-        <DialogContent className="max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-emerald-600" />
-              Chi tiết đã thu trong kỳ
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
-            {filteredPayments.map((p: any) => {
-              const studentName = students.data?.find((s: any) => String(s.id) === String(p.student_id))?.name || p.student_name || "Học sinh";
-              return (
-                <div key={p.id} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                      {studentName.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">{studentName}</div>
-                      <div className="text-[10px] text-slate-400 font-medium">
-                        {p.cycle_label || (p.paid_at ? new Date(p.paid_at).toLocaleDateString("vi-VN") : "Đã thanh toán")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-xs font-black text-emerald-600">
-                    +{formatVND(p.amount || 0)}
+     {/* Modal danh sách học phí kỳ sắp tới */}
+<Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
+  <DialogContent className="rounded-3xl max-w-md">
+    <DialogHeader>
+      <DialogTitle className="font-black text-slate-900">
+        {lang === "vi" ? "Chi tiết học phí kỳ sắp tới" : "Upcoming Tuition Details"}
+      </DialogTitle>
+    </DialogHeader>
+
+    <div className="space-y-3 my-2 max-h-[60vh] overflow-y-auto pr-1">
+  {students.data && students.data.length > 0 ? (
+    students.data.map((student: any) => {
+      // Lấy học phí chính xác từ cột fee_per_month hoặc fee_per_session
+      const fee = Number(student?.fee_per_month || student?.fee_per_session || 0);
+
+      return (
+        <div key={student.id}>
+              className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
+            
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
+                  {student.name?.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-bold text-xs text-slate-900">{student.name}</div>
+                  <div className="text-[10px] text-slate-400 font-semibold">
+                    {student.code || student.phone || "Học sinh"}
                   </div>
                 </div>
-              );
-            })}
-            {filteredPayments.length === 0 && (
-              <p className="text-center text-xs text-slate-400 py-6">Chưa có giao dịch thu tiền nào trong thời gian này.</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+              </div>
+              <div className="font-black text-xs text-emerald-600">
+                +{formatVND(fee)}
+              </div>
+            </div>
+          );
+        })
+      ) : (
+        <div className="text-center text-xs text-slate-400 py-4">Chưa có dữ liệu học sinh</div>
+      )}
+    </div>
+  </DialogContent>
+</Dialog>
 
     </div>
   );
