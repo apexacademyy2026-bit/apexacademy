@@ -434,43 +434,46 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
   return (
     <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
       
-{/* CSS IN DÀNH RIÊNG CHO KHỔ A4 */}
+{/* CSS IN GIỮ NGUYÊN GIAO DIỆN TIMELINE WEB */}
       <style>{`
         @media print {
           @page {
             size: A4 landscape;
-            margin: 5mm;
+            margin: 4mm;
           }
-          /* 1. Ẩn toàn bộ phần tử trên trang web */
-          body * {
-            visibility: hidden !important;
-          }
-          /* 2. Chỉ cho phép duy nhất khung bảng in #print-only-schedule hiển thị */
-          #print-only-schedule, #print-only-schedule * {
-            visibility: visible !important;
-          }
-          /* 3. Đặt vị trí khung in lên góc trên cùng màn hình */
-          #print-only-schedule {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            z-index: 999999 !important;
+          html, body {
+            background: #fff !important;
+            color: #000 !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-        }
-        /* Ẩn hoàn toàn khung bảng in khi xem ở chế độ web bình thường */
-        #print-only-schedule {
-          display: none;
-        }
-        @media print {
-          #print-only-schedule {
-            display: block !important;
+          /* Ẩn Sidebar, Header, Nút bấm */
+          header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
+            display: none !important;
+          }
+          /* Cấu hình khung lịch phủ trọn trang in */
+          .p-2, .sm\\:p-6, .max-w-7xl {
+            padding: 0 !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+          }
+          .print-area {
+            box-shadow: none !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 12px !important;
+            overflow: visible !important;
+            width: 100% !important;
+          }
+          .print-scroll-container {
+            max-height: none !important;
+            overflow: visible !important;
+            height: auto !important;
+          }
+          /* Giữ màu sắc thẻ lớp học khi in */
+          [data-event] {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            box-shadow: none !important;
           }
         }
       `}</style>
@@ -538,7 +541,7 @@ function AttendanceDialog({ open, onOpenChange, event, students, enrollments, cl
     
       {/* WEEK VIEW */}
       {view === "week" ? (
-        <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print-area">
+<Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print:overflow-visible print-area">
           <div className="overflow-x-auto">
             <div className="min-w-[900px] print:min-w-full">
               <div className="sticky top-0 z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
