@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Printer, Check, Plus, Trash2, Eye, EyeOff, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,13 +29,13 @@ export default function StudentBill() {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({ date: new Date().toISOString().slice(0, 10), class_id: "", note: "" });
   const [showAtt, setShowAtt] = useState(true);
-  const [monthlyNotes, setMonthlyNotes] = useState<Record<string, string>>({});
   const [feeDraft, setFeeDraft] = useState<Record<string, string>>({});
   const [homeworkDraft, setHomeworkDraft] = useState<Record<string, string>>({});
   const [footnote, setFootnote] = useState<string>("");
-  
-  // State lưu danh sách ID các buổi lẻ được tích chọn để đóng tiền
+
+  // State lưu danh sách ID được tích chọn
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
+  const [selectedCycles, setSelectedCycles] = useState<Set<string>>(new Set());
 
   const billRef = useRef<HTMLDivElement | null>(null);
   const enrollments = useEnrollments();
@@ -100,48 +100,33 @@ export default function StudentBill() {
     [attendance]
   );
 
-  // 1. Lọc bỏ các buổi học thuộc THÁNG đã đóng tiền (Monthly)
- // Lọc bỏ hoàn toàn các buổi học ĐÃ ĐÓNG (Cả đóng theo Tháng lẫn đóng theo Buổi lẻ)
-const availableAttendance = useMemo(() => {
-  if (mode !== "by_session") return sortedAttendance;
+  const availableAttendance = useMemo(() => {
+    if (mode !== "by_session") return sortedAttendance;
+    return sortedAttendance.filter((a: any) => {
+      const dateStr = a?.schedule_events?.event_date;
+      if (!dateStr) return false;
 
-  return sortedAttendance.filter((a: any) => {
-    const dateStr = a?.schedule_events?.event_date;
-    if (!dateStr) return false;
+      const isPaidMonthly = (payments || []).some((p: any) => {
+        if (p.cycle_type !== "monthly") return false;
+        return p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end;
+      });
+      if (isPaidMonthly) return false;
 
-    // 1. Kiểm tra xem buổi học có nằm trong gói Tháng đã đóng không
-    const isPaidMonthly = (payments || []).some((p: any) => {
-      if (p.cycle_type !== "monthly") return false;
-      return p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end;
+      const isPaidSession = (payments || []).some((p: any) => {
+        if (p.cycle_type !== "session") return false;
+        if (p.attendance_id === a.id) return true;
+        if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
+        if (p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end) return true;
+        return false;
+      });
+      if (isPaidSession) return false;
+      return true;
     });
-    if (isPaidMonthly) return false; // Lọc bỏ -> Biến mất
+  }, [sortedAttendance, payments, mode]);
 
-    // 2. Kiểm tra xem buổi học đã được đóng lẻ theo Session chưa
-    const isPaidSession = (payments || []).some((p: any) => {
-      if (p.cycle_type !== "session") return false;
-      
-      // Kiểm tra bằng ID đơn
-      if (p.attendance_id === a.id) return true;
-      
-      // Kiểm tra trong mảng attendance_ids
-      if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
-      
-      // Kiểm tra theo khoảng ngày (nếu có)
-      if (p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end) return true;
-
-      return false;
-    });
-    if (isPaidSession) return false; // Lọc bỏ -> Biến mất
-
-    return true; // Chỉ giữ lại buổi CHƯA ĐÓNG
-  });
-}, [sortedAttendance, payments, mode]);
-
-  // 2. Tạo danh sách Bill
   const bills = useMemo(() => {
     if (!student || !mode) return [] as any[];
     const safeName = student.name ? student.name.replace(/\s+/g, "") : "Student";
-
     if (mode === "monthly") {
       const start = new Date(student.start_date || Date.now());
       const today = new Date();
@@ -176,9 +161,7 @@ const availableAttendance = useMemo(() => {
         };
       });
     } else {
-      // Chế độ tính theo Buổi: Hiển thị danh sách tất cả các buổi chưa thuộc gói Tháng
       const sessionPayments = (payments || []).filter((p: any) => p.cycle_type === "session");
-
       return availableAttendance.map((a: any) => {
         const dateStr = a?.schedule_events?.event_date || "";
         const isPaidSession = sessionPayments.some((p: any) => {
@@ -186,9 +169,7 @@ const availableAttendance = useMemo(() => {
           if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
           return p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end;
         });
-
         const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
-
         return {
           cycle_type: "session",
           cycle_label: `Session_${a.id.slice(0, 8)}`,
@@ -232,7 +213,7 @@ const availableAttendance = useMemo(() => {
 
   const current = bills.find((b) => b.cycle_label === selected) || bills[bills.length - 1];
 
-  // Tính toán tổng tiền khi chọn nhiều buổi lẻ
+  // Tính toán cho Buổi lẻ
   const selectedSessionsArray = useMemo(() => {
     return availableAttendance.filter((a: any) => selectedSessionIds.has(a.id));
   }, [availableAttendance, selectedSessionIds]);
@@ -243,22 +224,37 @@ const availableAttendance = useMemo(() => {
     }, 0);
   }, [selectedSessionsArray, student]);
 
-// Chỉ lấy danh sách các buổi CHƯA ĐÓNG để đưa vào Hóa đơn
-const displayBill: any = mode === "by_session" ? {
-  cycle_type: "session_combined",
-  cycle_label: `${student?.name || "Student"}_BuoiLe`,
-  description: `Thanh toán ${selectedSessionIds.size || availableAttendance.length} buổi học`,
-  amount: selectedSessionIds.size > 0 
-    ? selectedSessionsAmount 
-    : availableAttendance.reduce((s, a) => s + Number(a.fee_override ?? student?.fee_per_session ?? 0), 0),
-  // Khi người dùng có chọn check_box -> chỉ hiển thị các buổi được chọn
-  // Khi chưa chọn check_box nào -> hiển thị tất cả các buổi CHƯA ĐÓNG
-  attendances: selectedSessionIds.size > 0 ? selectedSessionsArray : availableAttendance,
-} : current;
+  // Tính toán cho Chu kỳ Tháng được chọn
+  const selectedCyclesArray = useMemo(() => {
+    return bills.filter((b: any) => selectedCycles.has(b.cycle_label));
+  }, [bills, selectedCycles]);
+
+  const selectedCyclesAmount = useMemo(() => {
+    return selectedCyclesArray.reduce((sum: number, b: any) => sum + effectiveAmount(b), 0);
+  }, [selectedCyclesArray]);
+
+  // Dynamic Bill xem trước
+  const displayBill: any = mode === "by_session" ? {
+    cycle_type: "session_combined",
+    cycle_label: `${student?.name || "Student"}_BuoiLe`,
+    description: `${selectedSessionIds.size || availableAttendance.length} ${((t as any)?.sessionsCountUnit || "sessions")}`,
+    amount: selectedSessionIds.size > 0 
+      ? selectedSessionsAmount 
+      : availableAttendance.reduce((s, a) => s + Number(a.fee_override ?? student?.fee_per_session ?? 0), 0),
+    attendances: selectedSessionIds.size > 0 ? selectedSessionsArray : availableAttendance,
+  } : selectedCycles.size > 0 ? {
+    cycle_type: "monthly_combined",
+    cycle_label: selectedCyclesArray.map((b: any) => b.cycle_label).join(", "),
+    description: `${selectedCycles.size} ${((t as any)?.cycles || "cycles")}`,
+    amount: selectedCyclesAmount,
+    period_start: selectedCyclesArray[0]?.period_start,
+    period_end: selectedCyclesArray[selectedCyclesArray.length - 1]?.period_end,
+    attendances: selectedCyclesArray.flatMap((b: any) => b.attendances || []),
+  } : current;
 
   const billTotal = mode === "by_session"
     ? (selectedSessionIds.size > 0 ? selectedSessionsAmount : displayBill?.amount || 0)
-    : effectiveAmount(displayBill);
+    : (selectedCycles.size > 0 ? selectedCyclesAmount : effectiveAmount(displayBill));
 
   const qrContent = displayBill ? displayBill.cycle_label : "";
   const qrUrl = displayBill && profile?.bank_code && profile?.bank_account_number
@@ -268,56 +264,54 @@ const displayBill: any = mode === "by_session" ? {
   const accent = student?.color || "#3b82f6";
   const billNum = (displayBill?.cycle_label || student?.id || "").slice(0, 100).toUpperCase();
 
-  // Đóng tiền lẻ theo danh sách tích chọn
- const paySelectedSessions = async () => {
-  if (!student || selectedSessionIds.size === 0) {
-    toast.error("Vui lòng chọn ít nhất 1 buổi học!");
-    return;
-  }
-  const { data: { session } } = await supabase.auth.getSession();
-  const activeUserId = user?.id || student.user_id || session?.user?.id;
-  if (!activeUserId) {
-    toast.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!");
-    return;
-  }
+  // Đóng tiền Buổi lẻ
+  const paySelectedSessions = async () => {
+    if (!student || selectedSessionIds.size === 0) {
+      toast.error((t as any)?.selectAtLeastOne || "Please select at least 1 session!");
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    const activeUserId = user?.id || student.user_id || session?.user?.id;
+    if (!activeUserId) return;
 
-  const selectedIdsArr = Array.from(selectedSessionIds);
-  const selectedAtts = availableAttendance.filter((a) => selectedSessionIds.has(a.id));
-  const dates = selectedAtts.map((a) => a.schedule_events?.event_date).filter(Boolean).sort();
+    const selectedIdsArr = Array.from(selectedSessionIds);
+    const selectedAtts = availableAttendance.filter((a) => selectedSessionIds.has(a.id));
+    const dates = selectedAtts.map((a) => a.schedule_events?.event_date).filter(Boolean).sort();
 
-  const { error } = await supabase.from("payments").insert({
-    user_id: activeUserId,
-    student_id: student.id,
-    cycle_type: "session",
-    cycle_label: `${student.name}_${selectedIdsArr.length}buoi_${new Date().getFullYear()}`,
-    period_start: dates[0] || null,
-    period_end: dates[dates.length - 1] || null,
-    session_count: selectedIdsArr.length,
-    amount: selectedSessionsAmount,
-    attendance_ids: selectedIdsArr as any, // 👈 Thêm "as any" ở đây để sửa lỗi Ln 274
-  } as any); // 👈 Thêm "as any" ở đây để đảm bảo TypeScript không bắt lỗi object
-
-  if (error) { toast.error(error.message); return; }
-
-  setSelectedSessionIds(new Set());
-  qc.invalidateQueries({ queryKey: ["payments", id] });
-  toast.success("Đã đánh dấu đóng học phí thành công!");
-};
-
-const togglePaid = async (b: any) => {
-  if (!student || !b) return;
-  const { data: { session } } = await supabase.auth.getSession();
-  const activeUserId = user?.id || student.user_id || session?.user?.id;
-  if (!activeUserId) {
-    toast.error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại!");
-    return;
-  }
-
-  const recorded = (payments || []).find((p: any) => p.cycle_label === b.cycle_label);
-  if (recorded) {
-    await supabase.from("payments").delete().eq("id", recorded.id);
-  } else {
     const { error } = await supabase.from("payments").insert({
+      user_id: activeUserId,
+      student_id: student.id,
+      cycle_type: "session",
+      cycle_label: `${student.name}_${selectedIdsArr.length}buoi_${new Date().getFullYear()}`,
+      period_start: dates[0] || null,
+      period_end: dates[dates.length - 1] || null,
+      session_count: selectedIdsArr.length,
+      amount: selectedSessionsAmount,
+      attendance_ids: selectedIdsArr as any,
+    } as any);
+
+    if (error) { toast.error(error.message); return; }
+    setSelectedSessionIds(new Set());
+    qc.invalidateQueries({ queryKey: ["payments", id] });
+toast.success((t as any)?.saveSuccess || "Marked as paid successfully!");  };
+
+  // Đóng tiền Chu kỳ Tháng
+  const paySelectedCycles = async () => {
+    if (!student || selectedCycles.size === 0) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const activeUserId = user?.id || student.user_id || session?.user?.id;
+    if (!activeUserId) return;
+
+    const cyclesToPay = bills.filter(
+      (b: any) => selectedCycles.has(b.cycle_label) && !payments?.some((p: any) => p.cycle_label === b.cycle_label)
+    );
+
+    if (cyclesToPay.length === 0) {
+      toast.info((t as any)?.alreadyPaid || "Selected cycles are already paid!");
+      return;
+    }
+
+    const insertData = cyclesToPay.map((b: any) => ({
       user_id: activeUserId,
       student_id: student.id,
       cycle_type: b.cycle_type,
@@ -326,13 +320,41 @@ const togglePaid = async (b: any) => {
       period_end: b.period_end,
       session_count: b.session_count ?? null,
       amount: effectiveAmount(b),
-      attendance_ids: (b.attendance_id ? [b.attendance_id] : null) as any, // 👈 Thêm "as any" ở đây để sửa lỗi Ln 306
-    } as any);
+    }));
+
+    const { error } = await supabase.from("payments").insert(insertData as any);
     if (error) { toast.error(error.message); return; }
-  }
-  qc.invalidateQueries({ queryKey: ["payments", id] });
-  toast.success(t?.save || "Saved");
-};
+
+    setSelectedCycles(new Set());
+    qc.invalidateQueries({ queryKey: ["payments", id] });
+toast.success((t as any)?.saveSuccess || "Marked as paid successfully!");  };
+
+  const togglePaid = async (b: any) => {
+    if (!student || !b) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const activeUserId = user?.id || student.user_id || session?.user?.id;
+    if (!activeUserId) return;
+
+    const recorded = (payments || []).find((p: any) => p.cycle_label === b.cycle_label);
+    if (recorded) {
+      await supabase.from("payments").delete().eq("id", recorded.id);
+    } else {
+      const { error } = await supabase.from("payments").insert({
+        user_id: activeUserId,
+        student_id: student.id,
+        cycle_type: b.cycle_type,
+        cycle_label: b.cycle_label,
+        period_start: b.period_start,
+        period_end: b.period_end,
+        session_count: b.session_count ?? null,
+        amount: effectiveAmount(b),
+        attendance_ids: (b.attendance_id ? [b.attendance_id] : null) as any,
+      } as any);
+      if (error) { toast.error(error.message); return; }
+    }
+    qc.invalidateQueries({ queryKey: ["payments", id] });
+    toast.success(t?.save || "Saved");
+  };
 
   const updateFee = async (a: any, val: string) => {
     const num = val === "" ? null : Number(val);
@@ -370,12 +392,6 @@ const togglePaid = async (b: any) => {
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
   };
 
-  const removeAttendance = async (a: any) => {
-    if (!(await confirmDialog({ description: t?.confirmDelete || "Confirm delete?", destructive: true }))) return;
-    await supabase.from("attendance").delete().eq("id", a.id);
-    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
-  };
-
   const saveAsImage = async () => {
     if (!billRef.current) return;
     try {
@@ -400,10 +416,10 @@ const togglePaid = async (b: any) => {
         </Button>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex border rounded-xl p-1 bg-card shadow-sm">
-            <Button size="sm" variant={mode === "monthly" ? "soft" : "ghost"} onClick={() => { setMode("monthly"); setSelected(null); }}>
+            <Button size="sm" variant={mode === "monthly" ? "soft" : "ghost"} onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}>
               {t?.payByMonth || "Pay monthly"}
             </Button>
-            <Button size="sm" variant={mode === "by_session" ? "soft" : "ghost"} onClick={() => { setMode("by_session"); setSelected(null); }}>
+            <Button size="sm" variant={mode === "by_session" ? "soft" : "ghost"} onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}>
               {t?.payBySession || "Pay by session"}
             </Button>
           </div>
@@ -418,19 +434,28 @@ const togglePaid = async (b: any) => {
 
       {/* Main 2-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* LEFT COLUMN: Danh sách các đợt/buổi */}
+        {/* LEFT COLUMN: Danh sách chu kỳ / buổi học */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print">
           <Card className="p-5 border shadow-sm space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-2">
               <h3 className="font-semibold text-base">
-                {mode === "monthly" ? (t?.cycle || "Cycle") : "Danh sách buổi học"}
+                {mode === "monthly" ? (t?.cycle || "Cycle") : ((t as any)?.sessionList || "Session List")}
               </h3>
               <div className="flex gap-2">
-                {mode === "by_session" && selectedSessionIds.size > 0 && (
-                  <Button size="sm" variant="success" onClick={paySelectedSessions}>
-                    <Check className="h-3.5 w-3.5 mr-1" /> Đóng tiền ({selectedSessionIds.size})
+                {/* NÚT ĐÓNG TIỀN CHO THÁNG (MONTHLY) */}
+                {mode === "monthly" && selectedCycles.size > 0 && (
+                  <Button size="sm" variant="success" onClick={paySelectedCycles}>
+                    <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedCycles.size})
                   </Button>
                 )}
+
+                {/* NÚT ĐÓNG TIỀN CHO BUỔI LẺ (SESSION) */}
+                {mode === "by_session" && selectedSessionIds.size > 0 && (
+                  <Button size="sm" variant="success" onClick={paySelectedSessions}>
+                    <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedSessionIds.size})
+                  </Button>
+                )}
+
                 <Button size="sm" variant="soft" onClick={() => setAddOpen((o) => !o)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> {t?.addAttendance || "Add attendance"}
                 </Button>
@@ -466,19 +491,36 @@ const togglePaid = async (b: any) => {
               {mode === "monthly" ? (
                 bills.map((b) => {
                   const paid = isPaid(b);
-                  const active = selected === b.cycle_label;
+                  const isChecked = selectedCycles.has(b.cycle_label);
+
                   return (
                     <div
                       key={b.cycle_label}
                       className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                        active ? "bg-primary/10 border-primary/40 shadow-sm" : "hover:bg-muted/60 border-transparent"
+                        isChecked ? "bg-primary/10 border-primary/40 shadow-sm" : "hover:bg-muted/60 border-transparent"
                       }`}
-                      onClick={() => setSelected(b.cycle_label)}
+                      onClick={() => {
+                        setSelectedCycles((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(b.cycle_label)) next.delete(b.cycle_label);
+                          else next.add(b.cycle_label);
+                          return next;
+                        });
+                        setSelected(b.cycle_label);
+                      }}
                     >
                       <div className="flex items-center gap-3">
                         <Checkbox
-                          checked={paid}
-                          onCheckedChange={() => togglePaid(b)}
+                          checked={isChecked}
+                          onCheckedChange={(v) => {
+                            setSelectedCycles((prev) => {
+                              const next = new Set(prev);
+                              if (v) next.add(b.cycle_label);
+                              else next.delete(b.cycle_label);
+                              return next;
+                            });
+                            setSelected(b.cycle_label);
+                          }}
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div>
@@ -498,55 +540,51 @@ const togglePaid = async (b: any) => {
                   );
                 })
               ) : (
-        
-    availableAttendance.map((a: any, idx: number) => {
-      const isChecked = selectedSessionIds.has(a.id);
-      const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
-
-      return (
-        <div
-          key={a.id}
-          className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
-            isChecked ? "bg-primary/10 border-primary/40" : "hover:bg-muted/60 border-transparent"
-          }`}
-          onClick={() => {
-            setSelectedSessionIds((s) => {
-              const n = new Set(s);
-              if (n.has(a.id)) n.delete(a.id);
-              else n.add(a.id);
-              return n;
-            });
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <Checkbox
-              checked={isChecked}
-              onCheckedChange={(v) => {
-                setSelectedSessionIds((s) => {
-                  const n = new Set(s);
-                  if (v) n.add(a.id);
-                  else n.delete(a.id);
-                  return n;
-                });
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div>
-              <div className="text-xs font-bold text-slate-800">
-                #{idx + 1} - {fmtDate(a.schedule_events?.event_date)}
-              </div>
-              <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
-                {a.homework_note || "Không có ghi chú"}
-              </div>
-            </div>
-          </div>
-          <div className="text-xs font-bold">{formatVND(fee)}</div>
-        </div>
-      );
-    })
-  )}
-
-
+                availableAttendance.map((a: any, idx: number) => {
+                  const isChecked = selectedSessionIds.has(a.id);
+                  const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
+                  return (
+                    <div
+                      key={a.id}
+                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                        isChecked ? "bg-primary/10 border-primary/40" : "hover:bg-muted/60 border-transparent"
+                      }`}
+                      onClick={() => {
+                        setSelectedSessionIds((s) => {
+                          const n = new Set(s);
+                          if (n.has(a.id)) n.delete(a.id);
+                          else n.add(a.id);
+                          return n;
+                        });
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(v) => {
+                            setSelectedSessionIds((s) => {
+                              const n = new Set(s);
+                              if (v) n.add(a.id);
+                              else n.delete(a.id);
+                              return n;
+                            });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">
+                            #{idx + 1} - {fmtDate(a.schedule_events?.event_date)}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                            {a.homework_note || (t as any)?.noNote || "No notes"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs font-bold">{formatVND(fee)}</div>
+                    </div>
+                  );
+                })
+              )}
               {((mode === "monthly" && bills.length === 0) || (mode === "by_session" && availableAttendance.length === 0)) && (
                 <div className="text-sm text-muted-foreground py-4 text-center">{t?.nothingHere || "Nothing here"}</div>
               )}
@@ -559,14 +597,18 @@ const togglePaid = async (b: any) => {
           {displayBill && (
             <Card
               ref={billRef as any}
-              className="print-area w-full max-w-2xl p-6 md:p-8 border rounded-2xl shadow-md print:shadow-none print:border-none print:p-0 bg-white text-foreground space-y-6"
+              className="print-area w-full max-w-2xl p-6 border rounded-2xl shadow-md print:shadow-none print:border-none print:p-0 bg-white text-foreground space-y-4"
               style={{ borderTop: `8px solid ${accent}` }}
             >
               {/* Invoice Header */}
-              <div className="flex items-start justify-between border-b pb-4">
+              <div className="flex items-start justify-between border-b pb-3">
                 <div>
-                  <div className="text-2xl font-black tracking-wider uppercase" style={{ color: accent }}>{(t as any)?.invoice || "INVOICE"}</div>
-                  <div className="text-xs text-muted-foreground mt-1 break-all font-mono">{(t as any)?.billNo || "Bill No"}: {billNum}</div>
+                  <div className="text-2xl font-black tracking-wider uppercase" style={{ color: accent }}>
+                    {(t as any)?.invoice || "INVOICE"}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1 break-all font-mono">
+                    {(t as any)?.billNo || "Bill No."}: {billNum}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className="font-bold text-base">{profile?.display_name || t?.teacher || "Teacher"}</div>
@@ -575,47 +617,58 @@ const togglePaid = async (b: any) => {
               </div>
 
               {/* Billed Info Grid */}
-             <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50/80 border border-slate-100">
-  <div>
-    <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">BILLED TO</span>
-    <h3 className="text-base font-bold text-slate-800">{student?.name}</h3>
-{(student as any)?.phone && <p className="text-xs text-slate-500">{(student as any).phone}</p>}  </div>
-
-  <div className="text-right space-y-1">
-    <div>
-      <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">
-        {mode === "by_session" ? "HỌC PHÍ / BUỔI" : "FEE PER MONTH"}
-      </span>
-      <span className="text-base font-bold text-slate-800">
-        {formatVND(mode === "by_session" ? (student?.fee_per_session || 0) : (student?.fee_per_month || 0))}
-      </span>
-    </div>
-
-    {mode === "by_session" ? (
-      <div>
-        <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">SỐ BUỔI TÍNH TIỀN</span>
-        <span className="text-xs font-semibold text-slate-700">
-          {(displayBill?.attendances || []).length} buổi
-        </span>
-      </div>
-    ) : (
-      <div>
-        <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase block">PERIOD</span>
-        <span className="text-xs font-semibold text-slate-700">
-          {displayBill?.period_start ? `${fmtDate(displayBill.period_start)} – ${fmtDate(displayBill.period_end)}` : "—"}
-        </span>
-      </div>
-    )}
-  </div>
-</div>
+              <div className="grid grid-cols-2 gap-3 bg-muted/30 p-3.5 rounded-xl text-xs border">
+                <div>
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    {(t as any)?.billedTo || "BILLED TO"}
+                  </div>
+                  <div className="font-bold text-base mt-0.5 inline-block px-2 py-0.5 rounded" style={{ background: `${accent}33` }}>
+                    {student.name}
+                  </div>
+                  {(student as any)?.phone && (
+                    <p className="text-xs text-muted-foreground mt-1">{(student as any).phone}</p>
+                  )}
+                  {student.grade && (
+                    <div className="mt-1 text-[11px]">
+                      <span className="px-2 py-0.5 rounded-full font-medium" style={{ background: `${accent}44` }}>
+                        {student.grade}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-right space-y-1">
+                  <div>
+                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                      {mode === "monthly" 
+                        ? (t?.feePerMonth || "FEE PER MONTH") 
+                        : ((t as any)?.feePerSession || "FEE PER SESSION")}
+                    </div>
+                    <div className="font-bold text-base mt-0.5">
+                      {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                      {mode === "monthly" 
+                        ? (t?.period || "PERIOD") 
+                        : ((t as any)?.billedSessions || "BILLED SESSIONS")}
+                    </div>
+                    <div className="font-semibold text-xs mt-0.5">
+                      {mode === "monthly" 
+                        ? (displayBill.period_start ? `${fmtDate(displayBill.period_start)} – ${fmtDate(displayBill.period_end)}` : displayBill.description) 
+                        : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "sessions")}`}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               {/* Sessions table */}
               {displayBill.attendances?.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-xs uppercase font-semibold text-muted-foreground">
-                      CHI TIẾT BUỔI HỌC
-                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      {(t as any)?.sessionDetails || "SESSION DETAILS"}
+                    </span>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -623,20 +676,22 @@ const togglePaid = async (b: any) => {
                       onClick={() => setShowAtt((s) => !s)}
                     >
                       {showAtt
-                        ? <><EyeOff className="h-3 w-3 mr-1" /> {(t as any)?.hideAttendance || "Hide"}</>
-                        : <><Eye className="h-3 w-3 mr-1" /> {(t as any)?.showAttendance || "Show"}</>}
+                        ? <><EyeOff className="h-3 w-3 mr-1" /> {(t as any)?.hide || "Hide"}</>
+                        : <><Eye className="h-3 w-3 mr-1" /> {(t as any)?.show || "Show"}</>}
                     </Button>
                   </div>
                   {showAtt && (
-                    <div className="rounded-xl overflow-hidden border">
-                      <table className="w-full text-sm border-collapse">
-                        <thead className="bg-muted/50">
-                          <tr className="text-left text-xs font-semibold">
-                            {mode === "by_session" && <th className="py-2.5 px-3 w-8 text-center no-print">Chọn</th>}
-                            <th className="py-2.5 px-3 w-8">#</th>
-                            <th className="py-2.5 px-3">{t?.date || "Date"}</th>
-                            <th className="py-2.5 px-3">{t?.homework || "Homework / note"}</th>
-                            <th className="py-2.5 px-3 text-right">{t?.feePerOne || "Fee"}</th>
+                    <div className="border rounded-xl overflow-hidden text-xs">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 text-[11px] font-bold">
+                            {mode === "by_session" && (
+                              <th className="py-2 px-3 w-10 text-center no-print">{(t as any)?.select || "Select"}</th>
+                            )}
+                            <th className="py-2 px-3 w-8 text-center">#</th>
+                            <th className="py-2 px-3 w-28">{t?.date || "Date"}</th>
+                            <th className="py-2 px-3">{t?.homework || "Homework / Note"}</th>
+                            <th className="py-2 px-3 text-right w-28">{t?.feePerOne || "Fee"}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -650,7 +705,6 @@ const togglePaid = async (b: any) => {
                               if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
                               return false;
                             });
-
                             return (
                               <tr key={a.id} className={`border-t ${isChecked ? "bg-blue-50/50" : ""}`}>
                                 {mode === "by_session" && (
@@ -670,7 +724,7 @@ const togglePaid = async (b: any) => {
                                     />
                                   </td>
                                 )}
-                                <td className="py-2 px-3 align-top">{i + 1}</td>
+                                <td className="py-2 px-3 align-top text-center">{i + 1}</td>
                                 <td className="py-2 px-3 align-top font-medium whitespace-nowrap">
                                   {fmtDate(a.schedule_events?.event_date)}
                                 </td>
@@ -707,14 +761,14 @@ const togglePaid = async (b: any) => {
               )}
 
               {/* Total summary */}
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end pt-1">
                 <div className="w-full sm:w-64 space-y-1.5 p-3 rounded-xl bg-muted/30 border">
                   <div className="flex justify-between text-xs text-muted-foreground font-medium">
                     <span>{(t as any)?.subtotal || "Subtotal"}</span>
                     <span>{formatVND(billTotal)}</span>
                   </div>
                   <div
-                    className="flex justify-between font-bold text-base px-3 py-2 rounded-lg"
+                    className="flex justify-between font-bold text-base px-3 py-1.5 rounded-lg"
                     style={{ background: `${accent}44` }}
                   >
                     <span>{(t as any)?.totalDue || "Total due"}</span>
@@ -724,22 +778,24 @@ const togglePaid = async (b: any) => {
               </div>
 
               {/* VietQR Payment Card */}
-              <div className="border-t pt-4">
-                <div className="text-xs uppercase font-semibold text-muted-foreground mb-3">{(t as any)?.mobileBankingPayment || "MOBILE BANKING PAYMENT"}</div>
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 bg-muted/20 p-4 rounded-xl border">
-                  <div className="space-y-1.5 text-sm w-full">
-                    <div className="font-bold text-base">{(t as any)?.scanToPayShort || "Scan QR to pay"}</div>
-                    <div className="text-xs text-muted-foreground">{(t as any)?.scanQrInstr || "Use any banking app to scan the QR code and complete the payment."}</div>
-                    <div className="pt-2 text-xs space-y-1 border-t">
+              <div className="border-t pt-3">
+                <div className="text-xs uppercase font-semibold text-muted-foreground mb-2">
+                  {(t as any)?.mobileBankingPayment || "MOBILE BANKING PAYMENT"}
+                </div>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/20 p-3.5 rounded-xl border">
+                  <div className="space-y-1 text-xs w-full">
+                    <div className="font-bold text-sm">{(t as any)?.scanToPayShort || "Scan QR to pay"}</div>
+                    <div className="text-[11px] text-muted-foreground">{(t as any)?.scanQrInstr || "Use any banking app to scan the QR code and complete the payment."}</div>
+                    <div className="pt-2 text-xs space-y-0.5 border-t mt-1">
                       <div>{t?.amount || "Amount"}: <span className="font-bold">{formatVND(billTotal)}</span></div>
                       <div className="font-mono text-[11px] break-all">{(t as any)?.reference || "Reference"}: <span className="bg-muted px-1.5 py-0.5 rounded">{billNum}</span></div>
                     </div>
                   </div>
                   <div className="flex-shrink-0">
                     {qrUrl ? (
-                      <img src={qrUrl} alt="VietQR" className="h-44 w-44 rounded-xl bg-white p-2 border shadow-sm object-contain" />
+                      <img src={qrUrl} alt="VietQR" className="h-36 w-36 rounded-xl bg-white p-2 border shadow-sm object-contain" />
                     ) : (
-                      <div className="text-xs text-muted-foreground no-print text-center p-4">
+                      <div className="text-xs text-muted-foreground no-print text-center p-3">
                         {t?.vietQR || "VietQR"}: <Link to="/settings" className="text-primary underline">{t?.settings || "Settings"}</Link>
                       </div>
                     )}
@@ -748,7 +804,7 @@ const togglePaid = async (b: any) => {
               </div>
 
               {/* Payment Action Buttons */}
-              <div className="no-print pt-2 flex flex-col items-end gap-2">
+              <div className="no-print pt-1 flex flex-col items-end gap-2">
                 {mode === "by_session" ? (
                   <Button
                     variant="success"
@@ -756,7 +812,12 @@ const togglePaid = async (b: any) => {
                     onClick={paySelectedSessions}
                   >
                     <Check className="h-4 w-4 mr-1.5" />
-                    Đánh dấu đã đóng ({selectedSessionIds.size} buổi đã chọn)
+                    {(t as any)?.markAsPaid || "Mark as paid"} ({selectedSessionIds.size})
+                  </Button>
+                ) : selectedCycles.size > 0 ? (
+                  <Button variant="success" onClick={paySelectedCycles}>
+                    <Check className="h-4 w-4 mr-1.5" />
+                    {(t as any)?.markAsPaid || "Mark as paid"} ({selectedCycles.size})
                   </Button>
                 ) : (
                   <Button variant={isPaid(current) ? "outline" : "success"} onClick={() => togglePaid(current)}>
@@ -765,26 +826,28 @@ const togglePaid = async (b: any) => {
                   </Button>
                 )}
               </div>
-<style>{`
-  @page {
-    size: A4 portrait;
-    margin: 8mm;
-  }
-  @media print {
-    body {
-      background: white !important;
-    }
-    .print-container {
-      box-shadow: none !important;
-      border: none !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      width: 100% !important;
-    }
-  }
-`}</style>
+
+              <style>{`
+                @page {
+                  size: A4 portrait;
+                  margin: 8mm;
+                }
+                @media print {
+                  body {
+                    background: white !important;
+                  }
+                  .print-area {
+                    box-shadow: none !important;
+                    border: none !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    width: 100% !important;
+                  }
+                }
+              `}</style>
+
               {/* Footnote */}
-              <div className="border-t pt-4">
+              <div className="border-t pt-3">
                 <Label className="text-xs font-semibold no-print mb-1 block">{(t as any)?.footnote || "Bill footnote"}</Label>
                 <Textarea
                   rows={2}
