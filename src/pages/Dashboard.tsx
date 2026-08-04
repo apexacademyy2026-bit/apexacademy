@@ -255,7 +255,21 @@ export default function Dashboard() {
     setLoading(true);
     setTimeout(() => setLoading(false), 350);
   };
+// Tính tổng học phí của tất cả học sinh cho kỳ sắp tới
+const totalUpcomingFee = useMemo(() => {
+  if (!students || !Array.isArray(students)) return 0;
 
+  return students.reduce((sum, student) => {
+    // Lấy giá trị học phí từ thuộc tính của học sinh (tuition_fee / fee / tuition)
+    const fee = Number(
+      student?.tuition_fee ?? 
+      student?.fee ?? 
+      student?.tuition ?? 
+      0
+    );
+    return sum + (isNaN(fee) ? 0 : fee);
+  }, 0);
+}, [students]);
   const inRange = (iso: string | Date) => {
     const d = new Date(iso);
     const from = fromDate ? new Date(fromDate) : null;
@@ -594,26 +608,26 @@ export default function Dashboard() {
             </div>
           </Card>
         </Link>
+        
 
-        {/* YÊU CẦU 2: Collected in period kèm nút Click Details ↗ xem danh sách đóng tiền */}
-       {/* Học phí đã thu trong kỳ */}
+{/* YÊU CẦU 2: Tổng học phí kỳ sắp tới kèm nút Chi tiết ↗ xem danh sách */}
 <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 hover:border-amber-200">
   <div className="space-y-1">
     <span className="text-xs font-bold text-slate-400">
-      {lang === "vi" ? "Học phí đã thu trong kỳ" : "Collected in period"}
+      {lang === "vi" ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition"}
     </span>
     {loading ? (
       <Skeleton className="h-8 w-20 mt-1" />
     ) : (
       <h3 className="text-2xl font-black text-slate-950 mt-0.5">
-        {formatVND(totalRevenue)}
+        {formatVND(totalUpcomingFee)}
       </h3>
     )}
     <button 
       onClick={() => setShowCollectedModal(true)}
       className="text-[10px] font-bold text-amber-600 hover:text-amber-700 inline-flex items-center gap-1 pt-1 underline cursor-pointer"
     >
-      Details ↗
+      {lang === "vi" ? "Chi tiết" : "Details"} ↗
     </button>
   </div>
   <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-amber-500/10 to-orange-500/10 text-amber-600">

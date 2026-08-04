@@ -22,8 +22,8 @@ import { getStoredGoogleCalendarSelection, getStoredGoogleCalendarToken, listGoo
 import { cn } from "@/lib/utils";
 
 // Cấu hình khung giờ gọn gàng vừa khít 1 trang A4 Landscape (08:00 - 20:00)
-const HOUR_START = 8;     // Bắt đầu từ 08:00
-const HOUR_END = 20;      // Kết thúc 20:00
+const HOUR_START = 6;     // Bắt đầu từ 08:00
+const HOUR_END = 23;      // Kết thúc 20:00
 const HOUR_HEIGHT = 40;   // Thu gọn chiều cao ô giờ xuống 32px
 const SCHEDULE_MAX_HEIGHT = 700;
 
