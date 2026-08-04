@@ -101,23 +101,41 @@ export default function StudentBill() {
   );
 
   // 1. Lọc bỏ các buổi học thuộc THÁNG đã đóng tiền (Monthly)
-  const availableAttendance = useMemo(() => {
-    if (mode !== "by_session") return sortedAttendance;
+ // Lọc bỏ hoàn toàn các buổi học ĐÃ ĐÓNG (Cả đóng theo Tháng lẫn đóng theo Buổi lẻ)
+const availableAttendance = useMemo(() => {
+  if (mode !== "by_session") return sortedAttendance;
 
-    const paidMonthlyPayments = (payments || []).filter((p: any) => p.cycle_type === "monthly");
-    
-    return sortedAttendance.filter((a: any) => {
-      const d = a?.schedule_events?.event_date;
-      if (!d) return false;
+  return sortedAttendance.filter((a: any) => {
+    const dateStr = a?.schedule_events?.event_date;
+    if (!dateStr) return false;
 
-      // Kiểm tra xem buổi học này có nằm trong tháng đã đóng không
-      const isPaidMonthly = paidMonthlyPayments.some(
-        (p: any) => p.period_start && p.period_end && d >= p.period_start && d <= p.period_end
-      );
-
-      return !isPaidMonthly; // Chỉ giữ lại các buổi CHƯA từng đóng theo tháng
+    // 1. Kiểm tra xem buổi học có nằm trong gói Tháng đã đóng không
+    const isPaidMonthly = (payments || []).some((p: any) => {
+      if (p.cycle_type !== "monthly") return false;
+      return p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end;
     });
-  }, [sortedAttendance, payments, mode]);
+    if (isPaidMonthly) return false; // Lọc bỏ -> Biến mất
+
+    // 2. Kiểm tra xem buổi học đã được đóng lẻ theo Session chưa
+    const isPaidSession = (payments || []).some((p: any) => {
+      if (p.cycle_type !== "session") return false;
+      
+      // Kiểm tra bằng ID đơn
+      if (p.attendance_id === a.id) return true;
+      
+      // Kiểm tra trong mảng attendance_ids
+      if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
+      
+      // Kiểm tra theo khoảng ngày (nếu có)
+      if (p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end) return true;
+
+      return false;
+    });
+    if (isPaidSession) return false; // Lọc bỏ -> Biến mất
+
+    return true; // Chỉ giữ lại buổi CHƯA ĐÓNG
+  });
+}, [sortedAttendance, payments, mode]);
 
   // 2. Tạo danh sách Bill
   const bills = useMemo(() => {
