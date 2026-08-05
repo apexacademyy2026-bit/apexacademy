@@ -262,8 +262,16 @@ export default function StudentBill() {
     : null;
 
   const accent = student?.color || "#3b82f6";
-  const billNum = (displayBill?.cycle_label || student?.id || "").slice(0, 100).toUpperCase();
+// Chuẩn hóa tên học sinh: viết hoa, xóa khoảng trắng thừa
+const safeStudentName = student?.name ? student.name.trim().toUpperCase().replace(/\s+/g, '') : "STUDENT";
 
+// Lấy tổng số buổi được chọn/thanh toán
+const sessionsCount = mode === "by_session"
+  ? (selectedSessionIds.size > 0 ? selectedSessionIds.size : availableAttendance.length)
+  : (displayBill?.attendances?.length || 0);
+
+// Ghép chuỗi theo định dạng: TENHOCSINH_SOBUOI
+const billNum = `${safeStudentName}_${sessionsCount}BUOI`;
   // Đóng tiền Buổi lẻ
   const paySelectedSessions = async () => {
     if (!student || selectedSessionIds.size === 0) {
@@ -282,8 +290,7 @@ export default function StudentBill() {
       user_id: activeUserId,
       student_id: student.id,
       cycle_type: "session",
-      cycle_label: `${student.name}_${selectedIdsArr.length}buoi_${new Date().getFullYear()}`,
-      period_start: dates[0] || null,
+cycle_label: `${student.name.trim().toUpperCase().replace(/\s+/g, '')}_${selectedIdsArr.length}BUOI`,      period_start: dates[0] || null,
       period_end: dates[dates.length - 1] || null,
       session_count: selectedIdsArr.length,
       amount: selectedSessionsAmount,

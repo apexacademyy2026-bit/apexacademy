@@ -55,15 +55,20 @@ export default function StudentDetail() {
   const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("all");
 
   // Fetch thông tin học sinh
-  const { data: student, isLoading: studentLoading } = useQuery({
-    queryKey: ["student", id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("students").select("*").eq("id", id).single();
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!id,
-  });
+ // Fetch thông tin học sinh
+const { data: student, isLoading: studentLoading } = useQuery({
+  queryKey: ["student", id],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("students")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error) throw error;
+    return data as any; // <- Thêm "as any" ở đây để sửa lỗi TypeScript
+  },
+  enabled: !!id,
+});
 
   // Fetch điểm danh
   const { data: attendance = [], isLoading: attendanceLoading } = useQuery({
@@ -291,9 +296,13 @@ export default function StudentDetail() {
                 <span className="font-medium text-slate-500">Chưa cập nhật</span>
               </div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50/60">
-                <span className="font-bold text-slate-500 flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-slate-400" /> Số điện thoại</span>
-                <span className="font-bold text-blue-600">Chưa cập nhật</span>
-              </div>
+  <span className="font-bold text-slate-500 flex items-center gap-2">
+    <Phone className="h-3.5 w-3.5 text-slate-400" /> Số điện thoại
+  </span>
+  <span className="font-bold text-blue-600">
+    {student.phone || "Chưa cập nhật"}
+  </span>
+</div>
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50/60">
                 <span className="font-bold text-slate-500 flex items-center gap-2"><GraduationCap className="h-3.5 w-3.5 text-slate-400" /> Khối lớp</span>
                 <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">Lớp {student.grade || "10"}</span>

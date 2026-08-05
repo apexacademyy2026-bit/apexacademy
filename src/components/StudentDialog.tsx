@@ -28,6 +28,7 @@ export default function StudentDialog({ open, onOpenChange, student }: StudentDi
 
   const [form, setForm] = useState<any>({
     name: "",
+    phone: "", // <- Thêm trường phone cho học sinh
     grade: "",
     parent_name: "",
     parent_phone: "",
@@ -47,6 +48,7 @@ export default function StudentDialog({ open, onOpenChange, student }: StudentDi
     if (student) {
       setForm({
         name: student.name || "",
+        phone: student.phone || "", // <- Gán phone từ dữ liệu cũ
         grade: student.grade || "",
         parent_name: student.parent_name || "",
         parent_phone: student.parent_phone || "",
@@ -64,6 +66,7 @@ export default function StudentDialog({ open, onOpenChange, student }: StudentDi
       setForm({
         name: "",
         grade: "",
+        phone: "", // <- Thêm trường phone cho học sinh
         parent_name: "",
         parent_phone: "",
         notes: "",
