@@ -488,13 +488,19 @@ const totalUpcomingFee = useMemo(() => {
         return (
           <div key={evId} className="py-2.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             {/* Thông tin ca học trên 1 dòng */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-bold text-slate-800">{group.className}</span>
-              <span className="text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
-                🕒 {group.timeLabel}
-              </span>
-              <span className="text-[10px] text-slate-400">({group.students.length} HS)</span>
-            </div>
+           {/* Thông tin ca học trên 1 dòng */}
+<div className="flex items-center gap-2 shrink-0">
+  <Link 
+    to={`/classes`} // Hoặc to={`/classes/${group.event.class_id}`} nếu bạn có trang chi tiết lớp
+    className="text-xs font-bold text-slate-800 hover:text-blue-600 hover:underline transition-colors flex items-center gap-1"
+  >
+    {group.className}
+  </Link>
+  <span className="text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
+    🕒 {group.timeLabel}
+  </span>
+  <span className="text-[10px] text-slate-400">({group.students.length} HS)</span>
+</div>
 
             {/* Danh sách học sinh dạng Chip Pills siêu tiết kiệm không gian */}
             <div className="flex flex-wrap items-center gap-1.5">
