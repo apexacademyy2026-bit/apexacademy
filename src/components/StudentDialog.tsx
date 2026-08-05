@@ -147,7 +147,7 @@ const submit = async () => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl shadow-xl border-0">
-        {/* Header */}
+        {/* Header */}++
         <DialogHeader className="p-5 pb-4 border-b bg-background sticky top-0 z-10">
           <DialogTitle className="text-lg font-semibold flex items-center gap-2">
             <User className="h-5 w-5 text-emerald-600" />
@@ -171,7 +171,17 @@ const submit = async () => {
                 className="mt-1 h-9 rounded-lg"
               />
             </div>
-
+<div>
+    <Label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">
+      Student Phone
+    </Label>
+    <Input
+      value={form.phone}
+      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+      placeholder="e.g. 0877549288"
+      className="rounded-xl h-9 text-xs"
+    />
+  </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
