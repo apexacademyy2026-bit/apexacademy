@@ -489,9 +489,10 @@ const totalUpcomingFee = useMemo(() => {
           <div key={evId} className="py-2.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             {/* Thông tin ca học trên 1 dòng */}
            {/* Thông tin ca học trên 1 dòng */}
+{/* Thông tin ca học trên 1 dòng */}
 <div className="flex items-center gap-2 shrink-0">
   <Link 
-    to={`/classes`} // Hoặc to={`/classes/${group.event.class_id}`} nếu bạn có trang chi tiết lớp
+    to={`/classes/${group.event.class_id}`} 
     className="text-xs font-bold text-slate-800 hover:text-blue-600 hover:underline transition-colors flex items-center gap-1"
   >
     {group.className}
