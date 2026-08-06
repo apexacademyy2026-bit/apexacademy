@@ -67,8 +67,7 @@ export default function AppLayout() {
       <div className="min-h-screen flex w-full bg-gradient-soft">
         <AppSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-2 px-4 border-b border-border bg-background/70 backdrop-blur no-print">
-            <SidebarTrigger />
+<header className="pt-safe h-auto min-h-[3.5rem] flex items-center gap-2 px-4 border-b border-border bg-background/70 backdrop-blur no-print">            <SidebarTrigger />
           </header>
           <main className="flex-1 p-4 md:p-8 overflow-x-hidden">
             <Outlet />
