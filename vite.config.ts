@@ -5,6 +5,7 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  base: "./", // <--- THÊM DÒNG NÀY ĐỂ FIX LỖI MÀN HÌNH TRẮNG TRÊN IOS
   server: {
     host: "::",
     port: 8080,
