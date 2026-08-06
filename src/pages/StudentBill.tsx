@@ -395,32 +395,45 @@ export default function StudentBill() {
   };
 
   // HÀM IN GIỮ NGUYÊN HOÀN TOÀN STYLE TAILWIND CSS ĐẸP MẮT
+ // HÀM IN TỐI ƯU: Không mở tab mới, không trắng trang, giữ nguyên 100% style
   const handlePrint = () => {
     if (!billRef.current) {
       window.print();
       return;
     }
 
-    // Thu thập tất cả style/CSS của ứng dụng
-    const styles = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
-      .map((el) => el.outerHTML)
-      .join("\n");
+    // 1. Tạo iframe ẩn trực tiếp trên trang hiện tại
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.visibility = "hidden";
+    document.body.appendChild(iframe);
 
-    const content = billRef.current.innerHTML;
-    const printWindow = window.open("", "_blank");
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      // 2. Lấy toàn bộ CSS hiện có của ứng dụng
+      const styleTags = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
+        .map((node) => node.outerHTML)
+        .join("\n");
 
-    if (printWindow) {
-      printWindow.document.write(`
+      doc.open();
+      doc.write(`
         <!DOCTYPE html>
         <html>
           <head>
-            <title>${displayBill?.cycle_label || "Hóa đơn"}</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            ${styles}
+            <title>${displayBill?.cycle_label || "HoaDon"}</title>
+            <meta charset="utf-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            ${styleTags}
             <style>
               body { 
                 background: #ffffff !important; 
                 padding: 16px !important; 
+                margin: 0 !important;
                 -webkit-print-color-adjust: exact !important; 
                 print-color-adjust: exact !important;
               }
@@ -428,22 +441,32 @@ export default function StudentBill() {
               @page { size: A4 portrait; margin: 8mm; }
             </style>
           </head>
-          <body>
-            <div className="max-w-2xl mx-auto">
-              ${content}
+          <body class="bg-white">
+            <div style="max-width: 672px; margin: 0 auto;">
+              ${billRef.current.innerHTML}
             </div>
-            <script>
-              window.onload = function() {
-                setTimeout(function() {
-                  window.print();
-                  window.close();
-                }, 500);
-              };
-            </script>
           </body>
         </html>
       `);
-      printWindow.document.close();
+      doc.close();
+
+      // 3. Đợi 300ms để CSS và ảnh QR nạp xong trong iframe rồi mới kích hoạt hộp thoại in
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (err) {
+          console.error("Lỗi khi gọi in:", err);
+          window.print();
+        } finally {
+          // Xóa iframe sau khi hoàn thành
+          setTimeout(() => {
+            if (document.body.contains(iframe)) {
+              document.body.removeChild(iframe);
+            }
+          }, 1000);
+        }
+      }, 300);
     } else {
       window.print();
     }
