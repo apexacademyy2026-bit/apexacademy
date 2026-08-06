@@ -35,7 +35,7 @@ export function AppSidebar() {
   const { profile, user, lang } = useApp();
 
   // 🌟 Lấy role an toàn từ profile context
-const role = (profile as any)?.role || "student";
+  const role = (profile as any)?.role || "student";
 
   const handleLogout = async () => {
     try {
@@ -108,16 +108,18 @@ const role = (profile as any)?.role || "student";
   // Tự động chuyển danh sách menu theo vai trò
   const navItems = role === "teacher" ? teacherNavItems : studentNavItems;
 
-const displayName = 
-  profile?.display_name || 
-  (profile as any)?.full_name || 
-  user?.email?.split("@")[0] || 
-  "Thành viên";  const brandName = user?.user_metadata?.brand_name || "Apex Academy";
+  const displayName = 
+    profile?.display_name || 
+    (profile as any)?.full_name || 
+    user?.email?.split("@")[0] || 
+    "Thành viên";  
+  
+  const brandName = user?.user_metadata?.brand_name || "Apex Academy";
 
   return (
     <Sidebar variant="sidebar" collapsible="icon" className="border-r border-slate-100 bg-white">
-      {/* 1. HEADER LOGO */}
-      <SidebarHeader className="p-4 border-b border-slate-100/60">
+      {/* 1. HEADER LOGO - Thêm pt-safe để chừa khoảng trống cho Tai thỏ / Dynamic Island */}
+      <SidebarHeader className="p-4 pt-safe border-b border-slate-100/60">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black shadow-md shadow-blue-500/20 shrink-0">
             <BookOpen className="h-5 w-5" />
@@ -185,8 +187,8 @@ const displayName =
         </SidebarGroup>
       </SidebarContent>
 
-      {/* 3. FOOTER USER & LOGOUT */}
-      <SidebarFooter className="p-3 border-t border-slate-100 space-y-2">
+      {/* 3. FOOTER USER & LOGOUT - Thêm pb-safe để tránh thanh gạch dưới đáy iPhone */}
+      <SidebarFooter className="p-3 pb-safe border-t border-slate-100 space-y-2">
         <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100/80 group-data-[collapsible=icon]:hidden">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
             {displayName.slice(0, 2).toUpperCase()}
