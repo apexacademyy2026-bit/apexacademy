@@ -40,3 +40,8 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Thêm khoảng trống đệm phía trên bằng biến môi trường của iOS */
+header, .navbar, body {
+  padding-top: env(safe-area-inset-top);
+}
