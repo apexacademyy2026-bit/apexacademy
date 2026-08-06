@@ -394,14 +394,21 @@ export default function StudentBill() {
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
   };
 
-  // HÀM IN ĐƯỢC TỐI ƯU HỖ TRỢ SAFARI IPHONE & POPUP
+  // HÀM IN GIỮ NGUYÊN HOÀN TOÀN STYLE TAILWIND CSS ĐẸP MẮT
   const handlePrint = () => {
     if (!billRef.current) {
       window.print();
       return;
     }
+
+    // Thu thập tất cả style/CSS của ứng dụng
+    const styles = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
+      .map((el) => el.outerHTML)
+      .join("\n");
+
     const content = billRef.current.innerHTML;
     const printWindow = window.open("", "_blank");
+
     if (printWindow) {
       printWindow.document.write(`
         <!DOCTYPE html>
@@ -409,23 +416,28 @@ export default function StudentBill() {
           <head>
             <title>${displayBill?.cycle_label || "Hóa đơn"}</title>
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            ${styles}
             <style>
-              body { font-family: system-ui, -apple-system, sans-serif; padding: 12px; background: #fff; color: #000; }
+              body { 
+                background: #ffffff !important; 
+                padding: 16px !important; 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important;
+              }
               .no-print { display: none !important; }
-              table { width: 100%; border-collapse: collapse; }
-              th, td { border: 1px solid #e2e8f0; padding: 6px 8px; }
-              img { max-width: 100%; height: auto; }
               @page { size: A4 portrait; margin: 8mm; }
             </style>
           </head>
           <body>
-            ${content}
+            <div className="max-w-2xl mx-auto">
+              ${content}
+            </div>
             <script>
               window.onload = function() {
                 setTimeout(function() {
                   window.print();
                   window.close();
-                }, 400);
+                }, 500);
               };
             </script>
           </body>
@@ -437,7 +449,6 @@ export default function StudentBill() {
     }
   };
 
-  // HÀM XUẤT ẢNH XỬ LÝ LỖI CORS THỨC THỜI
   const saveAsImage = async () => {
     if (!billRef.current) return;
     const toastId = toast.loading("Đang tạo hình ảnh hóa đơn...");
