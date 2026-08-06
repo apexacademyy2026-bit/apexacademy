@@ -203,8 +203,12 @@ const handleGoogleSignIn = async () => {
     <div className="min-h-screen w-full bg-[#f6f7fb] text-slate-900 font-sans antialiased selection:bg-blue-600 selection:text-white">
       
       {/* 1. THANH HEADER */}
-      <header className="sticky top-0 z-40 w-full bg-white/90 border-b border-slate-100 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+<header 
+  style={{
+    paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)",
+  }}
+  className="sticky top-0 z-40 w-full bg-white/90 border-b border-slate-100 backdrop-blur-md"
+>        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2.5 cursor-pointer">
             <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white text-lg shadow-md">
               M

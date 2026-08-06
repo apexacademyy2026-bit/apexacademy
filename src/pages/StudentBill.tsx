@@ -398,7 +398,66 @@ toast.success((t as any)?.saveSuccess || "Marked as paid successfully!");  };
     setAddOpen(false);
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
   };
+const handlePrint = () => {
+  if (!billRef.current) {
+    window.print();
+    return;
+  }
 
+  // 1. Tạo một iframe ẩn tạm thời
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow?.document;
+  if (doc) {
+    // 2. Sao chép nội dung thẻ hóa đơn billRef vào iframe kèm theo style cơ bản
+    doc.open();
+    doc.write(`
+      <html>
+        <head>
+          <title>${displayBill?.cycle_label || "Invoice"}</title>
+          <style>
+            body { 
+              font-family: system-ui, -apple-system, sans-serif; 
+              padding: 15px; 
+              background: #fff; 
+              color: #000;
+            }
+            .no-print { display: none !important; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #e2e8f0; padding: 6px 8px; }
+            @page { size: auto; margin: 8mm; }
+          </style>
+        </head>
+        <body>
+          ${billRef.current.innerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    // 3. Kích hoạt giao diện in Native của iOS AirPrint
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      
+      // Xóa iframe sau khi hoàn tất
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1000);
+    }, 250);
+  } else {
+    window.print();
+  }
+};
   const saveAsImage = async () => {
     if (!billRef.current) return;
     try {
@@ -433,7 +492,7 @@ toast.success((t as any)?.saveSuccess || "Marked as paid successfully!");  };
           <Button variant="outline" size="sm" onClick={saveAsImage}>
             <ImageIcon className="h-4 w-4 mr-1.5" /> {(t as any)?.saveAsImage || "Save as image"}
           </Button>
-          <Button variant="success" size="sm" onClick={() => window.print()}>
+          <Button variant="success" size="sm" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-1.5" /> {t?.printBill || "Print bill"}
           </Button>
         </div>

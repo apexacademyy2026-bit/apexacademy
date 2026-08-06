@@ -416,8 +416,75 @@ export default function Schedule() {
     qc.invalidateQueries({ queryKey: ["events"] });
   };
 
-  const handlePrint = () => {
-    window.print();
+ const handlePrint = () => {
+    const printArea = document.querySelector(".print-area");
+    if (!printArea) {
+      window.print();
+      return;
+    }
+
+    // 1. Tạo iframe ẩn
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      // 2. Lấy toàn bộ các thẻ <style> và CSS Tailwind của ứng dụng
+      const styles = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
+        .map((style) => style.outerHTML)
+        .join("\n");
+
+      doc.open();
+      doc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Thời khóa biểu giảng dạy</title>
+            ${styles}
+            <style>
+              body { 
+                background: #fff !important; 
+                color: #000 !important; 
+                padding: 10px !important;
+              }
+              .print-hide { display: none !important; }
+              .sticky { position: static !important; }
+              .overflow-y-auto, .overflow-x-auto { overflow: visible !important; max-height: none !important; }
+              @page { size: A4 landscape; margin: 5mm; }
+            </style>
+          </head>
+          <body class="bg-white">
+            <div class="text-center mb-4">
+              <h2 class="text-lg font-black uppercase tracking-wide text-slate-900">THỜI KHÓA BIỂU GIẢNG DẠY</h2>
+            </div>
+            <div class="print-area">
+              ${printArea.innerHTML}
+            </div>
+          </body>
+        </html>
+      `);
+      doc.close();
+
+      // 3. Đợi CSS load xong rồi mới bật AirPrint trên iOS
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        
+        setTimeout(() => {
+          if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
+          }
+        }, 1000);
+      }, 400);
+    } else {
+      window.print();
+    }
   };
 
   const visibleEvents = allEvents.filter((e: any) => e.notes !== "__cancelled__" && e.notes !== "__google_master__");
