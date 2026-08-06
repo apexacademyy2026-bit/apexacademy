@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { HashRouter, Route, Routes } from "react-router-dom"; // SỬA: Đổi BrowserRouter thành HashRouter
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -38,7 +38,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <HashRouter> {/* SỬA: Thay <BrowserRouter> bằng <HashRouter> */}
         <AppProvider>
           <ConfirmProvider>
           <Routes>
@@ -77,7 +77,7 @@ const App = () => (
           </Routes>
           </ConfirmProvider>
         </AppProvider>
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
