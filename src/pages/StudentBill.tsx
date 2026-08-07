@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -381,7 +381,6 @@ export default function StudentBill() {
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
   };
 
-  // SỬA LẠI: Gọi window.print() trực tiếp để sử dụng CSS @media print bên dưới
   const handlePrint = () => {
     window.print();
   };
@@ -399,28 +398,28 @@ export default function StudentBill() {
     }
   };
 
-  if (!student) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (!student) return <div className="p-8 text-center text-muted-foreground flex items-center justify-center min-h-[400px]">Đang tải dữ liệu học sinh...</div>;
 
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-7xl space-y-6">
       
-      {/* BỘ CSS XỬ LÝ TRỰC TIẾP CHO BẢN IN NATIVE (TRÁNH LỖI TRẮNG TRANG) */}
+      {/* CSS RIÊNG PHỤC VỤ IN ẤN TỐI ƯU CẢ TRÊN MOBILE VÀ DESKTOP */}
       <style>{`
         @media print {
           body * {
             visibility: hidden !important;
           }
-          .print-area, .print-area * {
+          .printable-bill-card, .printable-bill-card * {
             visibility: visible !important;
           }
-          .print-area {
+          .printable-bill-card {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 24px !important;
             border: none !important;
             box-shadow: none !important;
             background: #ffffff !important;
@@ -440,24 +439,24 @@ export default function StudentBill() {
         }
       `}</style>
 
-      {/* Top Action Bar */}
+      {/* Top Navigation Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4 no-print">
-        <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2 w-fit">
+        <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2 w-fit rounded-xl hover:bg-slate-100">
           <ArrowLeft className="h-4 w-4 mr-2" /> {t?.details || "Details"}
         </Button>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex border rounded-xl p-1 bg-card shadow-sm">
-            <Button size="sm" variant={mode === "monthly" ? "soft" : "ghost"} onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}>
-              {t?.payByMonth || "Pay monthly"}
+          <div className="flex border rounded-xl p-1 bg-muted/40 shadow-inner">
+            <Button size="sm" variant={mode === "monthly" ? "default" : "ghost"} className="rounded-lg transition-all" onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}>
+              <Calendar className="h-3.5 w-3.5 mr-1.5" /> {t?.payByMonth || "Pay monthly"}
             </Button>
-            <Button size="sm" variant={mode === "by_session" ? "soft" : "ghost"} onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}>
-              {t?.payBySession || "Pay by session"}
+            <Button size="sm" variant={mode === "by_session" ? "default" : "ghost"} className="rounded-lg transition-all" onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}>
+              <Receipt className="h-3.5 w-3.5 mr-1.5" /> {t?.payBySession || "Pay by session"}
             </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={saveAsImage}>
-            <ImageIcon className="h-4 w-4 mr-1.5" /> {(t as any)?.saveAsImage || "Save as image"}
+          <Button variant="outline" size="sm" className="rounded-xl shadow-sm hover:bg-slate-50" onClick={saveAsImage}>
+            <ImageIcon className="h-4 w-4 mr-1.5 text-slate-600" /> {(t as any)?.saveAsImage || "Save as image"}
           </Button>
-          <Button variant="success" size="sm" onClick={handlePrint}>
+          <Button size="sm" className="rounded-xl shadow-md bg-blue-600 hover:bg-blue-700 text-white" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-1.5" /> {t?.printBill || "Print bill"}
           </Button>
         </div>
@@ -465,54 +464,60 @@ export default function StudentBill() {
 
       {/* Main 2-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* LEFT COLUMN: Danh sách chu kỳ / buổi học */}
+        
+        {/* LEFT COLUMN: Controls & Session Selector */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print">
-          <Card className="p-5 border shadow-sm space-y-4">
-            <div className="flex justify-between items-center gap-2">
-              <h3 className="font-semibold text-base">
-                {mode === "monthly" ? (t?.cycle || "Cycle") : ((t as any)?.sessionList || "Session List")}
-              </h3>
+          <Card className="p-5 border shadow-sm rounded-2xl bg-card space-y-4">
+            <div className="flex justify-between items-center gap-2 border-b pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-blue-500" />
+                <h3 className="font-semibold text-base text-slate-800">
+                  {mode === "monthly" ? (t?.cycle || "Cycle") : ((t as any)?.sessionList || "Session List")}
+                </h3>
+              </div>
               <div className="flex gap-2">
                 {mode === "monthly" && selectedCycles.size > 0 && (
-                  <Button size="sm" variant="success" onClick={paySelectedCycles}>
+                  <Button size="sm" variant="success" className="rounded-lg" onClick={paySelectedCycles}>
                     <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedCycles.size})
                   </Button>
                 )}
                 {mode === "by_session" && selectedSessionIds.size > 0 && (
-                  <Button size="sm" variant="success" onClick={paySelectedSessions}>
+                  <Button size="sm" variant="success" className="rounded-lg" onClick={paySelectedSessions}>
                     <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedSessionIds.size})
                   </Button>
                 )}
-                <Button size="sm" variant="soft" onClick={() => setAddOpen((o) => !o)}>
+                <Button size="sm" variant="outline" className="rounded-lg text-xs" onClick={() => setAddOpen((o) => !o)}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> {t?.addAttendance || "Add attendance"}
                 </Button>
               </div>
             </div>
+
             {addOpen && (
-              <div className="grid gap-3 p-3 rounded-xl bg-muted/50 border text-xs">
+              <div className="grid gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs transition-all">
                 <div>
-                  <Label className="text-xs mb-1 block">{t?.date || "Date"}</Label>
-                  <Input type="date" value={addForm.date} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} />
+                  <Label className="text-xs mb-1 block font-medium">{t?.date || "Date"}</Label>
+                  <Input type="date" className="bg-white rounded-lg" value={addForm.date} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} />
                 </div>
                 <div>
-                  <Label className="text-xs mb-1 block">{t?.class || "Class"}</Label>
+                  <Label className="text-xs mb-1 block font-medium">{t?.class || "Class"}</Label>
                   <Select value={addForm.class_id} onValueChange={(v) => setAddForm({ ...addForm, class_id: v })}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="bg-white rounded-lg"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {myClasses.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs mb-1 block">{t?.homework || "Homework"}</Label>
-                  <Textarea rows={2} value={addForm.note} onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} />
+                  <Label className="text-xs mb-1 block font-medium">{t?.homework || "Homework"}</Label>
+                  <Textarea rows={2} className="bg-white rounded-lg" value={addForm.note} onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} />
                 </div>
                 <div className="flex justify-end pt-1">
-                  <Button size="sm" variant="success" onClick={addAttendance}>{t?.save || "Save"}</Button>
+                  <Button size="sm" variant="default" className="rounded-lg px-4" onClick={addAttendance}>{t?.save || "Save"}</Button>
                 </div>
               </div>
             )}
-            <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
+
+            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
               {mode === "monthly" ? (
                 bills.map((b) => {
                   const paid = isPaid(b);
@@ -521,7 +526,7 @@ export default function StudentBill() {
                     <div
                       key={b.cycle_label}
                       className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-primary/10 border-primary/40 shadow-sm" : "hover:bg-muted/60 border-transparent"
+                        isChecked ? "bg-blue-50/80 border-blue-400 shadow-sm" : "hover:bg-slate-50 border-slate-100"
                       }`}
                       onClick={() => {
                         setSelectedCycles((prev) => {
@@ -548,18 +553,22 @@ export default function StudentBill() {
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div>
-                          <div className="text-sm font-medium flex items-center gap-2">
+                          <div className="text-xs font-semibold flex items-center gap-2 text-slate-800">
                             {b.cycle_label}
-                            {paid && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700 uppercase">
+                            {paid ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">
                                 {t?.paid || "PAID"}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">
+                                CHƯA THANH TOÁN
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">{b.description}</div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">{b.description}</div>
                         </div>
                       </div>
-                      <div className="text-sm font-bold">{formatVND(effectiveAmount(b))}</div>
+                      <div className="text-xs font-bold text-slate-900">{formatVND(effectiveAmount(b))}</div>
                     </div>
                   );
                 })
@@ -570,8 +579,8 @@ export default function StudentBill() {
                   return (
                     <div
                       key={a.id}
-                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-primary/10 border-primary/40" : "hover:bg-muted/60 border-transparent"
+                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                        isChecked ? "bg-blue-50/80 border-blue-400 shadow-sm" : "hover:bg-slate-50 border-slate-100"
                       }`}
                       onClick={() => {
                         setSelectedSessionIds((s) => {
@@ -596,129 +605,135 @@ export default function StudentBill() {
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div>
-                          <div className="text-xs font-bold text-slate-800">
-                            #{idx + 1} - {fmtDate(a.schedule_events?.event_date)}
+                          <div className="text-xs font-semibold text-slate-800">
+                            #{idx + 1} • {fmtDate(a.schedule_events?.event_date)}
                           </div>
                           <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
-                            {a.homework_note || (t as any)?.noNote || "No notes"}
+                            {a.homework_note || (t as any)?.noNote || "Chưa có ghi chú"}
                           </div>
                         </div>
                       </div>
-                      <div className="text-xs font-bold">{formatVND(fee)}</div>
+                      <div className="text-xs font-bold text-slate-900">{formatVND(fee)}</div>
                     </div>
                   );
                 })
               )}
               {((mode === "monthly" && bills.length === 0) || (mode === "by_session" && availableAttendance.length === 0)) && (
-                <div className="text-sm text-muted-foreground py-4 text-center">{t?.nothingHere || "Nothing here"}</div>
+                <div className="text-xs text-muted-foreground py-8 text-center">{t?.nothingHere || "Không có dữ liệu"}</div>
               )}
             </div>
           </Card>
         </div>
 
-        {/* RIGHT COLUMN: Invoice Document Preview */}
+        {/* RIGHT COLUMN: Interactive Bill Preview Card */}
         <div className="lg:col-span-7 xl:col-span-8 flex justify-center">
           {displayBill && (
             <Card
               ref={billRef as any}
-              className="print-area w-full max-w-2xl p-6 border rounded-2xl shadow-md bg-white text-foreground space-y-4"
-              style={{ borderTop: `8px solid ${accent}` }}
+              className="printable-bill-card w-full max-w-2xl p-8 border rounded-2xl shadow-xl bg-white text-slate-900 space-y-6 relative overflow-hidden"
             >
-              {/* Invoice Header */}
-              <div className="flex items-start justify-between border-b pb-3">
-                <div>
-                  <div className="text-2xl font-black tracking-wider uppercase" style={{ color: accent }}>
-                    {(t as any)?.invoice || "INVOICE"}
+              {/* Top Decorative Border */}
+              <div 
+                className="absolute top-0 left-0 right-0 h-2" 
+                style={{ backgroundColor: accent }} 
+              />
+
+              {/* Header */}
+              <div className="flex items-start justify-between border-b pb-4 pt-1">
+                <div className="space-y-1">
+                  <div className="text-3xl font-black tracking-tight uppercase" style={{ color: accent }}>
+                    {(t as any)?.invoice || "HOÁ ĐƠN THANH TOÁN"}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1 break-all font-mono">
-                    {(t as any)?.billNo || "Bill No."}: {billNum}
+                  <div className="text-xs text-slate-400 font-mono tracking-wide">
+                    {(t as any)?.billNo || "Mã HD"}: <span className="font-bold text-slate-600">{billNum}</span>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-base">{profile?.display_name || t?.teacher || "Teacher"}</div>
-                  <div className="text-xs text-muted-foreground">{(profile as any)?.phone || ""}</div>
+                  <div className="font-bold text-base text-slate-800">{profile?.display_name || t?.teacher || "Giáo viên"}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{(profile as any)?.phone || ""}</div>
                 </div>
               </div>
 
-              {/* Billed Info Grid */}
-              <div className="grid grid-cols-2 gap-3 bg-muted/30 p-3.5 rounded-xl text-xs border">
-                <div>
-                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">
-                    {(t as any)?.billedTo || "BILLED TO"}
+              {/* Student & Payment Summary Info */}
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">
+                <div className="space-y-1.5">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                    {(t as any)?.billedTo || "NGƯỜI NHẬN HOÁ ĐƠN"}
                   </div>
-                  <div className="font-bold text-base mt-0.5 inline-block px-2 py-0.5 rounded" style={{ background: `${accent}33` }}>
+                  <div className="font-bold text-sm text-slate-900 inline-block px-2.5 py-1 rounded-lg bg-white border border-slate-200/80 shadow-sm">
                     {student.name}
                   </div>
                   {(student as any)?.phone && (
-                    <p className="text-xs text-muted-foreground mt-1">{(student as any).phone}</p>
-                  )}
+  <p className="text-xs text-slate-500">{(student as any).phone}</p>
+)}
                   {student.grade && (
-                    <div className="mt-1 text-[11px]">
-                      <span className="px-2 py-0.5 rounded-full font-medium" style={{ background: `${accent}44` }}>
-                        {student.grade}
+                    <div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/60 text-slate-700">
+                        Lớp: {student.grade}
                       </span>
                     </div>
                   )}
                 </div>
-                <div className="text-right space-y-1">
+                <div className="text-right space-y-2">
                   <div>
-                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                       {mode === "monthly" 
-                        ? (t?.feePerMonth || "FEE PER MONTH") 
-                        : ((t as any)?.feePerSession || "FEE PER SESSION")}
+                        ? (t?.feePerMonth || "HỌC PHÍ / THÁNG") 
+                        : ((t as any)?.feePerSession || "HỌC PHÍ / BUỔI")}
                     </div>
-                    <div className="font-bold text-base mt-0.5">
+                    <div className="font-bold text-sm text-slate-800 mt-0.5">
                       {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                       {mode === "monthly" 
-                        ? (t?.period || "PERIOD") 
-                        : ((t as any)?.billedSessions || "BILLED SESSIONS")}
+                        ? (t?.period || "KỲ THANH TOÁN") 
+                        : ((t as any)?.billedSessions || "SỐ BUỔI TÍNH PHÍ")}
                     </div>
-                    <div className="font-semibold text-xs mt-0.5">
+                    <div className="font-semibold text-xs text-slate-700 mt-0.5">
                       {mode === "monthly" 
                         ? (displayBill.period_start ? `${fmtDate(displayBill.period_start)} – ${fmtDate(displayBill.period_end)}` : displayBill.description) 
-                        : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "sessions")}`}
+                        : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "buổi")}`}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Sessions table */}
+              {/* Sessions Table */}
               {displayBill.attendances?.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                      {(t as any)?.sessionDetails || "SESSION DETAILS"}
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      {(t as any)?.sessionDetails || "CHI TIẾT CÁC BUỔI HỌC"}
                     </span>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="no-print h-7 text-xs"
+                      className="no-print h-7 text-xs text-slate-500 hover:text-slate-800"
                       onClick={() => setShowAtt((s) => !s)}
                     >
                       {showAtt
-                        ? <><EyeOff className="h-3 w-3 mr-1" /> {(t as any)?.hide || "Hide"}</>
-                        : <><Eye className="h-3 w-3 mr-1" /> {(t as any)?.show || "Show"}</>}
+                        ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> {(t as any)?.hide || "Ẩn danh sách"}</>
+                        : <><Eye className="h-3.5 w-3.5 mr-1" /> {(t as any)?.show || "Hiện danh sách"}</>}
                     </Button>
                   </div>
+
                   {showAtt && (
-                    <div className="border rounded-xl overflow-hidden text-xs">
+                    <div className="border rounded-xl overflow-hidden text-xs bg-white border-slate-200">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 text-[11px] font-bold">
+                          <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 text-[11px] font-semibold">
                             {mode === "by_session" && (
-                              <th className="py-2 px-3 w-10 text-center no-print">{(t as any)?.select || "Select"}</th>
+                              <th className="py-2.5 px-3 w-10 text-center no-print">{(t as any)?.select || "Chọn"}</th>
                             )}
-                            <th className="py-2 px-3 w-8 text-center">#</th>
-                            <th className="py-2 px-3 w-28">{t?.date || "Date"}</th>
-                            <th className="py-2 px-3">{t?.homework || "Homework / Note"}</th>
-                            <th className="py-2 px-3 text-right w-28">{t?.feePerOne || "Fee"}</th>
+                            <th className="py-2.5 px-3 w-8 text-center">STT</th>
+                            <th className="py-2.5 px-3 w-28">{t?.date || "Ngày học"}</th>
+                            <th className="py-2.5 px-3">{t?.homework || "Nội dung bài học / Ghi chú"}</th>
+                            <th className="py-2.5 px-3 text-right w-28">{t?.feePerOne || "Học phí"}</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-slate-100">
                           {displayBill.attendances.map((a: any, i: number) => {
                             const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
                             const feeDraftVal = feeDraft[a.id] ?? (a.fee_override == null ? "" : String(a.fee_override));
@@ -729,10 +744,11 @@ export default function StudentBill() {
                               if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
                               return false;
                             });
+
                             return (
-                              <tr key={a.id} className={`border-t ${isChecked ? "bg-blue-50/50" : ""}`}>
+                              <tr key={a.id} className={`hover:bg-slate-50/50 ${isChecked ? "bg-blue-50/40" : ""}`}>
                                 {mode === "by_session" && (
-                                  <td className="py-2 px-3 text-center no-print align-top">
+                                  <td className="py-2 px-3 text-center no-print align-middle">
                                     <Checkbox
                                       checked={isPaidSession || isChecked}
                                       disabled={isPaidSession}
@@ -748,26 +764,26 @@ export default function StudentBill() {
                                     />
                                   </td>
                                 )}
-                                <td className="py-2 px-3 align-top text-center">{i + 1}</td>
-                                <td className="py-2 px-3 align-top font-medium whitespace-nowrap">
+                                <td className="py-2 px-3 align-middle text-center text-slate-500 font-medium">{i + 1}</td>
+                                <td className="py-2 px-3 align-middle font-medium text-slate-800 whitespace-nowrap">
                                   {fmtDate(a.schedule_events?.event_date)}
                                 </td>
-                                <td className="py-2 px-3 align-top">
+                                <td className="py-2 px-3 align-middle">
                                   <Input
                                     type="text"
-                                    className="no-print h-8 text-xs w-full"
+                                    className="no-print h-8 text-xs border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-400 bg-white"
                                     value={hwDraftVal}
-                                    placeholder="Note / Homework..."
+                                    placeholder="Thêm ghi chú..."
                                     onChange={(e) => setHomeworkDraft((d) => ({ ...d, [a.id]: e.target.value }))}
                                     onBlur={(e) => updateHomeworkNote(a, e.target.value)}
                                   />
-                                  <span className="print:inline hidden text-xs">{a.homework_note || "—"}</span>
+                                  <span className="print:inline hidden text-xs text-slate-700">{a.homework_note || "—"}</span>
                                 </td>
-                                <td className="py-2 px-3 text-right align-top">
-                                  <span className="print:inline hidden text-xs">{formatVND(fee)}</span>
+                                <td className="py-2 px-3 text-right align-middle">
+                                  <span className="print:inline hidden text-xs font-semibold">{formatVND(fee)}</span>
                                   <Input
                                     type="number"
-                                    className="no-print h-8 text-right w-28 ml-auto text-xs"
+                                    className="no-print h-8 text-right w-28 ml-auto text-xs border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-400 bg-white"
                                     value={feeDraftVal}
                                     placeholder={String(student.fee_per_session || 0)}
                                     onChange={(e) => setFeeDraft((d) => ({ ...d, [a.id]: e.target.value }))}
@@ -784,92 +800,103 @@ export default function StudentBill() {
                 </div>
               )}
 
-              {/* Total summary */}
-              <div className="flex justify-end pt-1">
-                <div className="w-full sm:w-64 space-y-1.5 p-3 rounded-xl bg-muted/30 border">
-                  <div className="flex justify-between text-xs text-muted-foreground font-medium">
-                    <span>{(t as any)?.subtotal || "Subtotal"}</span>
+              {/* Total Summary */}
+              <div className="flex justify-end pt-2">
+                <div className="w-full sm:w-72 space-y-2 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+                  <div className="flex justify-between text-xs text-slate-500 font-medium">
+                    <span>Tạm tính</span>
                     <span>{formatVND(billTotal)}</span>
                   </div>
                   <div
-                    className="flex justify-between font-bold text-base px-3 py-1.5 rounded-lg"
-                    style={{ background: `${accent}44` }}
+                    className="flex justify-between items-center font-bold text-slate-900 px-3 py-2 rounded-lg"
+                    style={{ backgroundColor: `${accent}22` }}
                   >
-                    <span>{(t as any)?.totalDue || "Total due"}</span>
-                    <span className="text-lg font-black">{formatVND(billTotal)}</span>
+                    <span className="text-xs uppercase tracking-wider">Tổng cộng</span>
+                    <span className="text-xl font-black">{formatVND(billTotal)}</span>
                   </div>
                 </div>
               </div>
 
-              {/* VietQR Payment Card */}
-              <div className="border-t pt-3">
-                <div className="text-xs uppercase font-semibold text-muted-foreground mb-2">
-                  {(t as any)?.mobileBankingPayment || "MOBILE BANKING PAYMENT"}
+              {/* VietQR Payment Card Section */}
+              <div className="border-t border-slate-200 pt-4">
+                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2">
+                  {(t as any)?.mobileBankingPayment || "THANH TOÁN QUA CHUYỂN KHOẢN (VIETQR)"}
                 </div>
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/20 p-3.5 rounded-xl border">
-                  <div className="space-y-1 text-xs w-full">
-                    <div className="font-bold text-sm">{(t as any)?.scanToPayShort || "Scan QR to pay"}</div>
-                    <div className="text-[11px] text-muted-foreground">{(t as any)?.scanQrInstr || "Use any banking app to scan the QR code and complete the payment."}</div>
-                    <div className="pt-2 text-xs space-y-0.5 border-t mt-1">
-                      <div>{t?.amount || "Amount"}: <span className="font-bold">{formatVND(billTotal)}</span></div>
-                      <div className="font-mono text-[11px] break-all">{(t as any)?.reference || "Reference"}: <span className="bg-muted px-1.5 py-0.5 rounded">{billNum}</span></div>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
+                  <div className="space-y-1.5 text-xs w-full">
+                    <div className="font-bold text-sm text-slate-800">{(t as any)?.scanToPayShort || "Quét mã QR để thanh toán"}</div>
+                    <div className="text-[11px] text-slate-500 leading-relaxed">
+                      {(t as any)?.scanQrInstr || "Sử dụng ứng dụng Ngân hàng để quét mã QR và hoàn tất chuyển khoản."}
+                    </div>
+                    <div className="pt-2 text-xs space-y-1 border-t border-slate-200 mt-2">
+                      <div className="text-slate-600">Số tiền: <span className="font-bold text-slate-900">{formatVND(billTotal)}</span></div>
+                      <div className="font-mono text-[11px] text-slate-600">
+                        Nội dung: <span className="bg-slate-200/80 px-2 py-0.5 rounded text-slate-900 font-bold">{billNum}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="flex-shrink-0">
                     {qrUrl ? (
-                      <img src={qrUrl} alt="VietQR" className="h-36 w-36 rounded-xl bg-white p-2 border shadow-sm object-contain" />
+                      <img src={qrUrl} alt="VietQR" className="h-36 w-36 rounded-xl bg-white p-2 border border-slate-200 shadow-sm object-contain" />
                     ) : (
-                      <div className="text-xs text-muted-foreground no-print text-center p-3">
-                        {t?.vietQR || "VietQR"}: <Link to="/settings" className="text-primary underline">{t?.settings || "Settings"}</Link>
+                      <div className="text-xs text-slate-400 no-print text-center p-4 border border-dashed rounded-xl bg-white">
+                        {t?.vietQR || "VietQR"}: <Link to="/settings" className="text-blue-600 underline font-medium">{t?.settings || "Thiết lập"}</Link>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Payment Action Buttons */}
-              <div className="no-print pt-1 flex flex-col items-end gap-2">
+              {/* Bottom Actions Buttons */}
+              <div className="no-print pt-2 flex flex-col items-end gap-2">
                 {mode === "by_session" ? (
                   <Button
                     variant="success"
+                    className="rounded-xl px-6 font-medium shadow-md"
                     disabled={selectedSessionIds.size === 0}
                     onClick={paySelectedSessions}
                   >
                     <Check className="h-4 w-4 mr-1.5" />
-                    {(t as any)?.markAsPaid || "Mark as paid"} ({selectedSessionIds.size})
+                    {(t as any)?.markAsPaid || "Đánh dấu đã thanh toán"} ({selectedSessionIds.size})
                   </Button>
                 ) : selectedCycles.size > 0 ? (
-                  <Button variant="success" onClick={paySelectedCycles}>
+                  <Button variant="success" className="rounded-xl px-6 font-medium shadow-md" onClick={paySelectedCycles}>
                     <Check className="h-4 w-4 mr-1.5" />
-                    {(t as any)?.markAsPaid || "Mark as paid"} ({selectedCycles.size})
+                    {(t as any)?.markAsPaid || "Đánh dấu đã thanh toán"} ({selectedCycles.size})
                   </Button>
                 ) : (
-                  <Button variant={isPaid(current) ? "outline" : "success"} onClick={() => togglePaid(current)}>
+                  <Button
+                    variant={isPaid(current) ? "outline" : "success"}
+                    className="rounded-xl px-6 font-medium"
+                    onClick={() => togglePaid(current)}
+                  >
                     <Check className="h-4 w-4 mr-1.5" />
-                    {isPaid(current) ? (t?.unpaid || "Unpaid") : (t?.markPaid || "Mark as paid")}
+                    {isPaid(current) ? (t?.unpaid || "Chưa thanh toán") : (t?.markPaid || "Đã thanh toán")}
                   </Button>
                 )}
               </div>
 
               {/* Footnote */}
-              <div className="border-t pt-3">
-                <Label className="text-xs font-semibold no-print mb-1 block">{(t as any)?.footnote || "Bill footnote"}</Label>
+              <div className="border-t border-slate-200 pt-3">
+                <Label className="text-xs font-semibold text-slate-600 no-print mb-1.5 block">{(t as any)?.footnote || "Lời cảm ơn / Ghi chú chân trang"}</Label>
                 <Textarea
                   rows={2}
                   value={footnote}
                   onChange={(e) => setFootnote(e.target.value)}
-                  placeholder={(t as any)?.footnoteDefault || "Thank you!"}
-                  className="no-print text-xs"
+                  placeholder={(t as any)?.footnoteDefault || "Cảm ơn quý phụ huynh và học sinh!"}
+                  className="no-print text-xs rounded-xl border-slate-200 bg-white"
                 />
                 {footnote && (
-                  <div className="hidden print:block text-xs italic text-center pt-2 text-muted-foreground">
+                  <div className="hidden print:block text-xs italic text-center pt-2 text-slate-500">
                     {footnote}
                   </div>
                 )}
               </div>
+
             </Card>
           )}
         </div>
+
       </div>
     </div>
   );
