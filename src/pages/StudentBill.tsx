@@ -1,18 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { 
-  ArrowLeft, 
-  Printer, 
-  Check, 
-  Plus, 
-  Eye, 
-  EyeOff, 
-  Image as ImageIcon,
-  Receipt,
-  Calendar,
-  CreditCard,
-  FileText
-} from "lucide-react";
+import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -88,7 +76,7 @@ export default function StudentBill() {
   useEffect(() => {
     if (!student) return;
     const saved = localStorage.getItem(`bill_footnote_${student.id}`);
-    setFootnote(saved ?? (t as any)?.footnoteDefault ?? "Cảm ơn quý phụ huynh và học sinh!");
+    setFootnote(saved ?? (t as any)?.footnoteDefault ?? "Thank you!");
   }, [student?.id, t]);
 
   useEffect(() => {
@@ -267,8 +255,7 @@ export default function StudentBill() {
     ? vietQRUrl(profile?.bank_code, profile?.bank_account_number, profile?.bank_account_name, billTotal, qrContent)
     : null;
 
-  const accent = student?.color || "#2563eb";
-
+  const accent = student?.color || "#3b82f6";
   const safeStudentName = student?.name ? student.name.trim().toUpperCase().replace(/\s+/g, '') : "STUDENT";
   const sessionsCount = mode === "by_session"
     ? (selectedSessionIds.size > 0 ? selectedSessionIds.size : availableAttendance.length)
@@ -277,7 +264,7 @@ export default function StudentBill() {
 
   const paySelectedSessions = async () => {
     if (!student || selectedSessionIds.size === 0) {
-      toast.error((t as any)?.selectAtLeastOne || "Vui lòng chọn ít nhất 1 buổi học!");
+      toast.error((t as any)?.selectAtLeastOne || "Please select at least 1 session!");
       return;
     }
     const { data: { session } } = await supabase.auth.getSession();
@@ -300,7 +287,7 @@ export default function StudentBill() {
     if (error) { toast.error(error.message); return; }
     setSelectedSessionIds(new Set());
     qc.invalidateQueries({ queryKey: ["payments", id] });
-    toast.success((t as any)?.saveSuccess || "Đã xác nhận thanh toán thành công!");
+    toast.success((t as any)?.saveSuccess || "Marked as paid successfully!");
   };
 
   const paySelectedCycles = async () => {
@@ -312,7 +299,7 @@ export default function StudentBill() {
       (b: any) => selectedCycles.has(b.cycle_label) && !payments?.some((p: any) => p.cycle_label === b.cycle_label)
     );
     if (cyclesToPay.length === 0) {
-      toast.info((t as any)?.alreadyPaid || "Các chu kỳ chọn đều đã đóng học phí!");
+      toast.info((t as any)?.alreadyPaid || "Selected cycles are already paid!");
       return;
     }
     const insertData = cyclesToPay.map((b: any) => ({
@@ -329,7 +316,7 @@ export default function StudentBill() {
     if (error) { toast.error(error.message); return; }
     setSelectedCycles(new Set());
     qc.invalidateQueries({ queryKey: ["payments", id] });
-    toast.success((t as any)?.saveSuccess || "Đã xác nhận thanh toán thành công!");
+    toast.success((t as any)?.saveSuccess || "Marked as paid successfully!");
   };
 
   const togglePaid = async (b: any) => {
@@ -355,7 +342,7 @@ export default function StudentBill() {
       if (error) { toast.error(error.message); return; }
     }
     qc.invalidateQueries({ queryKey: ["payments", id] });
-    toast.success(t?.save || "Đã cập nhật");
+    toast.success(t?.save || "Saved");
   };
 
   const updateFee = async (a: any, val: string) => {
@@ -388,231 +375,144 @@ export default function StudentBill() {
       user_id: user.id, event_id: ev.id, student_id: student.id, present: true, homework_note: addForm.note,
     });
     if (e2) { toast.error(e2.message); return; }
-    toast.success(t?.save || "Đã lưu điểm danh");
+    toast.success(t?.save || "Saved");
     setAddForm({ date: new Date().toISOString().slice(0, 10), class_id: myClasses[0]?.id || "", note: "" });
     setAddOpen(false);
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
   };
 
-  // HÀM IN GIỮ NGUYÊN HOÀN TOÀN STYLE TAILWIND CSS ĐẸP MẮT
- // HÀM IN TỐI ƯU: Không mở tab mới, không trắng trang, giữ nguyên 100% style
+  // SỬA LẠI: Gọi window.print() trực tiếp để sử dụng CSS @media print bên dưới
   const handlePrint = () => {
-    if (!billRef.current) {
-      window.print();
-      return;
-    }
-
-    // 1. Tạo iframe ẩn trực tiếp trên trang hiện tại
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.border = "0";
-    iframe.style.visibility = "hidden";
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (doc) {
-      // 2. Lấy toàn bộ CSS hiện có của ứng dụng
-      const styleTags = Array.from(document.querySelectorAll("style, link[rel='stylesheet']"))
-        .map((node) => node.outerHTML)
-        .join("\n");
-
-      doc.open();
-      doc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>${displayBill?.cycle_label || "HoaDon"}</title>
-            <meta charset="utf-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            ${styleTags}
-            <style>
-              body { 
-                background: #ffffff !important; 
-                padding: 16px !important; 
-                margin: 0 !important;
-                -webkit-print-color-adjust: exact !important; 
-                print-color-adjust: exact !important;
-              }
-              .no-print { display: none !important; }
-              @page { size: A4 portrait; margin: 8mm; }
-            </style>
-          </head>
-          <body class="bg-white">
-            <div style="max-width: 672px; margin: 0 auto;">
-              ${billRef.current.innerHTML}
-            </div>
-          </body>
-        </html>
-      `);
-      doc.close();
-
-      // 3. Đợi 300ms để CSS và ảnh QR nạp xong trong iframe rồi mới kích hoạt hộp thoại in
-      setTimeout(() => {
-        try {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-        } catch (err) {
-          console.error("Lỗi khi gọi in:", err);
-          window.print();
-        } finally {
-          // Xóa iframe sau khi hoàn thành
-          setTimeout(() => {
-            if (document.body.contains(iframe)) {
-              document.body.removeChild(iframe);
-            }
-          }, 1000);
-        }
-      }, 300);
-    } else {
-      window.print();
-    }
+    window.print();
   };
 
   const saveAsImage = async () => {
     if (!billRef.current) return;
-    const toastId = toast.loading("Đang tạo hình ảnh hóa đơn...");
     try {
-      const dataUrl = await toPng(billRef.current, {
-        cacheBust: true,
-        backgroundColor: "#ffffff",
-        pixelRatio: 2,
-        skipFonts: true,
-        filter: (node) => !node.classList?.contains("no-print"),
-      });
-
+      const dataUrl = await toPng(billRef.current, { cacheBust: true, backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
-      link.download = `HoaDon_${displayBill?.cycle_label || "HocSinh"}.png`;
+      link.download = `${displayBill?.cycle_label || "bill"}.png`;
       link.href = dataUrl;
       link.click();
-
-      toast.success("Tải ảnh hóa đơn thành công!", { id: toastId });
     } catch (e: any) {
-      console.error("Lỗi xuất ảnh:", e);
-      toast.error("Không thể xuất ảnh. Vui lòng thử lại!", { id: toastId });
+      toast.error(e.message || "Error");
     }
   };
 
-  if (!student) return <div className="p-8 text-center text-slate-400 font-bold">Đang tải thông tin học sinh...</div>;
+  if (!student) return <div className="p-6 text-muted-foreground">Loading...</div>;
 
   return (
-    <div className="container mx-auto p-3 sm:p-6 max-w-7xl space-y-6 animate-in fade-in duration-300">
+    <div className="container mx-auto p-4 md:p-6 max-w-7xl space-y-6">
       
-      {/* 1. TOP ACTION BAR */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs no-print">
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="ghost" 
-            onClick={() => navigate(-1)} 
-            className="h-10 px-3 rounded-2xl hover:bg-slate-100 font-bold text-slate-600 text-xs gap-1.5 cursor-pointer"
-          >
-            <ArrowLeft className="h-4 w-4" /> Chi tiết học sinh
-          </Button>
-          <div className="h-4 w-px bg-slate-200 hidden sm:block" />
-          <div className="font-black text-slate-900 text-sm flex items-center gap-2">
-            <Receipt className="h-4 w-4 text-blue-600" />
-            <span>Hóa đơn học phí: <span className="text-blue-600">{student.name}</span></span>
-          </div>
-        </div>
+      {/* BỘ CSS XỬ LÝ TRỰC TIẾP CHO BẢN IN NATIVE (TRÁNH LỖI TRẮNG TRANG) */}
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          .print-area, .print-area * {
+            visibility: visible !important;
+          }
+          .print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: #ffffff !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          body {
+            background: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+        }
+      `}</style>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex border border-slate-200/80 rounded-2xl p-1 bg-slate-50 shadow-2xs">
-            <button
-              onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                mode === "monthly" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              {t?.payByMonth || "Theo tháng"}
-            </button>
-            <button
-              onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                mode === "by_session" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              {t?.payBySession || "Theo buổi"}
-            </button>
+      {/* Top Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4 no-print">
+        <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2 w-fit">
+          <ArrowLeft className="h-4 w-4 mr-2" /> {t?.details || "Details"}
+        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex border rounded-xl p-1 bg-card shadow-sm">
+            <Button size="sm" variant={mode === "monthly" ? "soft" : "ghost"} onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}>
+              {t?.payByMonth || "Pay monthly"}
+            </Button>
+            <Button size="sm" variant={mode === "by_session" ? "soft" : "ghost"} onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}>
+              {t?.payBySession || "Pay by session"}
+            </Button>
           </div>
-
-          <Button 
-            variant="outline" 
-            onClick={saveAsImage}
-            className="h-10 px-3.5 rounded-2xl border-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer"
-          >
-            <ImageIcon className="h-4 w-4 text-slate-500" /> Xuất ảnh
+          <Button variant="outline" size="sm" onClick={saveAsImage}>
+            <ImageIcon className="h-4 w-4 mr-1.5" /> {(t as any)?.saveAsImage || "Save as image"}
           </Button>
-          <Button 
-            onClick={handlePrint}
-            className="h-10 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-blue-600/20 cursor-pointer"
-          >
-            <Printer className="h-4 w-4" /> In hóa đơn
+          <Button variant="success" size="sm" onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-1.5" /> {t?.printBill || "Print bill"}
           </Button>
         </div>
       </div>
 
-      {/* 2. MAIN 2-COLUMN LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        
-        {/* LEFT COLUMN: DANH SÁCH CHỌN CHU KỲ / BUỔI HỌC */}
+      {/* Main 2-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* LEFT COLUMN: Danh sách chu kỳ / buổi học */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print">
-          <Card className="p-5 border-slate-200/80 rounded-3xl bg-white shadow-xs space-y-4">
-            <div className="flex justify-between items-center gap-2 pb-2 border-b border-slate-100">
-              <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-blue-600" />
-                {mode === "monthly" ? (t?.cycle || "Chu kỳ đóng học phí") : ((t as any)?.sessionList || "Danh sách buổi học")}
+          <Card className="p-5 border shadow-sm space-y-4">
+            <div className="flex justify-between items-center gap-2">
+              <h3 className="font-semibold text-base">
+                {mode === "monthly" ? (t?.cycle || "Cycle") : ((t as any)?.sessionList || "Session List")}
               </h3>
-              <div className="flex items-center gap-1.5">
+              <div className="flex gap-2">
                 {mode === "monthly" && selectedCycles.size > 0 && (
-                  <Button size="sm" onClick={paySelectedCycles} className="h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer">
-                    <Check className="h-3.5 w-3.5 mr-1" /> Đóng ({selectedCycles.size})
+                  <Button size="sm" variant="success" onClick={paySelectedCycles}>
+                    <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedCycles.size})
                   </Button>
                 )}
                 {mode === "by_session" && selectedSessionIds.size > 0 && (
-                  <Button size="sm" onClick={paySelectedSessions} className="h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer">
-                    <Check className="h-3.5 w-3.5 mr-1" /> Đóng ({selectedSessionIds.size})
+                  <Button size="sm" variant="success" onClick={paySelectedSessions}>
+                    <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedSessionIds.size})
                   </Button>
                 )}
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => setAddOpen((o) => !o)}
-                  className="h-8 px-2.5 rounded-xl border-slate-200 font-bold text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" /> Thêm buổi
+                <Button size="sm" variant="soft" onClick={() => setAddOpen((o) => !o)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> {t?.addAttendance || "Add attendance"}
                 </Button>
               </div>
             </div>
-
             {addOpen && (
-              <div className="grid gap-3 p-3.5 rounded-2xl bg-blue-50/50 border border-blue-100 text-xs">
+              <div className="grid gap-3 p-3 rounded-xl bg-muted/50 border text-xs">
                 <div>
-                  <Label className="text-[10px] font-bold text-slate-600 uppercase mb-1 block">Ngày điểm danh</Label>
-                  <Input type="date" className="h-9 rounded-xl text-xs bg-white" value={addForm.date} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} />
+                  <Label className="text-xs mb-1 block">{t?.date || "Date"}</Label>
+                  <Input type="date" value={addForm.date} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} />
                 </div>
                 <div>
-                  <Label className="text-[10px] font-bold text-slate-600 uppercase mb-1 block">Lớp học</Label>
+                  <Label className="text-xs mb-1 block">{t?.class || "Class"}</Label>
                   <Select value={addForm.class_id} onValueChange={(v) => setAddForm({ ...addForm, class_id: v })}>
-                    <SelectTrigger className="h-9 rounded-xl text-xs bg-white"><SelectValue /></SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      {myClasses.map((c: any) => <SelectItem key={c.id} value={c.id} className="text-xs">{c.name}</SelectItem>)}
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {myClasses.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-[10px] font-bold text-slate-600 uppercase mb-1 block">Nhận xét bài tập</Label>
-                  <Textarea rows={2} className="rounded-xl text-xs bg-white" value={addForm.note} onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} />
+                  <Label className="text-xs mb-1 block">{t?.homework || "Homework"}</Label>
+                  <Textarea rows={2} value={addForm.note} onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} />
                 </div>
                 <div className="flex justify-end pt-1">
-                  <Button size="sm" className="h-8 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer" onClick={addAttendance}>Lưu điểm danh</Button>
+                  <Button size="sm" variant="success" onClick={addAttendance}>{t?.save || "Save"}</Button>
                 </div>
               </div>
             )}
-
-            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+            <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
               {mode === "monthly" ? (
                 bills.map((b) => {
                   const paid = isPaid(b);
@@ -620,8 +520,8 @@ export default function StudentBill() {
                   return (
                     <div
                       key={b.cycle_label}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-blue-50/70 border-blue-300 shadow-xs" : "hover:bg-slate-50/80 border-slate-100"
+                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                        isChecked ? "bg-primary/10 border-primary/40 shadow-sm" : "hover:bg-muted/60 border-transparent"
                       }`}
                       onClick={() => {
                         setSelectedCycles((prev) => {
@@ -635,7 +535,6 @@ export default function StudentBill() {
                     >
                       <div className="flex items-center gap-3">
                         <Checkbox
-                          className="rounded-lg"
                           checked={isChecked}
                           onCheckedChange={(v) => {
                             setSelectedCycles((prev) => {
@@ -649,18 +548,18 @@ export default function StudentBill() {
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div>
-                          <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                          <div className="text-sm font-medium flex items-center gap-2">
                             {b.cycle_label}
                             {paid && (
-                              <span className="text-[9px] px-2 py-0.5 rounded-md font-black bg-emerald-100 text-emerald-700 uppercase tracking-wider">
-                                ĐÃ ĐÓNG
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-700 uppercase">
+                                {t?.paid || "PAID"}
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] font-semibold text-slate-400 mt-0.5">{b.description}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{b.description}</div>
                         </div>
                       </div>
-                      <div className="text-xs font-black text-slate-900">{formatVND(effectiveAmount(b))}</div>
+                      <div className="text-sm font-bold">{formatVND(effectiveAmount(b))}</div>
                     </div>
                   );
                 })
@@ -671,8 +570,8 @@ export default function StudentBill() {
                   return (
                     <div
                       key={a.id}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-blue-50/70 border-blue-300 shadow-xs" : "hover:bg-slate-50/80 border-slate-100"
+                      className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                        isChecked ? "bg-primary/10 border-primary/40" : "hover:bg-muted/60 border-transparent"
                       }`}
                       onClick={() => {
                         setSelectedSessionIds((s) => {
@@ -685,7 +584,6 @@ export default function StudentBill() {
                     >
                       <div className="flex items-center gap-3">
                         <Checkbox
-                          className="rounded-lg"
                           checked={isChecked}
                           onCheckedChange={(v) => {
                             setSelectedSessionIds((s) => {
@@ -698,123 +596,129 @@ export default function StudentBill() {
                           onClick={(e) => e.stopPropagation()}
                         />
                         <div>
-                          <div className="text-xs font-black text-slate-800">
-                            #{idx + 1} — Ngày {fmtDate(a.schedule_events?.event_date)}
+                          <div className="text-xs font-bold text-slate-800">
+                            #{idx + 1} - {fmtDate(a.schedule_events?.event_date)}
                           </div>
-                          <div className="text-[11px] font-semibold text-slate-400 truncate max-w-[180px]">
-                            {a.homework_note || "Chưa có ghi chú"}
+                          <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                            {a.homework_note || (t as any)?.noNote || "No notes"}
                           </div>
                         </div>
                       </div>
-                      <div className="text-xs font-black text-slate-900">{formatVND(fee)}</div>
+                      <div className="text-xs font-bold">{formatVND(fee)}</div>
                     </div>
                   );
                 })
               )}
               {((mode === "monthly" && bills.length === 0) || (mode === "by_session" && availableAttendance.length === 0)) && (
-                <div className="text-xs font-semibold text-slate-400 py-6 text-center">Chưa có dữ liệu học phí</div>
+                <div className="text-sm text-muted-foreground py-4 text-center">{t?.nothingHere || "Nothing here"}</div>
               )}
             </div>
           </Card>
         </div>
 
-        {/* RIGHT COLUMN: HÓA ĐƠN XEM TRƯỚC */}
+        {/* RIGHT COLUMN: Invoice Document Preview */}
         <div className="lg:col-span-7 xl:col-span-8 flex justify-center">
           {displayBill && (
             <Card
               ref={billRef as any}
-              className="print-area w-full max-w-2xl p-6 sm:p-8 border border-slate-200/80 rounded-3xl shadow-sm print:shadow-none print:border-none print:p-0 bg-white text-slate-900 space-y-6"
+              className="print-area w-full max-w-2xl p-6 border rounded-2xl shadow-md bg-white text-foreground space-y-4"
               style={{ borderTop: `8px solid ${accent}` }}
             >
-              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              {/* Invoice Header */}
+              <div className="flex items-start justify-between border-b pb-3">
                 <div>
-                  <div className="text-2xl font-black tracking-tight uppercase flex items-center gap-2" style={{ color: accent }}>
-                    <Receipt className="h-6 w-6" /> HÓA ĐƠN HỌC PHÍ
+                  <div className="text-2xl font-black tracking-wider uppercase" style={{ color: accent }}>
+                    {(t as any)?.invoice || "INVOICE"}
                   </div>
-                  <div className="text-xs font-bold text-slate-400 mt-1 font-mono">
-                    Mã HĐ: {billNum}
+                  <div className="text-xs text-muted-foreground mt-1 break-all font-mono">
+                    {(t as any)?.billNo || "Bill No."}: {billNum}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-black text-base text-slate-900">{profile?.display_name || t?.teacher || "Giáo viên"}</div>
-                  <div className="text-xs font-semibold text-slate-400 mt-0.5">{(profile as any)?.phone || ""}</div>
+                  <div className="font-bold text-base">{profile?.display_name || t?.teacher || "Teacher"}</div>
+                  <div className="text-xs text-muted-foreground">{(profile as any)?.phone || ""}</div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-2xl border border-slate-100 text-xs">
+              {/* Billed Info Grid */}
+              <div className="grid grid-cols-2 gap-3 bg-muted/30 p-3.5 rounded-xl text-xs border">
                 <div>
-                  <div className="text-[10px] uppercase font-black tracking-wider text-slate-400 mb-1">
-                    HỌC SINH NHẬN HÓA ĐƠN
+                  <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                    {(t as any)?.billedTo || "BILLED TO"}
                   </div>
-                  <div className="font-black text-base inline-block px-2.5 py-0.5 rounded-lg text-slate-900" style={{ background: `${accent}25` }}>
+                  <div className="font-bold text-base mt-0.5 inline-block px-2 py-0.5 rounded" style={{ background: `${accent}33` }}>
                     {student.name}
                   </div>
                   {(student as any)?.phone && (
-                    <p className="text-xs font-semibold text-slate-500 mt-1.5">SĐT: {(student as any).phone}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{(student as any).phone}</p>
                   )}
                   {student.grade && (
-                    <div className="mt-1.5">
-                      <span className="px-2.5 py-0.5 rounded-full font-bold text-[10px]" style={{ background: `${accent}35`, color: "#0f172a" }}>
+                    <div className="mt-1 text-[11px]">
+                      <span className="px-2 py-0.5 rounded-full font-medium" style={{ background: `${accent}44` }}>
                         {student.grade}
                       </span>
                     </div>
                   )}
                 </div>
-                <div className="text-right space-y-2">
+                <div className="text-right space-y-1">
                   <div>
-                    <div className="text-[10px] uppercase font-black tracking-wider text-slate-400">
-                      {mode === "monthly" ? "HỌC PHÍ / THÁNG" : "HỌC PHÍ / BUỔI"}
+                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                      {mode === "monthly" 
+                        ? (t?.feePerMonth || "FEE PER MONTH") 
+                        : ((t as any)?.feePerSession || "FEE PER SESSION")}
                     </div>
-                    <div className="font-black text-base text-slate-900 mt-0.5">
+                    <div className="font-bold text-base mt-0.5">
                       {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase font-black tracking-wider text-slate-400">
-                      {mode === "monthly" ? "KỲ THU HỌC PHÍ" : "SỐ BUỔI TÍNH PHÍ"}
+                    <div className="text-[10px] uppercase font-semibold text-muted-foreground">
+                      {mode === "monthly" 
+                        ? (t?.period || "PERIOD") 
+                        : ((t as any)?.billedSessions || "BILLED SESSIONS")}
                     </div>
-                    <div className="font-bold text-xs text-slate-700 mt-0.5">
+                    <div className="font-semibold text-xs mt-0.5">
                       {mode === "monthly" 
                         ? (displayBill.period_start ? `${fmtDate(displayBill.period_start)} – ${fmtDate(displayBill.period_end)}` : displayBill.description) 
-                        : `${displayBill.attendances?.length || 0} buổi học`}
+                        : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "sessions")}`}
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* Sessions table */}
               {displayBill.attendances?.length > 0 && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                      <FileText className="h-4 w-4 text-blue-600" /> CHI TIẾT CÁC BUỔI HỌC
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      {(t as any)?.sessionDetails || "SESSION DETAILS"}
                     </span>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="no-print h-7 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl"
+                      className="no-print h-7 text-xs"
                       onClick={() => setShowAtt((s) => !s)}
                     >
                       {showAtt
-                        ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> Ẩn danh sách</>
-                        : <><Eye className="h-3.5 w-3.5 mr-1" /> Hiện danh sách</>}
+                        ? <><EyeOff className="h-3 w-3 mr-1" /> {(t as any)?.hide || "Hide"}</>
+                        : <><Eye className="h-3 w-3 mr-1" /> {(t as any)?.show || "Show"}</>}
                     </Button>
                   </div>
-
                   {showAtt && (
-                    <div className="border border-slate-200/80 rounded-2xl overflow-hidden text-xs shadow-2xs">
+                    <div className="border rounded-xl overflow-hidden text-xs">
                       <table className="w-full text-left border-collapse">
                         <thead>
-                          <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 text-[11px] font-black uppercase">
+                          <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-600 text-[11px] font-bold">
                             {mode === "by_session" && (
-                              <th className="py-2.5 px-3 w-10 text-center no-print">Chọn</th>
+                              <th className="py-2 px-3 w-10 text-center no-print">{(t as any)?.select || "Select"}</th>
                             )}
-                            <th className="py-2.5 px-3 w-8 text-center">STT</th>
-                            <th className="py-2.5 px-3 w-28">Ngày học</th>
-                            <th className="py-2.5 px-3">Nội dung bài học / Ghi chú</th>
-                            <th className="py-2.5 px-3 text-right w-28">Học phí</th>
+                            <th className="py-2 px-3 w-8 text-center">#</th>
+                            <th className="py-2 px-3 w-28">{t?.date || "Date"}</th>
+                            <th className="py-2 px-3">{t?.homework || "Homework / Note"}</th>
+                            <th className="py-2 px-3 text-right w-28">{t?.feePerOne || "Fee"}</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody>
                           {displayBill.attendances.map((a: any, i: number) => {
                             const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
                             const feeDraftVal = feeDraft[a.id] ?? (a.fee_override == null ? "" : String(a.fee_override));
@@ -825,13 +729,11 @@ export default function StudentBill() {
                               if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
                               return false;
                             });
-
                             return (
-                              <tr key={a.id} className={`transition-colors ${isChecked ? "bg-blue-50/50" : "hover:bg-slate-50/50"}`}>
+                              <tr key={a.id} className={`border-t ${isChecked ? "bg-blue-50/50" : ""}`}>
                                 {mode === "by_session" && (
-                                  <td className="py-2.5 px-3 text-center no-print align-middle">
+                                  <td className="py-2 px-3 text-center no-print align-top">
                                     <Checkbox
-                                      className="rounded-lg"
                                       checked={isPaidSession || isChecked}
                                       disabled={isPaidSession}
                                       onCheckedChange={(v) => {
@@ -846,26 +748,26 @@ export default function StudentBill() {
                                     />
                                   </td>
                                 )}
-                                <td className="py-2.5 px-3 align-middle text-center font-bold text-slate-500">{i + 1}</td>
-                                <td className="py-2.5 px-3 align-middle font-bold text-slate-800 whitespace-nowrap">
+                                <td className="py-2 px-3 align-top text-center">{i + 1}</td>
+                                <td className="py-2 px-3 align-top font-medium whitespace-nowrap">
                                   {fmtDate(a.schedule_events?.event_date)}
                                 </td>
-                                <td className="py-2.5 px-3 align-middle">
+                                <td className="py-2 px-3 align-top">
                                   <Input
                                     type="text"
-                                    className="no-print h-8 text-xs w-full rounded-xl border-slate-200 bg-white font-medium"
+                                    className="no-print h-8 text-xs w-full"
                                     value={hwDraftVal}
-                                    placeholder="Nhập ghi chú / bài tập..."
+                                    placeholder="Note / Homework..."
                                     onChange={(e) => setHomeworkDraft((d) => ({ ...d, [a.id]: e.target.value }))}
                                     onBlur={(e) => updateHomeworkNote(a, e.target.value)}
                                   />
-                                  <span className="print:inline hidden text-xs font-semibold">{a.homework_note || "—"}</span>
+                                  <span className="print:inline hidden text-xs">{a.homework_note || "—"}</span>
                                 </td>
-                                <td className="py-2.5 px-3 text-right align-middle">
-                                  <span className="print:inline hidden text-xs font-bold">{formatVND(fee)}</span>
+                                <td className="py-2 px-3 text-right align-top">
+                                  <span className="print:inline hidden text-xs">{formatVND(fee)}</span>
                                   <Input
                                     type="number"
-                                    className="no-print h-8 text-right w-28 ml-auto text-xs rounded-xl border-slate-200 bg-white font-bold"
+                                    className="no-print h-8 text-right w-28 ml-auto text-xs"
                                     value={feeDraftVal}
                                     placeholder={String(student.fee_per_session || 0)}
                                     onChange={(e) => setFeeDraft((d) => ({ ...d, [a.id]: e.target.value }))}
@@ -882,115 +784,85 @@ export default function StudentBill() {
                 </div>
               )}
 
-              <div className="flex justify-end pt-2">
-                <div className="w-full sm:w-72 space-y-2 p-4 rounded-2xl bg-slate-50 border border-slate-100 shadow-2xs">
-                  <div className="flex justify-between text-xs font-bold text-slate-500">
-                    <span>Tạm tính</span>
+              {/* Total summary */}
+              <div className="flex justify-end pt-1">
+                <div className="w-full sm:w-64 space-y-1.5 p-3 rounded-xl bg-muted/30 border">
+                  <div className="flex justify-between text-xs text-muted-foreground font-medium">
+                    <span>{(t as any)?.subtotal || "Subtotal"}</span>
                     <span>{formatVND(billTotal)}</span>
                   </div>
                   <div
-                    className="flex justify-between items-center font-black text-slate-900 px-3.5 py-2.5 rounded-xl"
-                    style={{ background: `${accent}30` }}
+                    className="flex justify-between font-bold text-base px-3 py-1.5 rounded-lg"
+                    style={{ background: `${accent}44` }}
                   >
-                    <span className="text-xs uppercase tracking-wider">TỔNG CỘNG</span>
-                    <span className="text-xl font-black">{formatVND(billTotal)}</span>
+                    <span>{(t as any)?.totalDue || "Total due"}</span>
+                    <span className="text-lg font-black">{formatVND(billTotal)}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="border-t border-slate-100 pt-4">
-                <div className="text-[10px] uppercase font-black tracking-wider text-slate-400 mb-2.5 flex items-center gap-1.5">
-                  <CreditCard className="h-3.5 w-3.5 text-blue-600" /> THANH TOÁN CHUYỂN KHOẢN (VIETQR)
+              {/* VietQR Payment Card */}
+              <div className="border-t pt-3">
+                <div className="text-xs uppercase font-semibold text-muted-foreground mb-2">
+                  {(t as any)?.mobileBankingPayment || "MOBILE BANKING PAYMENT"}
                 </div>
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/70 p-4 rounded-2xl border border-slate-100">
-                  <div className="space-y-1.5 text-xs w-full">
-                    <div className="font-black text-sm text-slate-900">Quét mã QR để đóng học phí</div>
-                    <div className="text-[11.5px] font-semibold text-slate-500">Mở ứng dụng Ngân hàng (MB, Vietcombank, TPBank...) để quét mã tự động điền số tiền và nội dung.</div>
-                    <div className="pt-2.5 text-xs space-y-1 border-t border-slate-200/60 mt-2">
-                      <div className="font-bold text-slate-700">Số tiền: <span className="font-black text-blue-600">{formatVND(billTotal)}</span></div>
-                      <div className="font-mono text-[11px] text-slate-600 break-all">Cú pháp CK: <span className="bg-white px-2 py-0.5 rounded-md border border-slate-200 font-bold">{billNum}</span></div>
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-muted/20 p-3.5 rounded-xl border">
+                  <div className="space-y-1 text-xs w-full">
+                    <div className="font-bold text-sm">{(t as any)?.scanToPayShort || "Scan QR to pay"}</div>
+                    <div className="text-[11px] text-muted-foreground">{(t as any)?.scanQrInstr || "Use any banking app to scan the QR code and complete the payment."}</div>
+                    <div className="pt-2 text-xs space-y-0.5 border-t mt-1">
+                      <div>{t?.amount || "Amount"}: <span className="font-bold">{formatVND(billTotal)}</span></div>
+                      <div className="font-mono text-[11px] break-all">{(t as any)?.reference || "Reference"}: <span className="bg-muted px-1.5 py-0.5 rounded">{billNum}</span></div>
                     </div>
                   </div>
                   <div className="flex-shrink-0">
                     {qrUrl ? (
-                      <img 
-                        src={qrUrl} 
-                        alt="VietQR" 
-                        crossOrigin="anonymous"
-                        className="h-36 w-36 rounded-2xl bg-white p-2 border border-slate-200 shadow-sm object-contain" 
-                      />
+                      <img src={qrUrl} alt="VietQR" className="h-36 w-36 rounded-xl bg-white p-2 border shadow-sm object-contain" />
                     ) : (
-                      <div className="text-xs font-bold text-slate-400 no-print text-center p-4 bg-white rounded-2xl border border-slate-200">
-                        Chưa thiết lập QR: <Link to="/settings" className="text-blue-600 underline">Cài đặt</Link>
+                      <div className="text-xs text-muted-foreground no-print text-center p-3">
+                        {t?.vietQR || "VietQR"}: <Link to="/settings" className="text-primary underline">{t?.settings || "Settings"}</Link>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="no-print pt-2 flex flex-col items-end gap-2">
+              {/* Payment Action Buttons */}
+              <div className="no-print pt-1 flex flex-col items-end gap-2">
                 {mode === "by_session" ? (
                   <Button
+                    variant="success"
                     disabled={selectedSessionIds.size === 0}
                     onClick={paySelectedSessions}
-                    className="h-11 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 cursor-pointer"
                   >
                     <Check className="h-4 w-4 mr-1.5" />
-                    Xác nhận đóng học phí ({selectedSessionIds.size} buổi)
+                    {(t as any)?.markAsPaid || "Mark as paid"} ({selectedSessionIds.size})
                   </Button>
                 ) : selectedCycles.size > 0 ? (
-                  <Button 
-                    onClick={paySelectedCycles}
-                    className="h-11 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 cursor-pointer"
-                  >
+                  <Button variant="success" onClick={paySelectedCycles}>
                     <Check className="h-4 w-4 mr-1.5" />
-                    Xác nhận đóng học phí ({selectedCycles.size} chu kỳ)
+                    {(t as any)?.markAsPaid || "Mark as paid"} ({selectedCycles.size})
                   </Button>
                 ) : (
-                  <Button 
-                    variant={isPaid(current) ? "outline" : "default"} 
-                    onClick={() => togglePaid(current)}
-                    className={isPaid(current) 
-                      ? "h-11 px-6 rounded-2xl border-slate-200 font-bold text-xs text-slate-700 hover:bg-slate-50 cursor-pointer"
-                      : "h-11 px-6 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 cursor-pointer"
-                    }
-                  >
+                  <Button variant={isPaid(current) ? "outline" : "success"} onClick={() => togglePaid(current)}>
                     <Check className="h-4 w-4 mr-1.5" />
-                    {isPaid(current) ? "Đánh dấu CHƯA ĐÓNG" : "Đánh dấu ĐÃ ĐÓNG HỌC PHÍ"}
+                    {isPaid(current) ? (t?.unpaid || "Unpaid") : (t?.markPaid || "Mark as paid")}
                   </Button>
                 )}
               </div>
 
-              <style>{`
-                @page {
-                  size: A4 portrait;
-                  margin: 8mm;
-                }
-                @media print {
-                  body {
-                    background: white !important;
-                  }
-                  .print-area {
-                    box-shadow: none !important;
-                    border: none !important;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                    width: 100% !important;
-                  }
-                }
-              `}</style>
-
-              <div className="border-t border-slate-100 pt-4">
-                <Label className="text-xs font-bold text-slate-600 no-print mb-1.5 block">Ghi chú chân trang hóa đơn</Label>
+              {/* Footnote */}
+              <div className="border-t pt-3">
+                <Label className="text-xs font-semibold no-print mb-1 block">{(t as any)?.footnote || "Bill footnote"}</Label>
                 <Textarea
                   rows={2}
                   value={footnote}
                   onChange={(e) => setFootnote(e.target.value)}
-                  placeholder="Nhập lời cảm ơn hoặc lưu ý..."
-                  className="no-print text-xs rounded-xl border-slate-200 bg-white"
+                  placeholder={(t as any)?.footnoteDefault || "Thank you!"}
+                  className="no-print text-xs"
                 />
                 {footnote && (
-                  <div className="hidden print:block text-xs italic text-center pt-2 text-slate-500 font-medium">
+                  <div className="hidden print:block text-xs italic text-center pt-2 text-muted-foreground">
                     {footnote}
                   </div>
                 )}
@@ -998,7 +870,6 @@ export default function StudentBill() {
             </Card>
           )}
         </div>
-
       </div>
     </div>
   );
