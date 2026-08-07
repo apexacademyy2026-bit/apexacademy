@@ -497,8 +497,7 @@ export default function Schedule() {
       .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
 
   return (
-    <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
-     {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE & ÉP HIỂN THỊ SỰ KIỆN */}
+  <div className="p-2 sm:p-6 pt-0 sm:pt-2 max-w-7xl mx-auto space-y-4 sm:space-y-6 animate-in fade-in duration-300">     {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE & ÉP HIỂN THỊ SỰ KIỆN */}
 <style>{`
   @media print {
     @page {

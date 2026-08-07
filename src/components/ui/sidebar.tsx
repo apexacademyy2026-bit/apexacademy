@@ -36,7 +36,6 @@ function useSidebar() {
   if (!context) {
     throw new Error("useSidebar must be used within a SidebarProvider.");
   }
-
   return context;
 }
 
@@ -51,8 +50,6 @@ const SidebarProvider = React.forwardRef<
   const isMobile = useIsMobile();
   const [openMobile, setOpenMobile] = React.useState(false);
 
-  // This is the internal state of the sidebar.
-  // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen);
   const open = openProp ?? _open;
   const setOpen = React.useCallback(
@@ -63,19 +60,15 @@ const SidebarProvider = React.forwardRef<
       } else {
         _setOpen(openState);
       }
-
-      // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
     },
     [setOpenProp, open],
   );
 
-  // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
   }, [isMobile, setOpen, setOpenMobile]);
 
-  // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
@@ -88,8 +81,6 @@ const SidebarProvider = React.forwardRef<
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [toggleSidebar]);
 
-  // We add a state so that we can do data-state="expanded" or "collapsed".
-  // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? "expanded" : "collapsed";
 
   const contextValue = React.useMemo<SidebarContext>(
@@ -150,28 +141,30 @@ const Sidebar = React.forwardRef<
     );
   }
 
-if (isMobile) {
-  return (
-    <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-      <SheetContent
-        data-sidebar="sidebar"
-        data-mobile="true"
-        className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden pt-12 pb-6"
-        style={
-          {
-            "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-            paddingTop: "max(3rem, env(safe-area-inset-top))", // Đẩy xuống tối thiểu 48px (3rem)
-            paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
-          } as React.CSSProperties
-        }
-        side={side}
-      >
-        <div className="flex h-full w-full flex-col">{children}</div>
-      </SheetContent>
-    </Sheet>
-  );
-}
+  // 📱 DÀNH CHO IPHONE (Giao diện Mobile - Drawer Sheet)
+  if (isMobile) {
+    return (
+      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+        <SheetContent
+          data-sidebar="sidebar"
+          data-mobile="true"
+          className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          style={
+            {
+              "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+              paddingTop: "max(3rem, env(safe-area-inset-top))",
+              paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+            } as React.CSSProperties
+          }
+          side={side}
+        >
+          <div className="flex h-full w-full flex-col overflow-y-auto">{children}</div>
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
+  // 💻 DÀNH CHO IPAD & MACBOOK (Giao diện Tablet/Desktop)
   return (
     <div
       ref={ref}
@@ -181,7 +174,6 @@ if (isMobile) {
       data-variant={variant}
       data-side={side}
     >
-      {/* This is what handles the sidebar gap on desktop */}
       <div
         className={cn(
           "relative h-svh w-[--sidebar-width] bg-transparent transition-[width] duration-200 ease-linear",
@@ -194,16 +186,20 @@ if (isMobile) {
       />
       <div
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] duration-200 ease-linear md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] duration-200 ease-linear md:flex flex-col",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
-          // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)]"
             : "group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
         )}
+        style={{
+          // Tự động căn lề trên phù hợp với tai thỏ iPad hoặc viền trên MacBook
+          paddingTop: "max(1.25rem, env(safe-area-inset-top))",
+          paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+        }}
         {...props}
       >
         <div
@@ -228,14 +224,14 @@ const SidebarTrigger = React.forwardRef<React.ElementRef<typeof Button>, React.C
         data-sidebar="trigger"
         variant="ghost"
         size="icon"
-        className={cn("h-7 w-7", className)}
+        className={cn("h-8 w-8 rounded-lg", className)}
         onClick={(event) => {
           onClick?.(event);
           toggleSidebar();
         }}
         {...props}
       >
-        <PanelLeft />
+        <PanelLeft className="h-4 w-4" />
         <span className="sr-only">Toggle Sidebar</span>
       </Button>
     );
@@ -280,6 +276,10 @@ const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<"main
         "peer-data-[variant=inset]:min-h-[calc(100svh-theme(spacing.4))] md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow",
         className,
       )}
+      style={{
+        // Bổ sung Safe Area cho khung nội dung chính (Main Content)
+        paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+      }}
       {...props}
     />
   );
@@ -304,12 +304,12 @@ const SidebarInput = React.forwardRef<React.ElementRef<typeof Input>, React.Comp
 SidebarInput.displayName = "SidebarInput";
 
 const SidebarHeader = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(({ className, ...props }, ref) => {
-  return <div ref={ref} data-sidebar="header" className={cn("flex flex-col gap-2 p-2", className)} {...props} />;
+  return <div ref={ref} data-sidebar="header" className={cn("flex flex-col gap-2 p-3 pt-2 md:pt-3", className)} {...props} />;
 });
 SidebarHeader.displayName = "SidebarHeader";
 
 const SidebarFooter = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(({ className, ...props }, ref) => {
-  return <div ref={ref} data-sidebar="footer" className={cn("flex flex-col gap-2 p-2", className)} {...props} />;
+  return <div ref={ref} data-sidebar="footer" className={cn("flex flex-col gap-2 p-3 pb-3", className)} {...props} />;
 });
 SidebarFooter.displayName = "SidebarFooter";
 
@@ -333,7 +333,7 @@ const SidebarContent = React.forwardRef<HTMLDivElement, React.ComponentProps<"di
       ref={ref}
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden px-1",
         className,
       )}
       {...props}
@@ -384,7 +384,6 @@ const SidebarGroupAction = React.forwardRef<HTMLButtonElement, React.ComponentPr
         data-sidebar="group-action"
         className={cn(
           "absolute right-3 top-3.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
-          // Increases the hit area of the button on mobile.
           "after:absolute after:-inset-2 after:md:hidden",
           "group-data-[collapsible=icon]:hidden",
           className,
@@ -491,7 +490,6 @@ const SidebarMenuAction = React.forwardRef<
       data-sidebar="menu-action"
       className={cn(
         "absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ring-sidebar-ring transition-transform peer-hover/menu-button:text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
-        // Increases the hit area of the button on mobile.
         "after:absolute after:-inset-2 after:md:hidden",
         "peer-data-[size=sm]/menu-button:top-1",
         "peer-data-[size=default]/menu-button:top-1.5",
@@ -533,7 +531,6 @@ const SidebarMenuSkeleton = React.forwardRef<
     showIcon?: boolean;
   }
 >(({ className, showIcon = false, ...props }, ref) => {
-  // Random width between 50 to 90%.
   const width = React.useMemo(() => {
     return `${Math.floor(Math.random() * 40) + 50}%`;
   }, []);
