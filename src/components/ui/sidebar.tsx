@@ -150,20 +150,18 @@ const Sidebar = React.forwardRef<
     );
   }
 
-  if (isMobile) {
+if (isMobile) {
   return (
     <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
       <SheetContent
         data-sidebar="sidebar"
         data-mobile="true"
-        className={cn(
-          "w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden",
-          // Thêm khoảng đệm notch/dynamic island phía trên và home bar phía dưới
-          "pt-[env(safe-area-inset-top,20px)] pb-[env(safe-area-inset-bottom,20px)]"
-        )}
+        className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden pt-12 pb-6"
         style={
           {
             "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+            paddingTop: "max(3rem, env(safe-area-inset-top))", // Đẩy xuống tối thiểu 48px (3rem)
+            paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
           } as React.CSSProperties
         }
         side={side}
