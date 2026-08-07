@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
+import StudentDashboard from "@/pages/StudentDashboard";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Plus, 
@@ -90,7 +91,7 @@ export default function ClassLandingPage() {
         toast.success("Đăng nhập thành công!");
         setShowAuthModal(false);
 
-        // Lấy thông tin role an toàn
+        // Lấy thông tin role an toàn (tránh lỗi TypeScript)
         if (data.user) {
           const { data: profile } = await (supabase as any)
             .from("profiles")
@@ -124,6 +125,7 @@ export default function ClassLandingPage() {
         toast.success("Đăng ký thành công!");
         setShowAuthModal(false);
 
+        // Nếu hệ thống cho phép đăng nhập luôn (Confirm email = OFF)
         if (data.user && data.session) {
           const { data: profile } = await (supabase as any)
             .from("profiles")
@@ -147,22 +149,22 @@ export default function ClassLandingPage() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-          queryParams: {
-            prompt: 'select_account',
-          },
+const handleGoogleSignIn = async () => {
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: {
+          prompt: 'select_account', // BẮT BUỘC: Ép Google hiện bảng chọn tài khoản
         },
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message || "Không thể kết nối với Google Auth");
-    }
-  };
+      },
+    });
+    if (error) throw error;
+  } catch (error: any) {
+    toast.error(error.message || "Không thể kết nối với Google Auth");
+  }
+};
 
   // Các hàm thao tác với lịch tư vấn
   const addWeeklySlot = () => {
@@ -200,45 +202,50 @@ export default function ClassLandingPage() {
   return (
     <div className="min-h-screen w-full bg-[#f6f7fb] text-slate-900 font-sans antialiased selection:bg-blue-600 selection:text-white">
       
-      {/* 1. THANH HEADER - Áp dụng pt-safe cho Safe Area iOS */}
-      <header className="sticky top-0 z-40 w-full pt-safe bg-white/90 border-b border-slate-100 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 cursor-pointer">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white text-lg shadow-md">
-              M
-            </div>
-            <span className="font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
-              MathClass
-            </span>
-          </div>
+{/* 1. THANH HEADER - Đẩy xuống tránh khuất bởi Dynamic Island / Tai thỏ */}
+<header 
+  className="sticky top-0 z-40 w-full bg-white/90 border-b border-slate-100 backdrop-blur-md transition-all"
+  style={{
+    paddingTop: "max(2.5rem, env(safe-area-inset-top))", // Tạo khoảng đệm tối thiểu 40px - 48px ở mép trên
+  }}
+>
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+    <div className="flex items-center gap-2.5 cursor-pointer">
+      <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-black text-white text-lg shadow-md">
+        M
+      </div>
+      <span className="font-black text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
+        MathClass
+      </span>
+    </div>
 
-          <nav className="hidden md:flex items-center gap-8 text-sm font-bold text-slate-600">
-            <a href="#about" className="hover:text-blue-600 transition-colors">Về lớp học</a>
-            <a href="#workflow" className="hover:text-blue-600 transition-colors">Lộ trình bứt phá</a>
-            <a href="#feedbacks" className="hover:text-blue-600 transition-colors">Cảm nhận thủ khoa</a>
-          </nav>
+    <nav className="hidden md:flex items-center gap-8 text-sm font-bold text-slate-600">
+      <a href="#about" className="hover:text-blue-600 transition-colors">Về lớp học</a>
+      <a href="#workflow" className="hover:text-blue-600 transition-colors">Lộ trình bứt phá</a>
+      <a href="#feedbacks" className="hover:text-blue-600 transition-colors">Cảm nhận thủ khoa</a>
+    </nav>
 
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              onClick={() => { 
-                setAuthMode("login"); 
-                setShowAuthModal(true); 
-              }}
-              className="text-slate-700 font-bold text-sm hover:bg-slate-100 rounded-xl px-4 h-10 border border-slate-200 cursor-pointer"
-            >
-              Đăng nhập
-            </Button>
+    <div className="flex items-center gap-3">
+      <Button 
+        variant="ghost" 
+        onClick={() => { 
+          setAuthMode("login"); 
+          setShowAuthModal(true); 
+        }}
+        className="text-slate-700 font-bold text-sm hover:bg-slate-100 rounded-xl px-4 h-10 border border-slate-200 cursor-pointer"
+      >
+        Đăng nhập
+      </Button>
 
-            <Button 
-              onClick={() => setShowConsultModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm h-10 px-5 rounded-xl shadow-sm transition-all cursor-pointer"
-            >
-              Đăng ký
-            </Button>
-          </div>
-        </div>
-      </header>
+      <Button 
+        onClick={() => setShowConsultModal(true)}
+        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm h-10 px-5 rounded-xl shadow-sm transition-all cursor-pointer"
+      >
+        Đăng ký
+      </Button>
+    </div>
+  </div>
+</header>
 
       {/* 2. MAIN LANDING PAGE */}
       <main className="pb-24">
@@ -261,7 +268,7 @@ export default function ClassLandingPage() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start items-center pt-2">
               <Button 
                 onClick={() => setShowConsultModal(true)}
-                className="w-full sm:w-auto h-14 px-8 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-500/20 group transition-all cursor-pointer"
+                className="w-full sm:w-auto h-14 px-8 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base shadow-lg shadow-blue-500/20 group transition-all"
               >
                 Đăng ký học thử ngay
                 <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
@@ -360,7 +367,7 @@ export default function ClassLandingPage() {
             
             <button 
               type="button"
-              className="absolute right-5 top-5 p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-all z-10 cursor-pointer" 
+              className="absolute right-5 top-5 p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-all z-10" 
               onClick={() => setShowConsultModal(false)}
             >
               <X className="h-5 w-5" />
@@ -455,7 +462,7 @@ export default function ClassLandingPage() {
                 <div className="space-y-3 pt-1">
                   <div className="flex justify-between items-center">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1"><Calendar className="h-4 w-4" /> 4. Lịch rảnh mong muốn đăng ký</h4>
-                    <Button type="button" variant="outline" size="sm" onClick={addWeeklySlot} className="h-8 rounded-lg text-xs border-blue-200 text-blue-600 hover:bg-blue-50 gap-1 font-bold cursor-pointer">
+                    <Button type="button" variant="outline" size="sm" onClick={addWeeklySlot} className="h-8 rounded-lg text-xs border-blue-200 text-blue-600 hover:bg-blue-50 gap-1 font-bold">
                       <Plus className="h-3.5 w-3.5" /> Thêm lịch
                     </Button>
                   </div>
@@ -480,7 +487,7 @@ export default function ClassLandingPage() {
                             <span>Đến</span>
                             <Input type="time" className="w-24 h-9 bg-white rounded-lg text-xs px-2" value={slot.endTime} onChange={e => updateWeeklySlot(index, "endTime", e.target.value)} />
                           </div>
-                          <Button type="button" variant="ghost" size="icon" onClick={() => removeWeeklySlot(index)} className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 ml-auto cursor-pointer">
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removeWeeklySlot(index)} className="h-9 w-9 text-red-500 hover:text-red-600 hover:bg-red-50 ml-auto">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -489,7 +496,7 @@ export default function ClassLandingPage() {
                   )}
                 </div>
 
-                <Button type="submit" className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 group transition-all cursor-pointer">
+                <Button type="submit" className="w-full h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 group transition-all">
                   Gửi đăng ký nhập học thử
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </Button>
@@ -506,7 +513,7 @@ export default function ClassLandingPage() {
           <div className="bg-white w-full max-w-[400px] rounded-3xl shadow-2xl p-7 relative space-y-5 animate-scale-up">
             <button 
               type="button" 
-              className="absolute right-5 top-5 p-1.5 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer" 
+              className="absolute right-5 top-5 p-1.5 rounded-full hover:bg-slate-100 text-slate-400" 
               onClick={() => setShowAuthModal(false)}
             >
               <X className="h-5 w-5" />
@@ -526,7 +533,7 @@ export default function ClassLandingPage() {
               type="button" 
               variant="outline" 
               onClick={handleGoogleSignIn} 
-              className="w-full h-11 rounded-xl font-bold text-sm gap-2 hover:bg-slate-50 transition-all flex items-center justify-center border-slate-200 text-slate-700 cursor-pointer"
+              className="w-full h-11 rounded-xl font-bold text-sm gap-2 hover:bg-slate-50 transition-all flex items-center justify-center border-slate-200 text-slate-700"
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24">
                 <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.54 14.98 1 12 1 7.35 1 3.41 3.65 1.5 7.5l3.85 2.99C6.26 7.49 8.91 5.04 12 5.04z"/><path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.4 3.58l3.73 2.89c2.18-2.01 3.7-4.99 3.7-8.62z"/><path fill="#FBBC05" d="M5.35 14.51c-.24-.74-.38-1.54-.38-2.37s.14-1.63.38-2.37L1.5 6.78C.54 8.7 0 10.85 0 13s.54 4.3 1.5 6.22l3.85-2.71z"/><path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.73-2.89c-1.11.75-2.53 1.19-4.23 1.19-3.09 0-5.74-2.45-6.65-5.45L1.5 16.64C3.41 20.35 7.35 23 12 23z"/>
@@ -541,6 +548,7 @@ export default function ClassLandingPage() {
             </div>
 
             <form className="space-y-3.5" onSubmit={handleAuthSubmit}>
+              {/* Ô nhập Họ và tên (chỉ xuất hiện khi chọn Đăng ký) */}
               {authMode === "signup" && (
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Họ và tên</Label>
@@ -577,14 +585,14 @@ export default function ClassLandingPage() {
               {authMode === "login" ? (
                 <>
                   Chưa có tài khoản lớp học?{" "}
-                  <button type="button" onClick={() => setAuthMode("signup")} className="text-blue-600 font-bold hover:underline cursor-pointer">
+                  <button type="button" onClick={() => setAuthMode("signup")} className="text-blue-600 font-bold hover:underline">
                     Đăng ký
                   </button>
                 </>
               ) : (
                 <>
                   Đã có tài khoản từ trước?{" "}
-                  <button type="button" onClick={() => setAuthMode("login")} className="text-blue-600 font-bold hover:underline cursor-pointer">
+                  <button type="button" onClick={() => setAuthMode("login")} className="text-blue-600 font-bold hover:underline">
                     Đăng nhập
                   </button>
                 </>
