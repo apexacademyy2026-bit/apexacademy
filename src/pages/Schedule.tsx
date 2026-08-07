@@ -498,68 +498,61 @@ export default function Schedule() {
 
   return (
   <div className="p-2 sm:p-6 pt-0 sm:pt-2 max-w-7xl mx-auto space-y-4 sm:space-y-6 animate-in fade-in duration-300">     {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE & ÉP HIỂN THỊ SỰ KIỆN */}
+{/* CSS CHUYÊN DỤNG CHO IN BẢNG THỜI KHÓA BIỂU A4 LANDSCAPE */}
 <style>{`
   @media print {
+    /* 1. Ép trang in A4 Landscape gọn gàng trong 1 trang */
     @page {
       size: A4 landscape;
-      margin: 5mm;
+      margin: 6mm;
     }
-    
-    /* Reset toàn bộ khung chứa để tràn 100% trang in */
-    html, body, #root, main, .print-area {
-      background: #fff !important;
-      color: #000 !important;
+
+    /* 2. Ẩn toàn bộ UI ứng dụng không liên quan */
+    body * {
+      visibility: hidden;
+    }
+
+    /* 3. Chỉ hiển thị duy nhất vùng print-area */
+    .print-area, .print-area * {
+      visibility: visible !important;
+    }
+
+    .print-area {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
       width: 100% !important;
-      max-width: 100% !important;
-      height: auto !important;
       margin: 0 !important;
       padding: 0 !important;
-      overflow: visible !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-
-    /* Ẩn các thành phần giao diện không dùng khi in */
-    header, sidebar, nav, button, .print-hide, aside, [role="navigation"] {
-      display: none !important;
-    }
-
-    /* Mở rộng bảng thời khóa biểu ra 100% chiều rộng trang */
-    .print-area {
-      display: block !important;
-      width: 100% !important;
-      border: none !important;
       box-shadow: none !important;
+      border: none !important;
     }
 
-    .print-area > div, 
+    /* 4. Khôi phục layout Grid chuẩn cho A4 */
     .print-area .min-w-\\[900px\\] {
       min-width: 100% !important;
       width: 100% !important;
     }
 
-    /* Tắt scrollbar và sticky */
-    .sticky, [class*="sticky"] {
-      position: static !important;
-    }
-    
-    .print-scroll-container {
-      max-height: none !important;
-      overflow: visible !important;
-    }
-
-    /* Ép hiển thị các sự kiện (thẻ lịch) và giữ nguyên màu sắc khi in */
+    /* 5. Ép hiển thị các ô thẻ sự kiện sắc nét */
     [data-event] {
-      display: flex !important;
-      visibility: visible !important;
-      opacity: 1 !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
-      box-shadow: none !important;
+    }
+
+    /* 6. Tắt thanh cuộn để hiển thị đầy đủ các giờ */
+    .overflow-y-auto, .overflow-x-auto, .print-scroll-container {
+      overflow: visible !important;
+      max-height: none !important;
+      height: auto !important;
+    }
+
+    /* Ẩn bớt các nút thao tác / header web */
+    .print-hide {
+      display: none !important;
     }
   }
 `}</style>
-
       {/* HEADER WEBSITE */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
         <div>
