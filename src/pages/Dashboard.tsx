@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -35,18 +34,33 @@ export default function Dashboard() {
   const { t, profile, lang, user } = useApp();
   const queryClient = useQueryClient();
   const brandName = user?.user_metadata?.brand_name || "Phương anh";
-  const students = useStudents();
+  
+  const rawStudents = useStudents();
   const classes = useClasses();
   const payments = usePayments();
   const events = useEvents();
   const enrollments = useEnrollments();
   const schedules = useClassSchedules();
   
+  // 🌟 ĐẢM BẢO CHỈ LẤY HỌC SINH THUỘC TÀI KHOẢN HIỆN TẠI (USER_ID)
+  const students = useMemo(() => {
+    const list = rawStudents?.data || rawStudents || [];
+    if (!Array.isArray(list)) return [];
+    if (!user?.id) return list;
+    return list.filter((s: any) => !s.user_id || String(s.user_id) === String(user.id));
+  }, [rawStudents, user?.id]);
+
   const attendanceAll = useQuery({
-    queryKey: ["attendance", "all"],
+    queryKey: ["attendance", "all", user?.id],
+    enabled: !!user?.id,
     queryFn: async () => {
-      const { data, error } = await supabase.from("attendance").select("*");
-      if (error) throw error;
+      const { data, error } = await supabase.from("attendance").select("*").eq("user_id", user.id);
+      if (error) {
+        // Fallback nếu bảng attendance chưa có cột user_id
+        const { data: fallbackData, error: fbErr } = await supabase.from("attendance").select("*");
+        if (fbErr) throw fbErr;
+        return fallbackData || [];
+      }
       return data || [];
     },
   });
@@ -67,7 +81,6 @@ export default function Dashboard() {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth() + 1, 0);
   };
-
   const toISO = (d: Date | string) => {
     if (!d) return "";
     const dateObj = typeof d === "string" ? new Date(d) : d;
@@ -115,10 +128,9 @@ export default function Dashboard() {
     return merged.filter((e: any) => e.notes !== "__cancelled__");
   }, [events.data, schedules.data, classes.data, todayStr]);
 
-  // YÊU CẦU 1: Gom nhóm ca học hôm nay theo Khung giờ & Lớp
+  // Gom nhóm ca học hôm nay theo Khung giờ & Lớp
   const todayShiftGroups = useMemo(() => {
-    if (!todayEvents.length || !students.data) return [];
-
+    if (!todayEvents.length || !students) return [];
     return todayEvents.map((ev: any) => {
       const cls = (classes.data || []).find((c: any) => String(c.id) === String(ev.class_id));
       const enrolledStudentIds = new Set(
@@ -126,12 +138,11 @@ export default function Dashboard() {
           .filter((e: any) => String(e.class_id) === String(ev.class_id))
           .map((e: any) => String(e.student_id))
       );
-      const shiftStudents = students.data.filter((s: any) => enrolledStudentIds.has(String(s.id)));
+      const shiftStudents = students.filter((s: any) => enrolledStudentIds.has(String(s.id)));
       
       const timeLabel = ev.start_time 
         ? `${ev.start_time.slice(0, 5)}${ev.end_time ? ` - ${ev.end_time.slice(0, 5)}` : ''}`
         : "Cả ngày";
-
       return {
         event: ev,
         className: ev.title || cls?.name || "Lớp học",
@@ -139,24 +150,21 @@ export default function Dashboard() {
         students: shiftStudents
       };
     });
-  }, [todayEvents, classes.data, students.data, enrollments.data]);
+  }, [todayEvents, classes.data, students, enrollments.data]);
 
   // Đồng bộ state điểm danh cho tất cả ca học
   useEffect(() => {
     if (!todayEvents.length || !attendanceAll.data) return;
     const initialMap: Record<string, Record<string, boolean>> = {};
-
     todayShiftGroups.forEach(group => {
       const evId = group.event.id;
       initialMap[evId] = {};
       const currentAtt = attendanceAll.data.filter((a: any) => String(a.event_id) === String(evId));
-
       group.students.forEach((s: any) => {
         const found = currentAtt.find((a: any) => String(a.student_id) === String(s.id));
         initialMap[evId][s.id] = found ? !!found.present : false;
       });
     });
-
     setAttendanceMap(initialMap);
   }, [todayShiftGroups, attendanceAll.data]);
 
@@ -175,11 +183,9 @@ export default function Dashboard() {
     setSavingAttendance(true);
     try {
       const allUpdates: any[] = [];
-
       for (const group of todayShiftGroups) {
         let targetEventId = group.event.id;
         
-        // Tạo sự kiện thật nếu là buổi ảo
         if (group.event.virtual) {
           const { data: newEvent, error: insertError } = await supabase
             .from("schedule_events")
@@ -195,7 +201,6 @@ export default function Dashboard() {
           if (insertError) throw insertError;
           targetEventId = newEvent.id;
         }
-
         const shiftAttMap = attendanceMap[group.event.id] || {};
         Object.entries(shiftAttMap).forEach(([studentId, present]) => {
           allUpdates.push({
@@ -206,14 +211,12 @@ export default function Dashboard() {
           });
         });
       }
-
       if (allUpdates.length > 0) {
         const { error } = await supabase
           .from("attendance")
           .upsert(allUpdates, { onConflict: "event_id,student_id" });
         if (error) throw error;
       }
-
       toast.success(lang === "vi" ? "Đã lưu điểm danh tất cả các ca học!" : "Attendance saved for all shifts!");
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       queryClient.invalidateQueries({ queryKey: ["events"] });
@@ -255,26 +258,21 @@ export default function Dashboard() {
     setLoading(true);
     setTimeout(() => setLoading(false), 350);
   };
-// 1. Kiểm tra danh sách học sinh (đảm bảo truyền đúng mảng)
-const studentList = students?.data || students || [];
 
-// 2. Tính tổng học phí
-// Tính tổng học phí tất cả học sinh cho kỳ sắp tới
-const totalUpcomingFee = useMemo(() => {
-  const list = students?.data || [];
-  if (!Array.isArray(list)) return 0;
-
-  return list.reduce((sum: number, student: any) => {
-    const fee = Number(
-      student?.fee_per_month || 
-      student?.fee_per_session || 
-      student?.tuition_fee || 
-      student?.fee || 
-      0
-    );
-    return sum + fee;
-  }, 0);
-}, [students.data]);
+  // 🌟 TÍNH TỔNG HỌC PHÍ KỲ SẮP TỚI (ĐÃ LỌC THEO USER)
+  const totalUpcomingFee = useMemo(() => {
+    if (!Array.isArray(students)) return 0;
+    return students.reduce((sum: number, student: any) => {
+      const fee = Number(
+        student?.fee_per_month || 
+        student?.fee_per_session || 
+        student?.tuition_fee || 
+        student?.fee || 
+        0
+      );
+      return sum + fee;
+    }, 0);
+  }, [students]);
 
   const inRange = (iso: string | Date) => {
     const d = new Date(iso);
@@ -301,7 +299,7 @@ const totalUpcomingFee = useMemo(() => {
     return (attendanceAll.data || []).filter((a: any) => evIds.has(a.event_id) && a.present);
   }, [attendanceAll.data, filteredEvents]);
 
-  const totalRevenue = (students.data || []).reduce((totalSum, student: any) => {
+  const totalRevenue = students.reduce((totalSum, student: any) => {
     const studentCycles = student.cycles || [];
     const studentTotal = studentCycles.reduce((cycleSum: number, cycle: any) => {
       const sessionsCount = cycle.sessionsCount || cycle.attendance?.length || 0;
@@ -331,8 +329,7 @@ const totalUpcomingFee = useMemo(() => {
   const allPresentAttendance = (attendanceAll.data || []).filter((a: any) => a.present);
   const payList = payments.data || [];
 
- (students.data || []).forEach((s: any) => {
-    // Kiểm tra tất cả các trường có thể lưu hình thức đóng theo buổi
+  students.forEach((s: any) => {
     const isBySession = 
       s.billing_type === "session" || 
       s.billing_type === "by_session" ||
@@ -343,16 +340,13 @@ const totalUpcomingFee = useMemo(() => {
       s.payment_mode === "session";
 
     if (isBySession) {
-      // --- HỌC SINH ĐÓNG THEO BUỔI (PAY BY SESSION) ---
       const studentAtts = allPresentAttendance.filter((a: any) => String(a.student_id) === String(s.id));
       const unpaidAtts: any[] = [];
-
       studentAtts.forEach((a: any) => {
         const ev = evList.find((e: any) => String(e.id) === String(a.event_id));
         if (!ev || !ev.event_date) return;
         const dateStr = String(ev.event_date).slice(0, 10);
 
-        // Kiểm tra xem buổi này đã thanh toán chưa
         const isPaid = payList.some((p: any) => {
           if (String(p.student_id) !== String(s.id)) return false;
           if (String(p.attendance_id) === String(a.id)) return true;
@@ -360,20 +354,16 @@ const totalUpcomingFee = useMemo(() => {
           if (p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end) return true;
           return false;
         });
-
         if (!isPaid) {
           unpaidAtts.push({ ...a, event_date: ev.event_date });
         }
       });
-
       if (unpaidAtts.length > 0) {
         const totalFee = unpaidAtts.reduce((sum: number, a: any) => {
           const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.tuition_fee || s.fee || 0);
           return sum + fee;
         }, 0);
-
         pendingTotal += totalFee;
-
         rawUpcoming.push({
           studentId: s.id,
           studentName: s.name,
@@ -384,7 +374,6 @@ const totalUpcomingFee = useMemo(() => {
         });
       }
     } else {
-      // --- HỌC SINH ĐÓNG THEO THÁNG (PAY MONTHLY) ---
       const cycles = computeMonthlyCycles(s.start_date || "2026-04-01", today);
       cycles.forEach((c) => {
         const attInCycle = allPresentAttendance.filter((a: any) => {
@@ -394,21 +383,17 @@ const totalUpcomingFee = useMemo(() => {
           const evDate = new Date(ev.event_date);
           return evDate >= c.start && evDate <= c.end;
         });
-
         if (attInCycle.length > 0) {
           const cycleAmount = attInCycle.reduce((sum: number, a: any) => {
             const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.fee_per_month || s.tuition_fee || 0);
             return sum + fee;
           }, 0);
-
           const isPaid = payList.some((p: any) => {
             return String(p.student_id) === String(s.id) && (p.cycle_label === c.label || p.cycle_label?.includes(c.label));
           });
-
           if (!isPaid) {
             pendingTotal += cycleAmount;
           }
-
           rawUpcoming.push({
             studentId: s.id,
             studentName: s.name,
@@ -422,12 +407,10 @@ const totalUpcomingFee = useMemo(() => {
     }
   });
 
-  // YÊU CẦU 3: Gom nhóm (Group) Upcoming Bills theo từng Học sinh
   const groupedUpcoming = useMemo(() => {
     const filtered = rawUpcoming.filter((u) =>
       payFilter === "all" ? true : payFilter === "paid" ? u.paid : !u.paid
     );
-
     const map: Record<string, {
       studentId: string;
       studentName: string;
@@ -436,7 +419,6 @@ const totalUpcomingFee = useMemo(() => {
       isPaid: boolean;
       latestDue: Date;
     }> = {};
-
     filtered.forEach((item) => {
       if (!map[item.studentId]) {
         map[item.studentId] = {
@@ -454,7 +436,6 @@ const totalUpcomingFee = useMemo(() => {
         map[item.studentId].latestDue = item.due;
       }
     });
-
     return Object.values(map);
   }, [rawUpcoming, payFilter]);
 
@@ -487,116 +468,106 @@ const totalUpcomingFee = useMemo(() => {
         </div>
       </div>
 
-      {/* 🌟 YÊU CẦU 1: WIDGET ĐIỂM DANH HIỂN THỊ TẤT CẢ CA HỌC NGHĨA LÀ KHÔNG CẦN DROPDOWN */}
-     {/* 🌟 WIDGET ĐIỂM DANH TINH GỌN (COMPACT ATTENDANCE) */}
-<Card className="p-4 border border-slate-100 shadow-xs rounded-2xl bg-white space-y-3">
-  {/* Header + Nút Lưu gộp làm 1 hàng */}
-  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-    <div className="flex items-center gap-2">
-      <div className="h-7 w-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-        <UserCheck className="h-3.5 w-3.5" />
-      </div>
-      <div>
-        <div className="flex items-center gap-2">
-          <h3 className="text-xs font-black text-slate-900">
-            {lang === "vi" ? "Điểm danh nhanh hôm nay" : "Today's Quick Attendance"}
-          </h3>
-          <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-1.5 py-0.2 rounded-md">
-            {new Date().toLocaleDateString(lang === "vi" ? "vi-VN" : "en-US")}
-          </span>
-        </div>
-        <p className="text-[10px] font-medium text-slate-400">
-          {lang === "vi" ? "Tích chọn học sinh có mặt cho tất cả ca học hôm nay" : "Mark present students for all shifts today"}
-        </p>
-      </div>
-    </div>
-
-    {/* Nút lưu đưa lên Header */}
-    {todayShiftGroups.length > 0 && (
-      <Button
-        onClick={handleSaveAllAttendance}
-        disabled={savingAttendance}
-        size="sm"
-        className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 shrink-0"
-      >
-        <CheckCircle2 className="h-3.5 w-3.5" />
-        {savingAttendance 
-          ? (lang === "vi" ? "Đang lưu..." : "Saving...") 
-          : (lang === "vi" ? "Lưu điểm danh" : "Save Attendance")}
-      </Button>
-    )}
-  </div>
-
-  {/* Danh sách các ca học phẳng & siêu gọn */}
-  {todayShiftGroups.length === 0 ? (
-    <div className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center gap-1.5">
-      <CalendarCheck2 className="h-3.5 w-3.5 text-slate-400" />
-      {lang === "vi" ? "Hôm nay không có ca học nào!" : "No scheduled classes for today!"}
-    </div>
-  ) : (
-    <div className="divide-y divide-slate-100">
-      {todayShiftGroups.map((group) => {
-        const evId = group.event.id;
-        const shiftMap = attendanceMap[evId] || {};
-
-        return (
-          <div key={evId} className="py-2.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            {/* Thông tin ca học trên 1 dòng */}
-           {/* Thông tin ca học trên 1 dòng */}
-{/* Thông tin ca học trên 1 dòng */}
-<div className="flex items-center gap-2 shrink-0">
-  <Link 
-    to={`/classes/${group.event.class_id}`} 
-    className="text-xs font-bold text-slate-800 hover:text-blue-600 hover:underline transition-colors flex items-center gap-1"
-  >
-    {group.className}
-  </Link>
-  <span className="text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
-    🕒 {group.timeLabel}
-  </span>
-  <span className="text-[10px] text-slate-400">({group.students.length} HS)</span>
-</div>
-
-            {/* Danh sách học sinh dạng Chip Pills siêu tiết kiệm không gian */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {group.students.length === 0 ? (
-                <span className="text-[11px] text-slate-400 italic">Không có học sinh</span>
-              ) : (
-                group.students.map((student: any) => {
-                  const isPresent = !!shiftMap[student.id];
-                  return (
-                    <button
-                      key={student.id}
-                      type="button"
-                      onClick={() => toggleStudentAttendance(evId, student.id)}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer select-none",
-                        isPresent
-                          ? "bg-emerald-500 text-white border-emerald-600 shadow-xs"
-                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                      )}
-                    >
-                      <span className={cn(
-                        "w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black",
-                        isPresent ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
-                      )}>
-                        {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
-                      </span>
-                      {student.name}
-                      {isPresent && <CheckCircle2 className="h-3 w-3 text-white ml-0.5" />}
-                    </button>
-                  );
-                })
-              )}
+      {/* WIDGET ĐIỂM DANH QUICK ATTENDANCE */}
+      <Card className="p-4 border border-slate-100 shadow-xs rounded-2xl bg-white space-y-3">
+        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+              <UserCheck className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-black text-slate-900">
+                  {lang === "vi" ? "Điểm danh nhanh hôm nay" : "Today's Quick Attendance"}
+                </h3>
+                <span className="text-[10px] bg-blue-50 text-blue-600 font-bold px-1.5 py-0.2 rounded-md">
+                  {new Date().toLocaleDateString(lang === "vi" ? "vi-VN" : "en-US")}
+                </span>
+              </div>
+              <p className="text-[10px] font-medium text-slate-400">
+                {lang === "vi" ? "Tích chọn học sinh có mặt cho tất cả ca học hôm nay" : "Mark present students for all shifts today"}
+              </p>
             </div>
           </div>
-        );
-      })}
-    </div>
-  )}
-</Card>
+          {todayShiftGroups.length > 0 && (
+            <Button
+              onClick={handleSaveAllAttendance}
+              disabled={savingAttendance}
+              size="sm"
+              className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 shrink-0"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {savingAttendance 
+                ? (lang === "vi" ? "Đang lưu..." : "Saving...") 
+                : (lang === "vi" ? "Lưu điểm danh" : "Save Attendance")}
+            </Button>
+          )}
+        </div>
 
-      {/* 🛠️ BỘ LỌC THỜI GIAN */}
+        {todayShiftGroups.length === 0 ? (
+          <div className="text-xs text-slate-400 italic text-center py-4 bg-slate-50/50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center gap-1.5">
+            <CalendarCheck2 className="h-3.5 w-3.5 text-slate-400" />
+            {lang === "vi" ? "Hôm nay không có ca học nào!" : "No scheduled classes for today!"}
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {todayShiftGroups.map((group) => {
+              const evId = group.event.id;
+              const shiftMap = attendanceMap[evId] || {};
+              return (
+                <div key={evId} className="py-2.5 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Link 
+                      to={`/classes/${group.event.class_id}`} 
+                      className="text-xs font-bold text-slate-800 hover:text-blue-600 hover:underline transition-colors flex items-center gap-1"
+                    >
+                      {group.className}
+                    </Link>
+                    <span className="text-[10px] bg-slate-100 text-slate-500 font-mono px-1.5 py-0.5 rounded">
+                      🕒 {group.timeLabel}
+                    </span>
+                    <span className="text-[10px] text-slate-400">({group.students.length} HS)</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {group.students.length === 0 ? (
+                      <span className="text-[11px] text-slate-400 italic">Không có học sinh</span>
+                    ) : (
+                      group.students.map((student: any) => {
+                        const isPresent = !!shiftMap[student.id];
+                        return (
+                          <button
+                            key={student.id}
+                            type="button"
+                            onClick={() => toggleStudentAttendance(evId, student.id)}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer select-none",
+                              isPresent
+                                ? "bg-emerald-500 text-white border-emerald-600 shadow-xs"
+                                : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                            )}
+                          >
+                            <span className={cn(
+                              "w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black",
+                              isPresent ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
+                            )}>
+                              {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+                            </span>
+                            {student.name}
+                            {isPresent && <CheckCircle2 className="h-3 w-3 text-white ml-0.5" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* BỘ LỌC THỜI GIAN */}
       <Card className="p-4 border border-slate-100 shadow-sm rounded-2xl space-y-4 bg-white">
         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
           <Filter className="h-3.5 w-3.5 text-slate-400" />
@@ -645,7 +616,7 @@ const totalUpcomingFee = useMemo(() => {
         </div>
       </Card>
 
-      {/* 📊 GRID CÁC THẺ CARD SỐ LIỆU */}
+      {/* GRID CÁC THẺ CARD SỐ LIỆU */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         
         {/* Active students */}
@@ -676,32 +647,30 @@ const totalUpcomingFee = useMemo(() => {
           </Card>
         </Link>
         
-
-{/* YÊU CẦU 2: Tổng học phí kỳ sắp tới kèm nút Chi tiết ↗ xem danh sách */}
-{/* Thẻ hiển thị tổng học phí ở ngoài Dashboard */}
-<Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 hover:border-amber-200">
-  <div className="space-y-1">
-    <span className="text-xs font-bold text-slate-400">
-      {lang === "vi" ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition"}
-    </span>
-    {loading ? (
-      <Skeleton className="h-8 w-20 mt-1" />
-    ) : (
-      <h3 className="text-2xl font-black text-slate-950 mt-0.5">
-        {formatVND(totalUpcomingFee)}
-      </h3>
-    )}
-    <button 
-      onClick={() => setShowCollectedModal(true)}
-      className="text-[10px] font-bold text-amber-600 hover:text-amber-700 inline-flex items-center gap-1 pt-1 underline cursor-pointer"
-    >
-      {lang === "vi" ? "Chi tiết" : "Details"} ↗
-    </button>
-  </div>
-  <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-amber-500/10 to-orange-500/10 text-amber-600">
-    <Wallet className="h-5 w-5" />
-  </div>
-</Card>
+        {/* Tổng học phí kỳ sắp tới */}
+        <Card className="p-5 rounded-2xl border border-slate-100 bg-white shadow-sm flex items-center justify-between h-full transform hover:-translate-y-0.5 transition-all duration-300 hover:border-amber-200">
+          <div className="space-y-1">
+            <span className="text-xs font-bold text-slate-400">
+              {lang === "vi" ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition"}
+            </span>
+            {loading ? (
+              <Skeleton className="h-8 w-20 mt-1" />
+            ) : (
+              <h3 className="text-2xl font-black text-slate-950 mt-0.5">
+                {formatVND(totalUpcomingFee)}
+              </h3>
+            )}
+            <button 
+              onClick={() => setShowCollectedModal(true)}
+              className="text-[10px] font-bold text-amber-600 hover:text-amber-700 inline-flex items-center gap-1 pt-1 underline cursor-pointer"
+            >
+              {lang === "vi" ? "Chi tiết" : "Details"} ↗
+            </button>
+          </div>
+          <div className="h-12 w-12 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-tr from-amber-500/10 to-orange-500/10 text-amber-600">
+            <Wallet className="h-5 w-5" />
+          </div>
+        </Card>
 
         {/* Payments count */}
         <Link to="/students">
@@ -744,10 +713,9 @@ const totalUpcomingFee = useMemo(() => {
             </div>
           </Card>
         </Link>
-
       </div>
 
-      {/* 🔔 YÊU CẦU 3: SECTION UPCOMING BILLS GOM NHÓM THEO HỌC SINH */}
+      {/* SECTION UPCOMING BILLS */}
       <Card className="p-6 border border-slate-100 shadow-sm rounded-2xl bg-white space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-0.5">
@@ -827,56 +795,52 @@ const totalUpcomingFee = useMemo(() => {
         )}
       </Card>
 
-     {/* Modal danh sách học phí kỳ sắp tới */}
-{/* Modal danh sách học phí kỳ sắp tới */}
-<Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
-  <DialogContent className="rounded-3xl max-w-md">
-    <DialogHeader>
-      <DialogTitle className="font-black text-slate-900">
-        {lang === "vi" ? "Chi tiết học phí kỳ sắp tới" : "Upcoming Tuition Details"}
-      </DialogTitle>
-    </DialogHeader>
-
-    <div className="space-y-3 my-2 max-h-[60vh] overflow-y-auto pr-1">
-      {students.data && students.data.length > 0 ? (
-        students.data.map((student: any) => {
-          const fee = Number(
-            student?.fee_per_month || 
-            student?.fee_per_session || 
-            student?.tuition_fee || 
-            student?.fee || 
-            0
-          );
-
-          return (
-            <div 
-              key={student.id} 
-              className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
-                  {student.name?.slice(0, 2).toUpperCase()}
-                </div>
-                <div>
-                  <div className="font-bold text-xs text-slate-900">{student.name}</div>
-                  <div className="text-[10px] text-slate-400 font-semibold">
-                    {student.code || student.phone || "Học sinh"}
+      {/* MODAL DANH SÁCH HỌC PHÍ KỲ SẮP TỚI (ĐÃ LỌC CHÍNH XÁC THEO HỌC SINH CỦA USER) */}
+      <Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
+        <DialogContent className="rounded-3xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-black text-slate-900">
+              {lang === "vi" ? "Chi tiết học phí kỳ sắp tới" : "Upcoming Tuition Details"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 my-2 max-h-[60vh] overflow-y-auto pr-1">
+            {students && students.length > 0 ? (
+              students.map((student: any) => {
+                const fee = Number(
+                  student?.fee_per_month || 
+                  student?.fee_per_session || 
+                  student?.tuition_fee || 
+                  student?.fee || 
+                  0
+                );
+                return (
+                  <div 
+                    key={student.id} 
+                    className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center justify-center text-xs">
+                        {student.name ? student.name.slice(0, 2).toUpperCase() : "HS"}
+                      </div>
+                      <div>
+                        <div className="font-bold text-xs text-slate-900">{student.name}</div>
+                        <div className="text-[10px] text-slate-400 font-semibold">
+                          {student.code || student.phone || "Học sinh"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="font-black text-xs text-emerald-600">
+                      +{formatVND(fee)}
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div className="font-black text-xs text-emerald-600">
-                +{formatVND(fee)}
-              </div>
-            </div>
-          );
-        })
-      ) : (
-        <div className="text-center text-xs text-slate-400 py-4">Chưa có dữ liệu học sinh</div>
-      )}
-    </div>
-  </DialogContent>
-</Dialog>
-
+                );
+              })
+            ) : (
+              <div className="text-center text-xs text-slate-400 py-4">Chưa có dữ liệu học sinh</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
