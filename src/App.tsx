@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Route, Routes } from "react-router-dom"; // SỬA: Đổi BrowserRouter thành HashRouter
+import { HashRouter, Route, Routes } from "react-router-dom"; 
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,14 +31,23 @@ import ClassDocViewer from "./pages/ClassDocViewer";
 import LessonDetail from "./pages/LessonDetail";
 import StudentLessonView from "./pages/StudentLessonView";
 
-const queryClient = new QueryClient();
+// CẤU HÌNH TẮT TỰ ĐỘNG RELOAD KHI ĐỔI TAB
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false, // Tắt tự động fetching dữ liệu khi quay lại tab
+      refetchOnReconnect: false,   // Tắt tự động refetch khi có kết nối lại
+      staleTime: 1000 * 60 * 5,    // Dữ liệu được coi là mới trong 5 phút
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <HashRouter> {/* SỬA: Thay <BrowserRouter> bằng <HashRouter> */}
+      <HashRouter>
         <AppProvider>
           <ConfirmProvider>
           <Routes>
@@ -62,12 +71,11 @@ const App = () => (
               <Route path="/schedule" element={<Schedule />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/join" element={<JoinClass />} />
-             <Route path="/student" element={<StudentHome />} />
-             <Route path="/student/lessons/:id" element={<StudentLessonView />} />
-  <Route path="/student/classes/:classId/lessons/:id" element={<StudentLessonView />} />
-
-             <Route path="/student/classes" element={<StudentDashboard />} />
-             <Route path="/student/home" element={<StudentHome />} />
+              <Route path="/student" element={<StudentHome />} />
+              <Route path="/student/lessons/:id" element={<StudentLessonView />} />
+              <Route path="/student/classes/:classId/lessons/:id" element={<StudentLessonView />} />
+              <Route path="/student/classes" element={<StudentDashboard />} />
+              <Route path="/student/home" element={<StudentHome />} />
               <Route path="/student/classes/:id" element={<StudentClassDetail />} />
               <Route path="/student/classes/:id/lessons/:lessonId" element={<StudentLessonView />} />
               <Route path="/student/tests/:testId/take" element={<TestTake />} />

@@ -331,41 +331,95 @@ const totalUpcomingFee = useMemo(() => {
   const allPresentAttendance = (attendanceAll.data || []).filter((a: any) => a.present);
   const payList = payments.data || [];
 
-  (students.data || []).forEach((s: any) => {
-    const cycles = computeMonthlyCycles(s.start_date || "2026-04-01", today);
-    cycles.forEach((c) => {
-      const attInCycle = allPresentAttendance.filter((a: any) => {
-        if (a.student_id !== s.id) return false;
-        const ev = evList.find((e: any) => e.id === a.event_id);
-        if (!ev || !ev.event_date) return false;
-        const evDate = new Date(ev.event_date);
-        return evDate >= c.start && evDate <= c.end;
-      });
+ (students.data || []).forEach((s: any) => {
+    // Kiểm tra tất cả các trường có thể lưu hình thức đóng theo buổi
+    const isBySession = 
+      s.billing_type === "session" || 
+      s.billing_type === "by_session" ||
+      s.fee_type === "session" ||
+      s.fee_type === "by_session" ||
+      s.payment_mode === "by_session" ||
+      s.payment_type === "session" ||
+      s.payment_mode === "session";
 
-      if (attInCycle.length > 0) {
-        const cycleAmount = attInCycle.reduce((sum: number, a: any) => {
-          const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.fee_per_month || 0);
-          return sum + fee;
-        }, 0);
+    if (isBySession) {
+      // --- HỌC SINH ĐÓNG THEO BUỔI (PAY BY SESSION) ---
+      const studentAtts = allPresentAttendance.filter((a: any) => String(a.student_id) === String(s.id));
+      const unpaidAtts: any[] = [];
 
+      studentAtts.forEach((a: any) => {
+        const ev = evList.find((e: any) => String(e.id) === String(a.event_id));
+        if (!ev || !ev.event_date) return;
+        const dateStr = String(ev.event_date).slice(0, 10);
+
+        // Kiểm tra xem buổi này đã thanh toán chưa
         const isPaid = payList.some((p: any) => {
-          return p.student_id === s.id && (p.cycle_label === c.label || p.cycle_label?.includes(c.label));
+          if (String(p.student_id) !== String(s.id)) return false;
+          if (String(p.attendance_id) === String(a.id)) return true;
+          if (Array.isArray(p.attendance_ids) && p.attendance_ids.map(String).includes(String(a.id))) return true;
+          if (p.period_start && p.period_end && dateStr >= p.period_start && dateStr <= p.period_end) return true;
+          return false;
         });
 
         if (!isPaid) {
-          pendingTotal += cycleAmount;
+          unpaidAtts.push({ ...a, event_date: ev.event_date });
         }
+      });
+
+      if (unpaidAtts.length > 0) {
+        const totalFee = unpaidAtts.reduce((sum: number, a: any) => {
+          const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.tuition_fee || s.fee || 0);
+          return sum + fee;
+        }, 0);
+
+        pendingTotal += totalFee;
 
         rawUpcoming.push({
           studentId: s.id,
           studentName: s.name,
-          due: c.end,
-          label: c.label,
-          amount: cycleAmount,
-          paid: isPaid,
+          due: new Date(unpaidAtts[unpaidAtts.length - 1].event_date),
+          label: `${unpaidAtts.length} buổi học`,
+          amount: totalFee,
+          paid: false,
         });
       }
-    });
+    } else {
+      // --- HỌC SINH ĐÓNG THEO THÁNG (PAY MONTHLY) ---
+      const cycles = computeMonthlyCycles(s.start_date || "2026-04-01", today);
+      cycles.forEach((c) => {
+        const attInCycle = allPresentAttendance.filter((a: any) => {
+          if (String(a.student_id) !== String(s.id)) return false;
+          const ev = evList.find((e: any) => String(e.id) === String(a.event_id));
+          if (!ev || !ev.event_date) return false;
+          const evDate = new Date(ev.event_date);
+          return evDate >= c.start && evDate <= c.end;
+        });
+
+        if (attInCycle.length > 0) {
+          const cycleAmount = attInCycle.reduce((sum: number, a: any) => {
+            const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.fee_per_month || s.tuition_fee || 0);
+            return sum + fee;
+          }, 0);
+
+          const isPaid = payList.some((p: any) => {
+            return String(p.student_id) === String(s.id) && (p.cycle_label === c.label || p.cycle_label?.includes(c.label));
+          });
+
+          if (!isPaid) {
+            pendingTotal += cycleAmount;
+          }
+
+          rawUpcoming.push({
+            studentId: s.id,
+            studentName: s.name,
+            due: c.end,
+            label: c.label,
+            amount: cycleAmount,
+            paid: isPaid,
+          });
+        }
+      });
+    }
   });
 
   // YÊU CẦU 3: Gom nhóm (Group) Upcoming Bills theo từng Học sinh

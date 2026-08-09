@@ -23,7 +23,6 @@ export default function StudentBill() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const confirmDialog = useConfirm();
-
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<"monthly" | "by_session" | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -32,11 +31,9 @@ export default function StudentBill() {
   const [feeDraft, setFeeDraft] = useState<Record<string, string>>({});
   const [homeworkDraft, setHomeworkDraft] = useState<Record<string, string>>({});
   const [footnote, setFootnote] = useState<string>("");
-
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
   const [selectedCycles, setSelectedCycles] = useState<Set<string>>(new Set());
   const billRef = useRef<HTMLDivElement | null>(null);
-
   const enrollments = useEnrollments();
   const classesQ = useClasses();
 
@@ -270,9 +267,11 @@ export default function StudentBill() {
     const { data: { session } } = await supabase.auth.getSession();
     const activeUserId = user?.id || student.user_id || session?.user?.id;
     if (!activeUserId) return;
+
     const selectedIdsArr = Array.from(selectedSessionIds);
     const selectedAtts = availableAttendance.filter((a) => selectedSessionIds.has(a.id));
     const dates = selectedAtts.map((a) => a.schedule_events?.event_date).filter(Boolean).sort();
+
     const { error } = await supabase.from("payments").insert({
       user_id: activeUserId,
       student_id: student.id,
@@ -284,6 +283,7 @@ export default function StudentBill() {
       amount: selectedSessionsAmount,
       attendance_ids: selectedIdsArr as any,
     } as any);
+
     if (error) { toast.error(error.message); return; }
     setSelectedSessionIds(new Set());
     qc.invalidateQueries({ queryKey: ["payments", id] });
@@ -295,13 +295,16 @@ export default function StudentBill() {
     const { data: { session } } = await supabase.auth.getSession();
     const activeUserId = user?.id || student.user_id || session?.user?.id;
     if (!activeUserId) return;
+
     const cyclesToPay = bills.filter(
       (b: any) => selectedCycles.has(b.cycle_label) && !payments?.some((p: any) => p.cycle_label === b.cycle_label)
     );
+
     if (cyclesToPay.length === 0) {
       toast.info((t as any)?.alreadyPaid || "Selected cycles are already paid!");
       return;
     }
+
     const insertData = cyclesToPay.map((b: any) => ({
       user_id: activeUserId,
       student_id: student.id,
@@ -312,6 +315,7 @@ export default function StudentBill() {
       session_count: b.session_count ?? null,
       amount: effectiveAmount(b),
     }));
+
     const { error } = await supabase.from("payments").insert(insertData as any);
     if (error) { toast.error(error.message); return; }
     setSelectedCycles(new Set());
@@ -324,6 +328,7 @@ export default function StudentBill() {
     const { data: { session } } = await supabase.auth.getSession();
     const activeUserId = user?.id || student.user_id || session?.user?.id;
     if (!activeUserId) return;
+
     const recorded = (payments || []).find((p: any) => p.cycle_label === b.cycle_label);
     if (recorded) {
       await supabase.from("payments").delete().eq("id", recorded.id);
@@ -370,10 +375,13 @@ export default function StudentBill() {
       })
       .select()
       .single();
+
     if (e1) { toast.error(e1.message); return; }
+
     const { error: e2 } = await supabase.from("attendance").insert({
       user_id: user.id, event_id: ev.id, student_id: student.id, present: true, homework_note: addForm.note,
     });
+
     if (e2) { toast.error(e2.message); return; }
     toast.success(t?.save || "Saved");
     setAddForm({ date: new Date().toISOString().slice(0, 10), class_id: myClasses[0]?.id || "", note: "" });
@@ -403,7 +411,7 @@ export default function StudentBill() {
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-7xl space-y-6">
       
-      {/* CSS RIÊNG PHỤC VỤ IN ẤN TỐI ƯU CẢ TRÊN MOBILE VÀ DESKTOP */}
+      {/* CSS RIÊNG PHỤC VỤ IN ẤN */}
       <style>{`
         @media print {
           body * {
@@ -439,7 +447,7 @@ export default function StudentBill() {
         }
       `}</style>
 
-      {/* Top Navigation Bar */}
+      {/* Navigation Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4 no-print">
         <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2 w-fit rounded-xl hover:bg-slate-100">
           <ArrowLeft className="h-4 w-4 mr-2" /> {t?.details || "Details"}
@@ -462,10 +470,10 @@ export default function StudentBill() {
         </div>
       </div>
 
-      {/* Main 2-Column Layout */}
+      {/* Main Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        {/* LEFT COLUMN: Controls & Session Selector */}
+        {/* LEFT COLUMN: Controls & Cycle Selector */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print">
           <Card className="p-5 border shadow-sm rounded-2xl bg-card space-y-4">
             <div className="flex justify-between items-center gap-2 border-b pb-3">
@@ -556,9 +564,17 @@ export default function StudentBill() {
                           <div className="text-xs font-semibold flex items-center gap-2 text-slate-800">
                             {b.cycle_label}
                             {paid ? (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700">
-                                {t?.paid || "PAID"}
-                              </span>
+                              <button
+                                type="button"
+                                title="Bấm để hủy đánh dấu đã đóng"
+                                className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 hover:bg-red-100 text-emerald-700 hover:text-red-700 transition-colors cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePaid(b);
+                                }}
+                              >
+                                Paid (Hủy đóng)
+                              </button>
                             ) : (
                               <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">
                                 CHƯA THANH TOÁN
@@ -632,12 +648,11 @@ export default function StudentBill() {
               ref={billRef as any}
               className="printable-bill-card w-full max-w-2xl p-8 border rounded-2xl shadow-xl bg-white text-slate-900 space-y-6 relative overflow-hidden"
             >
-              {/* Top Decorative Border */}
               <div 
                 className="absolute top-0 left-0 right-0 h-2" 
                 style={{ backgroundColor: accent }} 
               />
-
+              
               {/* Header */}
               <div className="flex items-start justify-between border-b pb-4 pt-1">
                 <div className="space-y-1">
@@ -654,7 +669,7 @@ export default function StudentBill() {
                 </div>
               </div>
 
-              {/* Student & Payment Summary Info */}
+              {/* Student Summary */}
               <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">
                 <div className="space-y-1.5">
                   <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
@@ -664,8 +679,8 @@ export default function StudentBill() {
                     {student.name}
                   </div>
                   {(student as any)?.phone && (
-  <p className="text-xs text-slate-500">{(student as any).phone}</p>
-)}
+                    <p className="text-xs text-slate-500">{(student as any).phone}</p>
+                  )}
                   {student.grade && (
                     <div>
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/60 text-slate-700">
@@ -718,7 +733,6 @@ export default function StudentBill() {
                         : <><Eye className="h-3.5 w-3.5 mr-1" /> {(t as any)?.show || "Hiện danh sách"}</>}
                     </Button>
                   </div>
-
                   {showAtt && (
                     <div className="border rounded-xl overflow-hidden text-xs bg-white border-slate-200">
                       <table className="w-full text-left border-collapse">
@@ -744,7 +758,6 @@ export default function StudentBill() {
                               if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
                               return false;
                             });
-
                             return (
                               <tr key={a.id} className={`hover:bg-slate-50/50 ${isChecked ? "bg-blue-50/40" : ""}`}>
                                 {mode === "by_session" && (
@@ -817,7 +830,7 @@ export default function StudentBill() {
                 </div>
               </div>
 
-              {/* VietQR Payment Card Section */}
+              {/* VietQR Section */}
               <div className="border-t border-slate-200 pt-4">
                 <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2">
                   {(t as any)?.mobileBankingPayment || "THANH TOÁN QUA CHUYỂN KHOẢN (VIETQR)"}
@@ -847,7 +860,7 @@ export default function StudentBill() {
                 </div>
               </div>
 
-              {/* Bottom Actions Buttons */}
+              {/* Action Button */}
               <div className="no-print pt-2 flex flex-col items-end gap-2">
                 {mode === "by_session" ? (
                   <Button
@@ -859,19 +872,14 @@ export default function StudentBill() {
                     <Check className="h-4 w-4 mr-1.5" />
                     {(t as any)?.markAsPaid || "Đánh dấu đã thanh toán"} ({selectedSessionIds.size})
                   </Button>
-                ) : selectedCycles.size > 0 ? (
-                  <Button variant="success" className="rounded-xl px-6 font-medium shadow-md" onClick={paySelectedCycles}>
-                    <Check className="h-4 w-4 mr-1.5" />
-                    {(t as any)?.markAsPaid || "Đánh dấu đã thanh toán"} ({selectedCycles.size})
-                  </Button>
                 ) : (
                   <Button
                     variant={isPaid(current) ? "outline" : "success"}
-                    className="rounded-xl px-6 font-medium"
+                    className={`rounded-xl px-6 font-medium ${isPaid(current) ? "border-red-300 text-red-600 hover:bg-red-50" : ""}`}
                     onClick={() => togglePaid(current)}
                   >
                     <Check className="h-4 w-4 mr-1.5" />
-                    {isPaid(current) ? (t?.unpaid || "Chưa thanh toán") : (t?.markPaid || "Đã thanh toán")}
+                    {isPaid(current) ? "Hủy đánh dấu đã đóng (Unpaid)" : (t?.markPaid || "Đã thanh toán")}
                   </Button>
                 )}
               </div>
@@ -892,11 +900,9 @@ export default function StudentBill() {
                   </div>
                 )}
               </div>
-
             </Card>
           )}
         </div>
-
       </div>
     </div>
   );
