@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { 
   Plus, 
@@ -12,11 +12,15 @@ import {
   Clock, 
   BookOpen, 
   MoreVertical,
-  Sparkles
+  Sparkles,
+  Search,
+  ArrowUpDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,23 +50,63 @@ export default function Classes() {
   const [editing, setEditing] = useState<any>(null);
   const [cat, setCat] = useState<"all" | "math" | "english" | "none">("all");
 
+  // 🌟 States mới phục vụ Lọc & Sắp xếp
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"name-asc" | "name-desc" | "created-desc" | "created-asc" | "students-desc" | "students-asc">("name-asc");
+
   const catLabels: Record<string, string> = lang === "vi"
     ? { all: "Tất cả", math: "Toán", english: "Tiếng Anh", none: "Chưa phân loại" }
     : { all: "All", math: "Math", english: "English", none: "Unsorted" };
-
-  const visible = (classes.data || []).filter((c: any) =>
-    cat === "all" ? true : cat === "none" ? !c.category : c.category === cat
-  );
-
-  useEffect(() => { 
-    document.title = `${t.classes} — ${t.appName}`; 
-  }, [t]);
 
   const studentCount = (cid: string) =>
     (enrollments.data || []).filter((e: any) => e.class_id === cid).length;
 
   const slots = (cid: string) =>
     (schedules.data || []).filter((s: any) => s.class_id === cid);
+
+  // 🌟 Logic Tìm kiếm & Sắp xếp danh sách lớp
+  const visible = useMemo(() => {
+    let list = (classes.data || []).filter((c: any) => {
+      // 1. Lọc theo Tab Danh mục
+      const matchCat = cat === "all" ? true : cat === "none" ? !c.category : c.category === cat;
+      
+      // 2. Lọc theo từ khóa Tìm kiếm (Tên lớp, Môn học, Khối lớp)
+      const q = search.toLowerCase();
+      const matchSearch = 
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.subject || "").toLowerCase().includes(q) ||
+        (c.grade || "").toLowerCase().includes(q);
+
+      return matchCat && matchSearch;
+    });
+
+    // 3. Thực hiện Sắp xếp
+    return list.sort((a: any, b: any) => {
+      if (sortBy === "name-asc") {
+        return (a.name || "").localeCompare(b.name || "", "vi", { sensitivity: "base" });
+      }
+      if (sortBy === "name-desc") {
+        return (b.name || "").localeCompare(a.name || "", "vi", { sensitivity: "base" });
+      }
+      if (sortBy === "created-desc") {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      }
+      if (sortBy === "created-asc") {
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      }
+      if (sortBy === "students-desc") {
+        return studentCount(b.id) - studentCount(a.id);
+      }
+      if (sortBy === "students-asc") {
+        return studentCount(a.id) - studentCount(b.id);
+      }
+      return 0;
+    });
+  }, [classes.data, cat, search, sortBy, enrollments.data]);
+
+  useEffect(() => { 
+    document.title = `${t.classes} — ${t.appName}`; 
+  }, [t]);
 
   const totalStudentsAll = (classes.data || []).reduce((sum: number, c: any) => sum + studentCount(c.id), 0);
 
@@ -162,22 +206,61 @@ export default function Classes() {
         </Card>
       </div>
 
-      {/* 3. BỘ LỌC TABS CÁC MÔN HỌC */}
-      <div className="flex items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl w-fit overflow-x-auto">
-        {(["all", "math", "english", "none"] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setCat(k)}
-            className={cn(
-              "px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-              cat === k
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-900"
-            )}
-          >
-            {catLabels[k]}
-          </button>
-        ))}
+      {/* 🌟 3. THANH CÔNG CỤ: TÌM KIẾM, SẮP XẾP VÀ TABS MÔN HỌC */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+        
+        {/* Lựa chọn Tab môn học */}
+        <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl w-full md:w-auto overflow-x-auto shrink-0">
+          {(["all", "math", "english", "none"] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setCat(k)}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
+                cat === k
+                  ? "bg-white text-slate-900 shadow-xs"
+                  : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              {catLabels[k]}
+            </button>
+          ))}
+        </div>
+
+        {/* Tìm kiếm và Bộ lọc Sắp xếp */}
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto flex-1 md:justify-end">
+          {/* Ô Tìm kiếm */}
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input 
+              placeholder={lang === "vi" ? "Tìm theo tên lớp, môn học..." : "Search class name, subject..."} 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 bg-slate-50 border-slate-200 rounded-xl text-xs h-9 focus:bg-white transition-all"
+            />
+          </div>
+
+          {/* Dropdown Sắp xếp */}
+          <div className="w-full sm:w-48">
+            <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
+              <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-xs h-9 text-slate-700 font-semibold focus:ring-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <SelectValue placeholder="Sắp xếp" />
+                </div>
+              </SelectTrigger>
+              <SelectContent className="rounded-xl text-xs">
+                <SelectItem value="name-asc" className="text-xs font-medium">Tên lớp (A → Z)</SelectItem>
+                <SelectItem value="name-desc" className="text-xs font-medium">Tên lớp (Z → A)</SelectItem>
+                <SelectItem value="created-desc" className="text-xs font-medium">Mới nhất (Ngày tạo)</SelectItem>
+                <SelectItem value="created-asc" className="text-xs font-medium">Cũ nhất (Ngày tạo)</SelectItem>
+                <SelectItem value="students-desc" className="text-xs font-medium">Sĩ số (Cao → Thấp)</SelectItem>
+                <SelectItem value="students-asc" className="text-xs font-medium">Sĩ số (Thấp → Cao)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
       </div>
 
       {/* 4. HIỂN THỊ DANH SÁCH LỚP HỌC */}
@@ -190,8 +273,8 @@ export default function Classes() {
             <h3 className="text-base font-black text-slate-900">{t.nothingHere}</h3>
             <p className="text-xs font-semibold text-slate-400 mt-1">
               {lang === "vi" 
-                ? "Chưa có lớp học nào trong danh mục này. Bấm nút dưới để thêm ngay." 
-                : "No classes found in this category."}
+                ? "Không tìm thấy lớp học phù hợp với từ khóa hoặc bộ lọc." 
+                : "No classes found matching search or filter criteria."}
             </p>
           </div>
           <Button 

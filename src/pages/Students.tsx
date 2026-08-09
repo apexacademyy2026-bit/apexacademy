@@ -8,6 +8,7 @@ import {
   GraduationCap, 
   ChevronRight, 
   Trash2, 
+  ArrowUpDown,
   Pencil, 
   User, 
   FileText 
@@ -16,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,12 +45,12 @@ export default function Students() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [sortBy, setSortBy] = useState<"name-asc" | "name-desc" | "created-desc" | "created-asc" | "grade-asc">("name-asc");
 
-  // 1. Lấy danh sách học sinh từ bảng students
-  // 1. Lấy thông tin user hiện tại từ AppContext
+  // Lấy thông tin user hiện tại từ AppContext
   const { user } = useApp();
 
-  // 2. Lấy danh sách học sinh (Lấy của user hiện tại + các dữ liệu cũ chưa có user_id)
+  // Lấy danh sách học sinh từ Supabase
   const { data: students = [] } = useQuery({
     queryKey: ["students-list", user?.id],
     enabled: !!user?.id,
@@ -56,15 +58,15 @@ export default function Students() {
       const { data, error } = await supabase
         .from("students")
         .select("*")
-        // Lấy học sinh thuộc user này HOẶC chưa có user_id
-.eq("user_id", user.id)        .order("name");
+        .eq("user_id", user.id)
+        .order("name");
 
       if (error) throw error;
       return data || [];
     },
   });
 
-  // ✅ TRẢ VỀ NULL NẾU CHƯA ĐĂNG KÝ TÊN PHỤ HUYNH VÀ SĐT
+  // Lọc thông tin chi tiết học sinh
   const enrichedStudents = useMemo(() => {
     const enrollmentsList = Array.isArray(enrollmentsQuery?.data) ? enrollmentsQuery.data : Array.isArray(enrollmentsQuery) ? enrollmentsQuery : [];
     const classesList = Array.isArray(classesQuery?.data) ? classesQuery.data : Array.isArray(classesQuery) ? classesQuery : [];
@@ -74,14 +76,12 @@ export default function Students() {
       const phone = st.phone || "—";
       const grade = st.grade || "—";
       
-      // ✅ Nếu không nhập (hoặc rỗng) -> TRẢ VỀ NULL TRỰC TIẾP
       const rawParentName = cleanName(st.parent_name);
       const rawParentPhone = st.parent_phone?.trim();
 
       const parentName = rawParentName !== "" ? rawParentName : null;
       const parentPhone = rawParentPhone ? rawParentPhone : null;
 
-      // Lọc danh sách lớp học
       const cids = enrollmentsList
         .filter((e: any) => e.student_id === st.id)
         .map((e: any) => e.class_id);
@@ -93,15 +93,16 @@ export default function Students() {
         displayName: name,
         displayPhone: phone,
         displayGrade: grade,
-        displayParentName: parentName, // value: string | null
-        displayParentPhone: parentPhone, // value: string | null
+        displayParentName: parentName,
+        displayParentPhone: parentPhone,
         studentClasses,
       };
     });
   }, [students, enrollmentsQuery, classesQuery]);
 
+  // Lọc theo Từ khóa + Sắp xếp theo bộ lọc
   const filteredStudents = useMemo(() => {
-    return enrichedStudents.filter((st: any) => {
+    let list = enrichedStudents.filter((st: any) => {
       const q = search.toLowerCase();
       return (
         st.displayName.toLowerCase().includes(q) ||
@@ -110,7 +111,28 @@ export default function Students() {
         (st.displayParentPhone && st.displayParentPhone.toLowerCase().includes(q))
       );
     });
-  }, [enrichedStudents, search]);
+
+    return list.sort((a: any, b: any) => {
+      if (sortBy === "name-asc") {
+        return a.displayName.localeCompare(b.displayName, "vi", { sensitivity: "base" });
+      }
+      if (sortBy === "name-desc") {
+        return b.displayName.localeCompare(a.displayName, "vi", { sensitivity: "base" });
+      }
+      if (sortBy === "created-desc") {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      }
+      if (sortBy === "created-asc") {
+        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      }
+      if (sortBy === "grade-asc") {
+        const gradeA = parseInt(a.displayGrade) || 0;
+        const gradeB = parseInt(b.displayGrade) || 0;
+        return gradeA - gradeB;
+      }
+      return 0;
+    });
+  }, [enrichedStudents, search, sortBy]);
 
   const handleDelete = async (e: React.MouseEvent, st: any) => {
     e.stopPropagation();
@@ -142,19 +164,42 @@ export default function Students() {
         </Button>
       </div>
 
-      {/* SEARCH & VIEW MODE TOOLBAR */}
+      {/* SEARCH, SORT & VIEW MODE TOOLBAR */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input 
-            placeholder="Tìm theo tên học sinh, SĐT..." 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 bg-slate-50 border-slate-200 rounded-xl text-xs h-10 focus:bg-white transition-all"
-          />
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto flex-1">
+          {/* Ô tìm kiếm */}
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input 
+              placeholder="Tìm theo tên học sinh, SĐT..." 
+              value={search} 
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10 bg-slate-50 border-slate-200 rounded-xl text-xs h-10 focus:bg-white transition-all"
+            />
+          </div>
+
+          {/* 🌟 BỘ LỌC SẮP XẾP 🌟 */}
+          <div className="w-full sm:w-48">
+            <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
+              <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-xs h-10 text-slate-700 font-semibold focus:ring-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <SelectValue placeholder="Sắp xếp" />
+                </div>
+              </SelectTrigger>
+              <SelectContent className="rounded-xl text-xs">
+                <SelectItem value="name-asc" className="text-xs font-medium">Tên (A → Z)</SelectItem>
+                <SelectItem value="name-desc" className="text-xs font-medium">Tên (Z → A)</SelectItem>
+                <SelectItem value="created-desc" className="text-xs font-medium">Mới nhất (Ngày tạo)</SelectItem>
+                <SelectItem value="created-asc" className="text-xs font-medium">Cũ nhất (Ngày tạo)</SelectItem>
+                <SelectItem value="grade-asc" className="text-xs font-medium">Khối lớp (Tăng dần)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 self-end sm:self-auto bg-slate-100 p-1 rounded-xl border border-slate-200/60">
+        {/* Chuyển dạng Lưới / Bảng */}
+        <div className="flex items-center gap-1.5 self-end sm:self-auto bg-slate-100 p-1 rounded-xl border border-slate-200/60 shrink-0">
           <button
             onClick={() => setViewMode("grid")}
             className={cn("p-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5", viewMode === "grid" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500 hover:text-slate-900")}
@@ -228,7 +273,6 @@ export default function Students() {
                   </div>
                 </div>
 
-                {/* ✅ HIỂN THỊ THÔNG TIN PHỤ HUYNH & SĐT (XỬ LÝ ĐÚNG NULL) */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
                   <div className="bg-slate-50 p-2.5 rounded-xl space-y-0.5">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Phụ huynh</span>
@@ -244,7 +288,6 @@ export default function Students() {
                   </div>
                 </div>
 
-                {/* Danh sách lớp học tham gia */}
                 <div className="flex items-center justify-between pt-1">
                   <div className="flex flex-wrap gap-1">
                     {st.studentClasses.length === 0 ? (

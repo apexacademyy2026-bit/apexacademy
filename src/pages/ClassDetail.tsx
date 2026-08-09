@@ -151,13 +151,44 @@ export default function ClassDetail() {
   };
 
   // Hàm hỗ trợ kiểm tra xem note có phải đường link hay không
-  const isUrl = (str: string) => {
-    try {
-      new URL(str);
-      return true;
-    } catch {
-      return str.startsWith("http://") || str.startsWith("https://");
-    }
+// 1. Thay thế hàm helper cũ bằng hàm helper mới này
+  const renderFormattedText = (text: string) => {
+    // Tách văn bản thành từng dòng
+    const lines = text.split("\n");
+
+    return lines.map((line, lineIdx) => {
+      // Tách từng từ trong dòng để kiểm tra URL
+      const words = line.split(" ");
+
+      return (
+        <div key={lineIdx} className="min-h-[1.25rem]">
+          {words.map((word, wordIdx) => {
+            const isWordUrl =
+              word.startsWith("http://") ||
+              word.startsWith("https://") ||
+              word.startsWith("www.");
+
+            if (isWordUrl) {
+              const href = word.startsWith("www.") ? `https://${word}` : word;
+              return (
+                <a
+                  key={wordIdx}
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 hover:underline font-medium inline-flex items-center gap-0.5 mr-1 break-all"
+                >
+                  {word}
+                  <ExternalLink className="h-3 w-3 inline shrink-0" />
+                </a>
+              );
+            }
+
+            return <span key={wordIdx} className="mr-1">{word}</span>;
+          })}
+        </div>
+      );
+    });
   };
 
   useEffect(() => { document.title = cls ? `${cls.name} — ${t.appName}` : t.appName; }, [cls, t]);
@@ -196,24 +227,17 @@ export default function ClassDetail() {
         </div>
 
         {/* 🌟 HIỂN THỊ NOTES Ở ĐÂY 🌟 */}
+       {/* 🌟 HIỂN THỊ NOTES ĐÃ ĐƯỢC XỬ LÝ XUỐNG HÀNG 🌟 */}
         {cls.notes && (
           <div className="pt-3 border-t border-slate-100 flex items-start gap-2.5 text-xs text-slate-600 bg-slate-50/80 p-3 rounded-xl">
             <StickyNote className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-            <div className="flex-1 break-all">
-              <span className="font-bold text-slate-700 mr-1.5">{lang === "vi" ? "Ghi chú:" : "Notes:"}</span>
-              {isUrl(cls.notes) ? (
-                <a
-                  href={cls.notes.startsWith("http") ? cls.notes : `https://${cls.notes}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-600 hover:underline font-medium inline-flex items-center gap-1"
-                >
-                  {cls.notes}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              ) : (
-                <span>{cls.notes}</span>
-              )}
+            <div className="flex-1 min-w-0">
+              <span className="font-bold text-slate-700 block mb-1">
+                {lang === "vi" ? "Ghi chú:" : "Notes:"}
+              </span>
+              <div className="space-y-1 text-slate-700">
+                {renderFormattedText(cls.notes)}
+              </div>
             </div>
           </div>
         )}
