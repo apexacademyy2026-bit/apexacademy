@@ -153,29 +153,47 @@ export default function Dashboard() {
   }, [todayEvents, classes.data, students, enrollments.data]);
 
   // Đồng bộ state điểm danh cho tất cả ca học
+// Đồng bộ state điểm danh ban đầu cho tất cả ca học (Chỉ chạy khi có dữ liệu mới từ Database)
   useEffect(() => {
     if (!todayEvents.length || !attendanceAll.data) return;
-    const initialMap: Record<string, Record<string, boolean>> = {};
-    todayShiftGroups.forEach(group => {
-      const evId = group.event.id;
-      initialMap[evId] = {};
-      const currentAtt = attendanceAll.data.filter((a: any) => String(a.event_id) === String(evId));
-      group.students.forEach((s: any) => {
-        const found = currentAtt.find((a: any) => String(a.student_id) === String(s.id));
-        initialMap[evId][s.id] = found ? !!found.present : false;
+    
+    setAttendanceMap(prevMap => {
+      const newMap = { ...prevMap };
+      
+      todayShiftGroups.forEach(group => {
+        const evId = String(group.event.id);
+        
+        // Nếu ca học này chưa có trong map thì mới khởi tạo từ Database
+        if (!newMap[evId]) {
+          newMap[evId] = {};
+          const currentAtt = attendanceAll.data.filter((a: any) => String(a.event_id) === evId);
+          
+          group.students.forEach((s: any) => {
+            const studentIdStr = String(s.id);
+            const found = currentAtt.find((a: any) => String(a.student_id) === studentIdStr);
+            newMap[evId][studentIdStr] = found ? !!found.present : false;
+          });
+        }
       });
+      
+      return newMap;
     });
-    setAttendanceMap(initialMap);
   }, [todayShiftGroups, attendanceAll.data]);
 
-  const toggleStudentAttendance = (eventId: string, studentId: string) => {
-    setAttendanceMap(prev => ({
-      ...prev,
-      [eventId]: {
-        ...(prev[eventId] || {}),
-        [studentId]: !prev[eventId]?.[studentId]
-      }
-    }));
+ const toggleStudentAttendance = (eventId: string | number, studentId: string | number) => {
+    const eId = String(eventId);
+    const sId = String(studentId);
+
+    setAttendanceMap(prev => {
+      const currentShift = prev[eId] || {};
+      return {
+        ...prev,
+        [eId]: {
+          ...currentShift,
+          [sId]: !currentShift[sId]
+        }
+      };
+    });
   };
 
   const handleSaveAllAttendance = async () => {
@@ -530,36 +548,39 @@ export default function Dashboard() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {group.students.length === 0 ? (
-                      <span className="text-[11px] text-slate-400 italic">Không có học sinh</span>
-                    ) : (
-                      group.students.map((student: any) => {
-                        const isPresent = !!shiftMap[student.id];
-                        return (
-                          <button
-                            key={student.id}
-                            type="button"
-                            onClick={() => toggleStudentAttendance(evId, student.id)}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer select-none",
-                              isPresent
-                                ? "bg-emerald-500 text-white border-emerald-600 shadow-xs"
-                                : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                            )}
-                          >
-                            <span className={cn(
-                              "w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black",
-                              isPresent ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
-                            )}>
-                              {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
-                            </span>
-                            {student.name}
-                            {isPresent && <CheckCircle2 className="h-3 w-3 text-white ml-0.5" />}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+  {group.students.length === 0 ? (
+    <span className="text-[11px] text-slate-400 italic">Không có học sinh</span>
+  ) : (
+    group.students.map((student: any) => {
+      // 🌟 Ép kiểu String để kiểm tra chính xác trạng thái điểm danh
+      const studentIdStr = String(student.id);
+      const isPresent = !!shiftMap[studentIdStr];
+
+      return (
+        <button
+          key={student.id}
+          type="button"
+          onClick={() => toggleStudentAttendance(evId, student.id)}
+          className={cn(
+            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border transition-all cursor-pointer select-none",
+            isPresent
+              ? "bg-emerald-500 text-white border-emerald-600 shadow-xs"
+              : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+          )}
+        >
+          <span className={cn(
+            "w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-black",
+            isPresent ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"
+          )}>
+            {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+          </span>
+          {student.name}
+          {isPresent && <CheckCircle2 className="h-3 w-3 text-white ml-0.5" />}
+        </button>
+      );
+    })
+  )}
+</div>
                 </div>
               );
             })}
