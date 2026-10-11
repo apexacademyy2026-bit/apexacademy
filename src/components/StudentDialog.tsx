@@ -1,410 +1,249 @@
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Check, GraduationCap, Loader2, Phone, UserRound, Users } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useQueryClient } from "@tanstack/react-query";
-import { useClasses, useEnrollments, qk } from "@/hooks/useData";
-import { palette, randomColor } from "@/lib/format";
-import { toast } from "sonner";
-import { User, Calendar, Phone, Users, Wallet, Palette, BookOpen, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { PALETTE, resolveStudentColor } from "@/lib/studentColor";
 
-// Định nghĩa Interface Props chuẩn để tương thích với tất cả các nơi gọi Popup
-export interface StudentDialogProps {
+// Giá trị lưu trong cột payment_mode. "monthly" khớp với trang danh sách;
+// nếu DB của bạn dùng tên khác cho "Theo buổi", đổi ở đây.
+const MONTHLY = "monthly";
+const PER_SESSION = "per_session";
+
+const GRADES = Array.from({ length: 12 }, (_, i) => String(i + 1));
+
+const FIELD =
+  "h-11 rounded-xl border-slate-200 bg-white text-sm shadow-xs focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20";
+
+type FormState = {
+  name: string;
+  phone: string;
+  grade: string;
+  parent_name: string;
+  parent_phone: string;
+  payment_mode: string;
+  color: string;
+};
+
+const emptyForm: FormState = {
+  name: "",
+  phone: "",
+  grade: "",
+  parent_name: "",
+  parent_phone: "",
+  payment_mode: PER_SESSION,
+  color: PALETTE[0],
+};
+
+const Field = ({ label, icon: Icon, children }: { label: string; icon?: any; children: React.ReactNode }) => (
+  <label className="block space-y-1.5">
+    <span className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+      {Icon && <Icon className="h-3.5 w-3.5 text-slate-400" />} {label}
+    </span>
+    {children}
+  </label>
+);
+
+const Section = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
+  <section className="space-y-3">
+    <div>
+      <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
+    </div>
+    {children}
+  </section>
+);
+
+export default function StudentDialog({
+  open,
+  onOpenChange,
+  student,
+}: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   student?: any;
-}
-
-export default function StudentDialog({ open, onOpenChange, student }: StudentDialogProps) {
-  const { t, user } = useApp();
-  const qc = useQueryClient();
-  const classes = useClasses();
-  const enrollments = useEnrollments();
-
-  const [form, setForm] = useState<any>({
-    name: "",
-    phone: "", // <- Thêm trường phone cho học sinh
-    grade: "",
-    parent_name: "",
-    parent_phone: "",
-    notes: "",
-    start_date: new Date().toISOString().slice(0, 10),
-    color: randomColor(),
-    payment_mode: "monthly",
-    fee_per_month: 0,
-    fee_per_session: 0,
-    sessions_per_cycle: 8,
-  });
-
-  const [classIds, setClassIds] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+}) {
+  const { user } = useApp();
+  const [form, setForm] = useState<FormState>(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const isEdit = !!student?.id;
 
   useEffect(() => {
-    if (student) {
-      setForm({
-        name: student.name || "",
-        phone: student.phone || "", // <- Gán phone từ dữ liệu cũ
-        grade: student.grade || "",
-        parent_name: student.parent_name || "",
-        parent_phone: student.parent_phone || "",
-        notes: student.notes || "",
-        start_date: student.start_date || new Date().toISOString().slice(0, 10),
-        color: student.color || randomColor(),
-        payment_mode: student.payment_mode || "monthly",
-        fee_per_month: Number(student.fee_per_month) || 0,
-        fee_per_session: Number(student.fee_per_session) || 0,
-        sessions_per_cycle: Number(student.sessions_per_cycle) || 8,
-      });
-      const myEnrolls = (enrollments.data || []).filter((e: any) => e.student_id === student.id);
-      setClassIds(myEnrolls.map((e: any) => e.class_id));
-    } else if (open) {
-      setForm({
-        name: "",
-        grade: "",
-        phone: "", // <- Thêm trường phone cho học sinh
-        parent_name: "",
-        parent_phone: "",
-        notes: "",
-        start_date: new Date().toISOString().slice(0, 10),
-        color: randomColor(),
-        payment_mode: "monthly",
-        fee_per_month: 0,
-        fee_per_session: 0,
-        sessions_per_cycle: 8,
-      });
-      setClassIds([]);
+    if (!open) return;
+    setForm(
+      student
+        ? {
+            name: student.name ?? "",
+            phone: student.phone ?? "",
+            grade: student.grade != null ? String(student.grade) : "",
+            parent_name: student.parent_name ?? "",
+            parent_phone: student.parent_phone ?? "",
+            payment_mode: student.payment_mode || PER_SESSION,
+            color: resolveStudentColor(student.color, student.id ?? student.name ?? ""),
+          }
+        : { ...emptyForm, color: PALETTE[Math.floor(Math.random() * PALETTE.length)] }
+    );
+  }, [open, student]);
+
+  const set = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      toast.error("Vui lòng nhập tên học sinh");
+      return;
     }
-  }, [student, open, enrollments.data]);
+    setSaving(true);
+    const payload = {
+      name: form.name.trim(),
+      phone: form.phone.trim(),
+      grade: form.grade || null,
+      parent_name: form.parent_name.trim(),
+      parent_phone: form.parent_phone.trim(),
+      payment_mode: form.payment_mode,
+      color: form.color,
+    };
+    // Ép kiểu vì file types do Supabase sinh ra có thể lệch với cấu trúc bảng thật (lỗi ts2345 / "never")
+    const table = supabase.from("students") as any;
+    const { error } = isEdit
+      ? await table.update(payload).eq("id", student.id)
+      : await table.insert({ ...payload, user_id: user.id });
+    setSaving(false);
 
-// ✅ SỬA LẠI HÀM submit CHUẨN XÁC:
-// ✅ ĐÃ SỬA: Loại bỏ triệt để user_id trước khi insert/update
-const submit = async () => {
-  if (!user || !form.name) return;
-  setBusy(true);
-  try {
-    let id = student?.id;
-
-    // 🎯 TÁCH user_id RA KHỎI FORM ĐỂ ĐẢM BẢO KHÔNG TRUYỀN ID GIÁO VIÊN
-    const { user_id, ...cleanForm } = form;
-
-    if (student) {
-      // Khi CẬP NHẬT: chỉ update các trường dữ liệu sạch (không chạm vào user_id)
-      const { error } = await supabase
-        .from("students")
-        .update(cleanForm)
-        .eq("id", student.id);
-        
-      if (error) throw error;
-    } else {
-      // Khi THÊM MỚI: insert dữ liệu sạch, ép user_id = null 
-      const { data, error } = await supabase
-        .from("students")
-        .insert({
-          ...cleanForm,
-          user_id: user.id // 🔥 Ép buộc user_id luôn là null cho học sinh mới
-        })
-        .select()
-        .single();
-        
-      if (error) throw error;
-      id = data.id;
+    if (error) {
+      toast.error(error.message);
+      return;
     }
-
-    // Sync enrollments (Giữ nguyên)
-    const existing = (enrollments.data || []).filter((e: any) => e.student_id === id);
-    const existingIds = new Set(existing.map((e: any) => e.class_id));
-    const wanted = new Set(classIds);
-    const toAdd = classIds.filter((c) => !existingIds.has(c));
-    const toRemove = existing.filter((e: any) => !wanted.has(e.class_id));
-
-    if (toAdd.length) {
-      await supabase
-        .from("enrollments")
-        .insert(toAdd.map((c) => ({ student_id: id, class_id: c, user_id: user.id })));
-    }
-    for (const r of toRemove) await supabase.from("enrollments").delete().eq("id", r.id);
-
-    toast.success(t?.save || "Saved successfully");
-    qc.invalidateQueries({ queryKey: qk.students });
-    qc.invalidateQueries({ queryKey: qk.enrollments });
+    toast.success(isEdit ? "Đã lưu thay đổi" : "Đã thêm học sinh");
     onOpenChange(false);
-  } catch (e: any) {
-    toast.error(e.message);
-  } finally {
-    setBusy(false);
-  }
-};
-
-  const toggleClass = (id: string) => {
-    setClassIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
+
+  const monthly = form.payment_mode === MONTHLY;
+  const swatches = PALETTE.includes(form.color) ? PALETTE : [form.color, ...PALETTE];
+  const modes = [
+    { value: PER_SESSION, active: !monthly, title: "Theo buổi", desc: "Tính học phí theo từng buổi học" },
+    { value: MONTHLY, active: monthly, title: "Theo tháng", desc: "Thu một khoản cố định mỗi tháng" },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto p-0 gap-0 rounded-2xl shadow-xl border-0">
-        {/* Header */}
-        <DialogHeader className="p-5 pb-4 border-b bg-background sticky top-0 z-10">
-          <DialogTitle className="text-lg font-semibold flex items-center gap-2">
-            <User className="h-5 w-5 text-emerald-600" />
-            {student ? t?.edit || "Edit Student" : t?.addStudent || "Add Student"}
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="max-h-[92vh] gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-xl">
+        <div className="h-1.5 bg-[#FFB547]" />
 
-        {/* Form Body */}
-        <div className="p-5 space-y-4">
-          {/* Section 1: Thông tin cơ bản */}
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                {t?.name || "Full name"} <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                required
-                placeholder="e.g. Nguyen Van A"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="mt-1 h-9 rounded-lg"
-              />
+        <form onSubmit={handleSubmit} className="flex max-h-[calc(92vh-6px)] flex-col">
+          <DialogHeader className="flex-row items-center gap-4 space-y-0 border-b border-slate-100 px-6 py-5 text-left">
+            <div
+              className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-xl font-extrabold text-white transition-colors [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]"
+              style={{ background: form.color }}
+            >
+              {form.name.trim() ? form.name.trim().charAt(0).toUpperCase() : <UserRound className="h-6 w-6" />}
             </div>
-<div>
-    <Label className="text-[10px] font-bold uppercase text-slate-500 mb-1 block">
-      Student Phone
-    </Label>
-    <Input
-      value={form.phone}
-      onChange={(e) => setForm({ ...form, phone: e.target.value })}
-      placeholder="e.g. 0877549288"
-      className="rounded-xl h-9 text-xs"
-    />
-  </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {t?.grade || "Grade"}
-                </Label>
-                <Input
-                  placeholder="e.g. 7"
-                  value={form.grade}
-                  onChange={(e) => setForm({ ...form, grade: e.target.value })}
-                  className="mt-1 h-9 rounded-lg"
-                />
+            <div className="min-w-0">
+              <DialogTitle className="text-lg font-extrabold text-slate-900">
+                {isEdit ? "Sửa thông tin học sinh" : "Thêm học sinh mới"}
+              </DialogTitle>
+              <DialogDescription className="text-sm text-slate-500">
+                {isEdit ? "Cập nhật hồ sơ, phụ huynh và hình thức học phí." : "Nhập thông tin cơ bản, bạn có thể chỉnh lại sau."}
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+            <Section title="Học sinh">
+              <Field label="Họ và tên">
+                <Input autoFocus value={form.name} onChange={set("name")} placeholder="Nguyễn Văn An" className={FIELD} />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Số điện thoại" icon={Phone}>
+                  <Input type="tel" value={form.phone} onChange={set("phone")} placeholder="09xx xxx xxx" className={FIELD} />
+                </Field>
+                <Field label="Khối lớp" icon={GraduationCap}>
+                  <Select value={form.grade} onValueChange={(v) => setForm((f) => ({ ...f, grade: v }))}>
+                    <SelectTrigger className={FIELD}>
+                      <SelectValue placeholder="Chọn khối lớp" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      {GRADES.map((g) => (
+                        <SelectItem key={g} value={g}>Lớp {g}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
               </div>
-              <div>
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  {t?.startDate || "Start date"}
-                </Label>
-                <div className="relative mt-1">
-                  <Input
-                    type="date"
-                    value={form.start_date}
-                    onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                    className="h-9 rounded-lg pl-8 text-sm"
-                  />
-                  <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                </div>
+            </Section>
+
+            <Section title="Phụ huynh" hint="Dùng để liên hệ khi cần thông báo học phí hoặc lịch học.">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Tên phụ huynh" icon={Users}>
+                  <Input value={form.parent_name} onChange={set("parent_name")} placeholder="Nguyễn Thị Lan" className={FIELD} />
+                </Field>
+                <Field label="SĐT phụ huynh" icon={Phone}>
+                  <Input type="tel" value={form.parent_phone} onChange={set("parent_phone")} placeholder="09xx xxx xxx" className={FIELD} />
+                </Field>
               </div>
-            </div>
-          </div>
+            </Section>
 
-          {/* Section 2: Thông tin phụ huynh */}
-          <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              <Users className="h-3.5 w-3.5" />
-              Parent Info
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Input
-                  placeholder={t?.parentName || "Parent name"}
-                  value={form.parent_name}
-                  onChange={(e) => setForm({ ...form, parent_name: e.target.value })}
-                  className="h-8 text-xs rounded-lg bg-background"
-                />
-              </div>
-              <div>
-                <div className="relative">
-                  <Input
-                    placeholder={t?.parentPhone || "Parent phone"}
-                    value={form.parent_phone}
-                    onChange={(e) => setForm({ ...form, parent_phone: e.target.value })}
-                    className="h-8 text-xs rounded-lg bg-background pl-7"
-                  />
-                  <Phone className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Ghi chú */}
-          <div>
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              {t?.notes || "Notes"}
-            </Label>
-            <Textarea
-              placeholder="Add notes..."
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              className="mt-1 min-h-[50px] text-xs rounded-lg resize-none"
-            />
-          </div>
-
-          {/* Section 4: Học phí & Hình thức */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              <Wallet className="h-3.5 w-3.5" />
-              {(t as any)?.paymentMode || "Payment Details"}
-            </div>
-
-            {/* Segmented control */}
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted/50 border">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, payment_mode: "monthly" })}
-                className={cn(
-                  "py-1.5 text-xs font-medium rounded-lg transition-all",
-                  form.payment_mode === "monthly"
-                    ? "bg-background shadow-sm text-foreground font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {(t as any)?.monthly || "Monthly"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, payment_mode: "session" })}
-                className={cn(
-                  "py-1.5 text-xs font-medium rounded-lg transition-all",
-                  form.payment_mode === "session"
-                    ? "bg-background shadow-sm text-foreground font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {(t as any)?.bySession || "By session"}
-              </button>
-            </div>
-
-            {form.payment_mode === "monthly" ? (
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  {(t as any)?.feePerMonth || "Fee per month (₫)"}
-                </Label>
-                <Input
-                  type="number"
-                  value={form.fee_per_month}
-                  onChange={(e) => setForm({ ...form, fee_per_month: +e.target.value })}
-                  className="mt-1 h-9 rounded-lg font-mono text-sm"
-                />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    {(t as any)?.feePerSession || "Fee per session (₫)"}
-                  </Label>
-                  <Input
-                    type="number"
-                    value={form.fee_per_session}
-                    onChange={(e) => setForm({ ...form, fee_per_session: +e.target.value })}
-                    className="mt-1 h-9 rounded-lg font-mono text-sm"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    {(t as any)?.sessionsPerCycle || "Sessions per cycle"}
-                  </Label>
-                  <Input
-                    type="number"
-                    value={form.sessions_per_cycle}
-                    onChange={(e) => setForm({ ...form, sessions_per_cycle: +e.target.value })}
-                    className="mt-1 h-9 rounded-lg font-mono text-sm"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section 5: Màu sắc đại diện */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              <Palette className="h-3.5 w-3.5" />
-              {t?.color || "Theme color"}
-            </div>
-            <div className="flex flex-wrap gap-2 pt-0.5">
-              {palette.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setForm({ ...form, color: c })}
-                  style={{ background: c }}
-                  className={cn(
-                    "w-7 h-7 rounded-full transition-all flex items-center justify-center border border-black/10",
-                    form.color === c ? "scale-110 ring-2 ring-emerald-500 ring-offset-2" : "hover:scale-105"
-                  )}
-                >
-                  {form.color === c && <Check className="h-3.5 w-3.5 text-gray-700" />}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Section 6: Lớp học tham gia */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              <BookOpen className="h-3.5 w-3.5" />
-              {t?.enrolledClasses || "Enrolled classes"}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(classes.data || []).map((c: any) => {
-                const isSelected = classIds.includes(c.id);
-                return (
+            <Section title="Hình thức học phí">
+              <div role="radiogroup" className="grid gap-3 sm:grid-cols-2">
+                {modes.map((m) => (
                   <button
-                    key={c.id}
+                    key={m.value}
                     type="button"
-                    onClick={() => toggleClass(c.id)}
+                    role="radio"
+                    aria-checked={m.active}
+                    onClick={() => setForm((f) => ({ ...f, payment_mode: m.value }))}
                     className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-2",
-                      isSelected
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                        : "bg-background hover:bg-muted text-muted-foreground border-border"
+                      "rounded-xl border p-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                      m.active ? "border-[#0B1B3A] bg-[#0B1B3A]/[0.04] ring-1 ring-[#0B1B3A]" : "border-slate-200 hover:border-slate-300"
                     )}
                   >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ background: c.color }}
-                    />
-                    {c.name}
-                    {isSelected && <Check className="h-3 w-3 ml-0.5" />}
+                    <span className="flex items-center justify-between text-sm font-bold text-slate-900">
+                      {m.title}
+                      {m.active && <Check className="h-4 w-4 text-[#0B1B3A]" strokeWidth={3} />}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{m.desc}</span>
                   </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+                ))}
+              </div>
+            </Section>
 
-        {/* Footer */}
-        <DialogFooter className="p-4 bg-muted/20 border-t gap-2 sm:gap-0 sticky bottom-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            className="h-9 rounded-xl text-xs"
-          >
-            {t?.cancel || "Cancel"}
-          </Button>
-          <Button
-            type="button"
-            onClick={submit}
-            disabled={busy}
-            className="h-9 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium min-w-[80px]"
-          >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t?.save || "Save"}
-          </Button>
-        </DialogFooter>
+            <Section title="Màu đại diện" hint="Hiển thị trên avatar của học sinh trong danh sách.">
+              <div className="flex flex-wrap gap-2.5">
+                {swatches.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-label={`Chọn màu ${c}`}
+                    onClick={() => setForm((f) => ({ ...f, color: c }))}
+                    className={cn(
+                      "grid h-9 w-9 place-items-center rounded-full text-white transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+                      form.color === c ? "scale-110 ring-2 ring-offset-2" : "hover:scale-105"
+                    )}
+                    style={{ background: c, ["--tw-ring-color" as any]: c }}
+                  >
+                    {form.color === c && <Check className="h-4 w-4" strokeWidth={3} />}
+                  </button>
+                ))}
+              </div>
+            </Section>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} className="h-10 rounded-xl px-4 text-sm font-semibold text-slate-600 hover:bg-slate-200/60">
+              Hủy
+            </Button>
+            <Button type="submit" disabled={saving} className="h-10 min-w-28 gap-2 rounded-xl bg-[#0B1B3A] px-5 text-sm font-bold text-white hover:bg-[#13285a]">
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isEdit ? "Lưu thay đổi" : "Thêm học sinh"}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

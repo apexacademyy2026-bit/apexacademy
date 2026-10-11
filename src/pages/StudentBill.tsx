@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { useEnrollments, useClasses } from "@/hooks/useData";
 import { toPng } from "html-to-image";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { resolveStudentColor } from "@/lib/studentColor";
 
 export default function StudentBill() {
   const { id } = useParams();
@@ -252,7 +253,7 @@ export default function StudentBill() {
     ? vietQRUrl(profile?.bank_code, profile?.bank_account_number, profile?.bank_account_name, billTotal, qrContent)
     : null;
 
-  const accent = student?.color || "#3b82f6";
+  const accent = resolveStudentColor(student?.color, student?.id ?? "");
   const safeStudentName = student?.name ? student.name.trim().toUpperCase().replace(/\s+/g, '') : "STUDENT";
   const sessionsCount = mode === "by_session"
     ? (selectedSessionIds.size > 0 ? selectedSessionIds.size : availableAttendance.length)
@@ -448,84 +449,120 @@ export default function StudentBill() {
       `}</style>
 
       {/* Navigation Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4 no-print">
-        <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2 w-fit rounded-xl hover:bg-slate-100">
-          <ArrowLeft className="h-4 w-4 mr-2" /> {t?.details || "Details"}
-        </Button>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex border rounded-xl p-1 bg-muted/40 shadow-inner">
-            <Button size="sm" variant={mode === "monthly" ? "default" : "ghost"} className="rounded-lg transition-all" onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}>
-              <Calendar className="h-3.5 w-3.5 mr-1.5" /> {t?.payByMonth || "Pay monthly"}
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+      <div className="no-print relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-6 font-['Be_Vietnam_Pro',sans-serif] sm:px-8">
+        <div className="pointer-events-none absolute -right-14 -top-16 h-44 w-44 rounded-full" style={{ background: accent }} />
+        <div className="relative space-y-5">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              aria-label="Quay lại"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-xl font-extrabold text-white ring-2 ring-white/90 [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
+              style={{ background: accent }}
+            >
+              {(student.name || "?").charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-extrabold tracking-tight text-white">Hóa đơn học phí</h1>
+              <p className="truncate text-sm text-white/70">{student.name}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex gap-1 rounded-xl bg-white/10 p-1">
+              <button
+                type="button"
+                aria-pressed={mode === "monthly"}
+                onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}
+                className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                  mode === "monthly" ? "bg-white text-[#0B1B3A]" : "text-white/75 hover:text-white"
+                }`}
+              >
+                <Calendar className="h-4 w-4" /> {t?.payByMonth || "Pay monthly"}
+              </button>
+              <button
+                type="button"
+                aria-pressed={mode === "by_session"}
+                onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}
+                className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                  mode === "by_session" ? "bg-white text-[#0B1B3A]" : "text-white/75 hover:text-white"
+                }`}
+              >
+                <Receipt className="h-4 w-4" /> {t?.payBySession || "Pay by session"}
+              </button>
+            </div>
+            <Button onClick={saveAsImage} className="h-10 gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/20">
+              <ImageIcon className="h-4 w-4" /> {(t as any)?.saveAsImage || "Save as image"}
             </Button>
-            <Button size="sm" variant={mode === "by_session" ? "default" : "ghost"} className="rounded-lg transition-all" onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}>
-              <Receipt className="h-3.5 w-3.5 mr-1.5" /> {t?.payBySession || "Pay by session"}
+            <Button onClick={handlePrint} className="h-10 gap-2 rounded-xl bg-[#FFB547] px-4 text-sm font-bold text-[#0B1B3A] hover:bg-[#ffc266]">
+              <Printer className="h-4 w-4" /> {t?.printBill || "Print bill"}
             </Button>
           </div>
-          <Button variant="outline" size="sm" className="rounded-xl shadow-sm hover:bg-slate-50" onClick={saveAsImage}>
-            <ImageIcon className="h-4 w-4 mr-1.5 text-slate-600" /> {(t as any)?.saveAsImage || "Save as image"}
-          </Button>
-          <Button size="sm" className="rounded-xl shadow-md bg-blue-600 hover:bg-blue-700 text-white" onClick={handlePrint}>
-            <Printer className="h-4 w-4 mr-1.5" /> {t?.printBill || "Print bill"}
-          </Button>
         </div>
       </div>
 
       {/* Main Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        
+
         {/* LEFT COLUMN: Controls & Cycle Selector */}
-        <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print">
-          <Card className="p-5 border shadow-sm rounded-2xl bg-card space-y-4">
-            <div className="flex justify-between items-center gap-2 border-b pb-3">
+        <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print font-['Be_Vietnam_Pro',sans-serif]">
+          <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-blue-500" />
-                <h3 className="font-semibold text-base text-slate-800">
+                <Sparkles className="h-4 w-4 text-[#FFB547]" />
+                <h3 className="text-base font-bold text-slate-900">
                   {mode === "monthly" ? (t?.cycle || "Cycle") : ((t as any)?.sessionList || "Session List")}
                 </h3>
               </div>
               <div className="flex gap-2">
                 {mode === "monthly" && selectedCycles.size > 0 && (
-                  <Button size="sm" variant="success" className="rounded-lg" onClick={paySelectedCycles}>
-                    <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedCycles.size})
+                  <Button onClick={paySelectedCycles} className="h-9 gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white hover:bg-emerald-500">
+                    <Check className="h-4 w-4" /> {(t as any)?.markAsPaid || "Pay"} ({selectedCycles.size})
                   </Button>
                 )}
                 {mode === "by_session" && selectedSessionIds.size > 0 && (
-                  <Button size="sm" variant="success" className="rounded-lg" onClick={paySelectedSessions}>
-                    <Check className="h-3.5 w-3.5 mr-1" /> {(t as any)?.markAsPaid || "Pay"} ({selectedSessionIds.size})
+                  <Button onClick={paySelectedSessions} className="h-9 gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white hover:bg-emerald-500">
+                    <Check className="h-4 w-4" /> {(t as any)?.markAsPaid || "Pay"} ({selectedSessionIds.size})
                   </Button>
                 )}
-                <Button size="sm" variant="outline" className="rounded-lg text-xs" onClick={() => setAddOpen((o) => !o)}>
-                  <Plus className="h-3.5 w-3.5 mr-1" /> {t?.addAttendance || "Add attendance"}
+                <Button variant="outline" onClick={() => setAddOpen((o) => !o)} className="h-9 gap-1.5 rounded-xl border-slate-200 px-3 text-sm font-semibold text-slate-700">
+                  <Plus className="h-4 w-4" /> {t?.addAttendance || "Add attendance"}
                 </Button>
               </div>
             </div>
 
             {addOpen && (
-              <div className="grid gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs transition-all">
-                <div>
-                  <Label className="text-xs mb-1 block font-medium">{t?.date || "Date"}</Label>
-                  <Input type="date" className="bg-white rounded-lg" value={addForm.date} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} />
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-slate-700">{t?.date || "Date"}</Label>
+                  <Input type="date" className="h-10 rounded-xl border-slate-200 bg-white text-sm" value={addForm.date} onChange={(e) => setAddForm({ ...addForm, date: e.target.value })} />
                 </div>
-                <div>
-                  <Label className="text-xs mb-1 block font-medium">{t?.class || "Class"}</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-slate-700">{t?.class || "Class"}</Label>
                   <Select value={addForm.class_id} onValueChange={(v) => setAddForm({ ...addForm, class_id: v })}>
-                    <SelectTrigger className="bg-white rounded-lg"><SelectValue /></SelectTrigger>
-                    <SelectContent>
+                    <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
                       {myClasses.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label className="text-xs mb-1 block font-medium">{t?.homework || "Homework"}</Label>
-                  <Textarea rows={2} className="bg-white rounded-lg" value={addForm.note} onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} />
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-slate-700">{t?.homework || "Homework"}</Label>
+                  <Textarea rows={2} className="rounded-xl border-slate-200 bg-white text-sm" value={addForm.note} onChange={(e) => setAddForm({ ...addForm, note: e.target.value })} />
                 </div>
-                <div className="flex justify-end pt-1">
-                  <Button size="sm" variant="default" className="rounded-lg px-4" onClick={addAttendance}>{t?.save || "Save"}</Button>
+                <div className="flex justify-end">
+                  <Button onClick={addAttendance} className="h-9 rounded-xl bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a]">{t?.save || "Save"}</Button>
                 </div>
               </div>
             )}
 
-            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+            <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
               {mode === "monthly" ? (
                 bills.map((b) => {
                   const paid = isPaid(b);
@@ -533,8 +570,8 @@ export default function StudentBill() {
                   return (
                     <div
                       key={b.cycle_label}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-blue-50/80 border-blue-400 shadow-sm" : "hover:bg-slate-50 border-slate-100"
+                      className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3.5 transition-colors ${
+                        isChecked ? "border-[#0B1B3A] bg-[#0B1B3A]/[0.04] ring-1 ring-[#0B1B3A]" : "border-slate-200 hover:bg-slate-50"
                       }`}
                       onClick={() => {
                         setSelectedCycles((prev) => {
@@ -546,7 +583,7 @@ export default function StudentBill() {
                         setSelected(b.cycle_label);
                       }}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <Checkbox
                           checked={isChecked}
                           onCheckedChange={(v) => {
@@ -560,31 +597,29 @@ export default function StudentBill() {
                           }}
                           onClick={(e) => e.stopPropagation()}
                         />
-                        <div>
-                          <div className="text-xs font-semibold flex items-center gap-2 text-slate-800">
-                            {b.cycle_label}
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+                            <span className="truncate">{b.cycle_label}</span>
                             {paid ? (
                               <button
                                 type="button"
                                 title="Bấm để hủy đánh dấu đã đóng"
-                                className="text-[9px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 hover:bg-red-100 text-emerald-700 hover:text-red-700 transition-colors cursor-pointer"
+                                className="cursor-pointer rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-rose-50 hover:text-rose-700"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   togglePaid(b);
                                 }}
                               >
-                                Paid (Hủy đóng)
+                                Đã thanh toán (hủy)
                               </button>
                             ) : (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">
-                                CHƯA THANH TOÁN
-                              </span>
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Chưa thanh toán</span>
                             )}
                           </div>
-                          <div className="text-[11px] text-muted-foreground mt-0.5">{b.description}</div>
+                          <div className="mt-0.5 text-xs text-slate-500">{b.description}</div>
                         </div>
                       </div>
-                      <div className="text-xs font-bold text-slate-900">{formatVND(effectiveAmount(b))}</div>
+                      <div className="shrink-0 text-sm font-bold text-slate-900">{formatVND(effectiveAmount(b))}</div>
                     </div>
                   );
                 })
@@ -595,8 +630,8 @@ export default function StudentBill() {
                   return (
                     <div
                       key={a.id}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                        isChecked ? "bg-blue-50/80 border-blue-400 shadow-sm" : "hover:bg-slate-50 border-slate-100"
+                      className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3.5 transition-colors ${
+                        isChecked ? "border-[#0B1B3A] bg-[#0B1B3A]/[0.04] ring-1 ring-[#0B1B3A]" : "border-slate-200 hover:bg-slate-50"
                       }`}
                       onClick={() => {
                         setSelectedSessionIds((s) => {
@@ -607,7 +642,7 @@ export default function StudentBill() {
                         });
                       }}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
                         <Checkbox
                           checked={isChecked}
                           onCheckedChange={(v) => {
@@ -620,22 +655,24 @@ export default function StudentBill() {
                           }}
                           onClick={(e) => e.stopPropagation()}
                         />
-                        <div>
-                          <div className="text-xs font-semibold text-slate-800">
-                            #{idx + 1} • {fmtDate(a.schedule_events?.event_date)}
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900">
+                            Buổi {idx + 1}, {fmtDate(a.schedule_events?.event_date)}
                           </div>
-                          <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                          <div className="max-w-[180px] truncate text-xs text-slate-500">
                             {a.homework_note || (t as any)?.noNote || "Chưa có ghi chú"}
                           </div>
                         </div>
                       </div>
-                      <div className="text-xs font-bold text-slate-900">{formatVND(fee)}</div>
+                      <div className="shrink-0 text-sm font-bold text-slate-900">{formatVND(fee)}</div>
                     </div>
                   );
                 })
               )}
               {((mode === "monthly" && bills.length === 0) || (mode === "by_session" && availableAttendance.length === 0)) && (
-                <div className="text-xs text-muted-foreground py-8 text-center">{t?.nothingHere || "Không có dữ liệu"}</div>
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-8 text-center text-sm text-slate-500">
+                  {t?.nothingHere || "Không có dữ liệu"}
+                </div>
               )}
             </div>
           </Card>

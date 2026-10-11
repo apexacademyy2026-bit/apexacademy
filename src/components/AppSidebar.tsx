@@ -8,7 +8,6 @@ import {
   LogOut,
   Plus,
   BookOpen,
-  Sparkles,
   FileText,
 } from "lucide-react";
 
@@ -28,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { resolveStudentColor } from "@/lib/studentColor";
 
 export function AppSidebar() {
   const location = useLocation();
@@ -49,88 +49,47 @@ export function AppSidebar() {
 
   // 🌟 1. Danh sách Menu dành cho GIÁO VIÊN
   const teacherNavItems = [
-    {
-      title: lang === "vi" ? "Tổng quan" : "Dashboard",
-      icon: LayoutDashboard,
-      to: "/teacher",
-    },
-    {
-      title: lang === "vi" ? "Học sinh" : "Students",
-      icon: Users,
-      to: "/students",
-    },
-    {
-      title: lang === "vi" ? "Lớp học" : "Classes",
-      icon: GraduationCap,
-      to: "/classes",
-    },
-    {
-      title: lang === "vi" ? "Lịch dạy" : "Schedule",
-      icon: CalendarDays,
-      to: "/schedule",
-    },
-    {
-      title: lang === "vi" ? "Cài đặt" : "Settings",
-      icon: Settings,
-      to: "/settings",
-    },
+    { title: lang === "vi" ? "Tổng quan" : "Dashboard", icon: LayoutDashboard, to: "/teacher" },
+    { title: lang === "vi" ? "Học sinh" : "Students", icon: Users, to: "/students" },
+    { title: lang === "vi" ? "Lớp học" : "Classes", icon: GraduationCap, to: "/classes" },
+    { title: lang === "vi" ? "Lịch dạy" : "Schedule", icon: CalendarDays, to: "/schedule" },
+    { title: lang === "vi" ? "Cài đặt" : "Settings", icon: Settings, to: "/settings" },
   ];
 
   // 🌟 2. Danh sách Menu dành riêng cho HỌC SINH
   const studentNavItems = [
-    {
-      title: lang === "vi" ? "Trang chủ" : "Home",
-      icon: LayoutDashboard,
-      to: "/student",
-    },
-    {
-      title: lang === "vi" ? "Lớp học của tôi" : "My Classes",
-      icon: BookOpen,
-      to: "/student/classes",
-    },
-    {
-      title: lang === "vi" ? "Bài tập & Đề thi" : "Assignments",
-      icon: FileText,
-      to: "/student/assignments",
-    },
-    {
-      title: lang === "vi" ? "Lịch học" : "Schedule",
-      icon: CalendarDays,
-      to: "/student/schedule",
-    },
-    {
-      title: lang === "vi" ? "Cài đặt" : "Settings",
-      icon: Settings,
-      to: "/settings",
-    },
+    { title: lang === "vi" ? "Trang chủ" : "Home", icon: LayoutDashboard, to: "/student" },
+    { title: lang === "vi" ? "Lớp học của tôi" : "My Classes", icon: BookOpen, to: "/student/classes" },
+    { title: lang === "vi" ? "Bài tập & Đề thi" : "Assignments", icon: FileText, to: "/student/assignments" },
+    { title: lang === "vi" ? "Lịch học" : "Schedule", icon: CalendarDays, to: "/student/schedule" },
+    { title: lang === "vi" ? "Cài đặt" : "Settings", icon: Settings, to: "/settings" },
   ];
 
   // Tự động chuyển danh sách menu theo vai trò
   const navItems = role === "teacher" ? teacherNavItems : studentNavItems;
 
-  const displayName = 
-    profile?.display_name || 
-    (profile as any)?.full_name || 
-    user?.email?.split("@")[0] || 
-    "Thành viên";  
-  
+  const displayName =
+    profile?.display_name ||
+    (profile as any)?.full_name ||
+    user?.email?.split("@")[0] ||
+    "Thành viên";
+
   const brandName = user?.user_metadata?.brand_name || "Apex Academy";
 
   return (
-    <Sidebar variant="sidebar" collapsible="icon" className="border-r border-slate-100 bg-white">
-      {/* 1. HEADER LOGO - Thêm pt-safe để chừa khoảng trống cho Tai thỏ / Dynamic Island */}
-      <SidebarHeader className="p-4 pt-safe border-b border-slate-100/60">
+    <Sidebar variant="sidebar" collapsible="icon" className="border-r border-slate-200 bg-white font-['Be_Vietnam_Pro',sans-serif]">
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+
+      {/* 1. HEADER LOGO - pt-safe để chừa khoảng trống cho Tai thỏ / Dynamic Island */}
+      <SidebarHeader className="border-b border-slate-100 p-4 pt-safe">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black shadow-md shadow-blue-500/20 shrink-0">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0B1B3A] text-[#FFB547]">
             <BookOpen className="h-5 w-5" />
           </div>
-          <div className="truncate group-data-[collapsible=icon]:hidden">
-            <h2 className="text-sm font-black text-slate-900 tracking-tight truncate">
-              {brandName}
-            </h2>
-            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="h-3 w-3 inline" /> 
-              {role === "teacher" ? "TEACHER MODE" : "STUDENT MODE"}
+          <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+            <h2 className="truncate text-sm font-extrabold tracking-tight text-slate-900">{brandName}</h2>
+            <p className="text-xs font-medium text-slate-500">
+              {role === "teacher" ? (lang === "vi" ? "Giáo viên" : "Teacher") : lang === "vi" ? "Học sinh" : "Student"}
             </p>
           </div>
         </div>
@@ -143,17 +102,17 @@ export function AppSidebar() {
           <div className="mb-2 group-data-[collapsible=icon]:hidden">
             <Button
               onClick={() => navigate("/schedule")}
-              className="w-full h-9 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold text-xs border border-blue-100/80 shadow-2xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#FFB547] text-sm font-bold text-[#0B1B3A] hover:bg-[#ffc266]"
             >
-              <Plus className="h-4 w-4" />
-              <span>{lang === "vi" ? "Tạo ca học mới" : "New Session"}</span>
+              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              <span>{lang === "vi" ? "Tạo ca học mới" : "New session"}</span>
             </Button>
           </div>
         )}
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-2 mb-1">
-            {lang === "vi" ? "Menu chính" : "Main Menu"}
+          <SidebarGroupLabel className="mb-1 px-2 text-xs font-semibold text-slate-400">
+            {lang === "vi" ? "Menu chính" : "Main menu"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
@@ -170,12 +129,12 @@ export function AppSidebar() {
                       tooltip={item.title}
                       className={
                         isActive
-                          ? "bg-blue-600 text-white font-bold hover:bg-blue-700 hover:text-white shadow-md shadow-blue-600/20 rounded-xl h-10"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-bold rounded-xl h-10"
+                          ? "h-10 rounded-xl bg-[#0B1B3A] font-semibold text-white hover:bg-[#13285a] hover:text-white data-[active=true]:bg-[#0B1B3A] data-[active=true]:text-white"
+                          : "h-10 rounded-xl font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                       }
                     >
                       <Link to={item.to} className="flex items-center gap-3 px-3">
-                        <item.icon className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-400"}`} />
+                        <item.icon className={`h-4 w-4 ${isActive ? "text-[#FFB547]" : "text-slate-400"}`} />
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -187,26 +146,28 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* 3. FOOTER USER & LOGOUT - Thêm pb-safe để tránh thanh gạch dưới đáy iPhone */}
-      <SidebarFooter className="p-3 pb-safe border-t border-slate-100 space-y-2">
-        <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100/80 group-data-[collapsible=icon]:hidden">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center font-black text-xs shadow-sm shrink-0">
+      {/* 3. FOOTER USER & LOGOUT - pb-safe để tránh thanh gạch dưới đáy iPhone */}
+      <SidebarFooter className="space-y-2 border-t border-slate-100 p-3 pb-safe">
+        <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2.5 group-data-[collapsible=icon]:hidden">
+          <div
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-extrabold text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]"
+            style={{ background: resolveStudentColor(null, user?.id ?? displayName) }}
+          >
             {displayName.slice(0, 2).toUpperCase()}
           </div>
-          <div className="truncate flex-1">
-            <h4 className="text-xs font-bold text-slate-900 truncate">{displayName}</h4>
-            <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
+          <div className="min-w-0 flex-1">
+            <h4 className="truncate text-sm font-bold text-slate-900">{displayName}</h4>
+            <p className="truncate text-xs text-slate-500">{user?.email}</p>
           </div>
         </div>
 
         <button
+          type="button"
           onClick={handleLogout}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer"
+          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
         >
           <LogOut className="h-4 w-4 shrink-0" />
-          <span className="group-data-[collapsible=icon]:hidden">
-            {lang === "vi" ? "Đăng xuất" : "Log out"}
-          </span>
+          <span className="group-data-[collapsible=icon]:hidden">{lang === "vi" ? "Đăng xuất" : "Log out"}</span>
         </button>
       </SidebarFooter>
     </Sidebar>

@@ -1,32 +1,24 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { 
-  Plus, 
-  LayoutGrid, 
-  List as ListIcon, 
-  Pencil, 
-  Trash2, 
-  Users, 
-  Calendar, 
-  GraduationCap, 
-  Clock, 
-  BookOpen, 
+import {
+  Plus,
+  LayoutGrid,
+  List as ListIcon,
+  Pencil,
+  Trash2,
+  Users,
+  Clock,
+  BookOpen,
   MoreVertical,
-  Sparkles,
   Search,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/contexts/AppContext";
 import { useClasses, useEnrollments, useClassSchedules, qk } from "@/hooks/useData";
 import { fmtDate } from "@/lib/format";
@@ -36,6 +28,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { cn } from "@/lib/utils";
+import { resolveStudentColor } from "@/lib/studentColor";
+
+/* Design tokens: navy #0B1B3A · hổ phách #FFB547 · nền trung tính slate (giống trang Học sinh) */
+const FIELD = "h-11 rounded-xl border-slate-200 bg-white text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20 focus-visible:border-[#0B1B3A]";
+const ICON_BTN = "relative z-20 h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900";
+const CHIP = "inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700";
 
 export default function Classes() {
   const { t, lang } = useApp();
@@ -50,62 +48,43 @@ export default function Classes() {
   const [editing, setEditing] = useState<any>(null);
   const [cat, setCat] = useState<"all" | "math" | "english" | "none">("all");
 
-  // 🌟 States mới phục vụ Lọc & Sắp xếp
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"name-asc" | "name-desc" | "created-desc" | "created-asc" | "students-desc" | "students-asc">("name-asc");
 
-  const catLabels: Record<string, string> = lang === "vi"
-    ? { all: "Tất cả", math: "Toán", english: "Tiếng Anh", none: "Chưa phân loại" }
-    : { all: "All", math: "Math", english: "English", none: "Unsorted" };
+  const catLabels: Record<string, string> =
+    lang === "vi"
+      ? { all: "Tất cả", math: "Toán", english: "Tiếng Anh", none: "Chưa phân loại" }
+      : { all: "All", math: "Math", english: "English", none: "Unsorted" };
 
-  const studentCount = (cid: string) =>
-    (enrollments.data || []).filter((e: any) => e.class_id === cid).length;
+  const studentCount = (cid: string) => (enrollments.data || []).filter((e: any) => e.class_id === cid).length;
 
-  const slots = (cid: string) =>
-    (schedules.data || []).filter((s: any) => s.class_id === cid);
+  const slots = (cid: string) => (schedules.data || []).filter((s: any) => s.class_id === cid);
 
-  // 🌟 Logic Tìm kiếm & Sắp xếp danh sách lớp
+  // Logic Tìm kiếm & Sắp xếp danh sách lớp
   const visible = useMemo(() => {
     let list = (classes.data || []).filter((c: any) => {
-      // 1. Lọc theo Tab Danh mục
       const matchCat = cat === "all" ? true : cat === "none" ? !c.category : c.category === cat;
-      
-      // 2. Lọc theo từ khóa Tìm kiếm (Tên lớp, Môn học, Khối lớp)
       const q = search.toLowerCase();
-      const matchSearch = 
+      const matchSearch =
         (c.name || "").toLowerCase().includes(q) ||
         (c.subject || "").toLowerCase().includes(q) ||
         (c.grade || "").toLowerCase().includes(q);
-
       return matchCat && matchSearch;
     });
 
-    // 3. Thực hiện Sắp xếp
     return list.sort((a: any, b: any) => {
-      if (sortBy === "name-asc") {
-        return (a.name || "").localeCompare(b.name || "", "vi", { sensitivity: "base" });
-      }
-      if (sortBy === "name-desc") {
-        return (b.name || "").localeCompare(a.name || "", "vi", { sensitivity: "base" });
-      }
-      if (sortBy === "created-desc") {
-        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-      }
-      if (sortBy === "created-asc") {
-        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-      }
-      if (sortBy === "students-desc") {
-        return studentCount(b.id) - studentCount(a.id);
-      }
-      if (sortBy === "students-asc") {
-        return studentCount(a.id) - studentCount(b.id);
-      }
+      if (sortBy === "name-asc") return (a.name || "").localeCompare(b.name || "", "vi", { sensitivity: "base" });
+      if (sortBy === "name-desc") return (b.name || "").localeCompare(a.name || "", "vi", { sensitivity: "base" });
+      if (sortBy === "created-desc") return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      if (sortBy === "created-asc") return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+      if (sortBy === "students-desc") return studentCount(b.id) - studentCount(a.id);
+      if (sortBy === "students-asc") return studentCount(a.id) - studentCount(b.id);
       return 0;
     });
   }, [classes.data, cat, search, sortBy, enrollments.data]);
 
-  useEffect(() => { 
-    document.title = `${t.classes} — ${t.appName}`; 
+  useEffect(() => {
+    document.title = `${t.classes} — ${t.appName}`;
   }, [t]);
 
   const totalStudentsAll = (classes.data || []).reduce((sum: number, c: any) => sum + studentCount(c.id), 0);
@@ -120,106 +99,91 @@ export default function Classes() {
     }
   };
 
+  const openCreate = () => {
+    setEditing(null);
+    setOpen(true);
+  };
+  const vi = lang === "vi";
+
+  const heroStats = [
+    { label: vi ? "Lớp học" : "Classes", value: (classes.data || []).length },
+    { label: vi ? "Lượt học sinh" : "Enrollments", value: totalStudentsAll },
+    { label: vi ? "Ca học mỗi tuần" : "Weekly slots", value: (schedules.data || []).length },
+  ];
+
+  const rowMenu = (c: any) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" aria-label="Tùy chọn" className={cn(ICON_BTN, "grid place-items-center")}>
+          <MoreVertical className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40 rounded-xl p-1.5">
+        <DropdownMenuItem
+          onClick={() => {
+            setEditing(c);
+            setOpen(true);
+          }}
+          className="cursor-pointer gap-2 rounded-lg py-2 text-sm font-medium"
+        >
+          <Pencil className="h-4 w-4 text-slate-500" /> {t.edit || "Chỉnh sửa"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => handleDelete(c.id)}
+          className="cursor-pointer gap-2 rounded-lg py-2 text-sm font-medium text-rose-600 focus:bg-rose-50 focus:text-rose-600"
+        >
+          <Trash2 className="h-4 w-4" /> {t.delete || "Xóa lớp"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
-    <div className="p-2 sm:p-6 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
-      
-      {/* 1. HEADER VÀ NÚT TẠO LỚP */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-            {t.classes}
-            <Badge variant="secondary" className="rounded-xl px-2.5 py-0.5 text-blue-600 bg-blue-50 border border-blue-100 font-bold text-xs">
-              {(classes.data || []).length} {lang === "vi" ? "lớp" : "classes"}
-            </Badge>
-          </h1>
-          <p className="text-xs font-semibold text-slate-400 mt-1">
-            {lang === "vi" 
-              ? "Quản lý danh sách lớp học, số lượng học sinh và ca học tuần" 
-              : "Manage class schedules, enrolled students, and subjects"}
-          </p>
-        </div>
+    <div className="mx-auto max-w-7xl space-y-6 pb-12 font-['Be_Vietnam_Pro',sans-serif]">
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
 
-        <div className="flex items-center gap-3">
-          {/* Toggle Grid/List */}
-          <div className="flex items-center bg-slate-100/80 p-1 rounded-2xl border border-slate-200/50">
-            <button
-              onClick={() => setView("grid")}
-              className={cn(
-                "p-2 rounded-xl transition-all cursor-pointer",
-                view === "grid" ? "bg-white text-blue-600 shadow-xs font-bold" : "text-slate-400 hover:text-slate-600"
-              )}
+      {/* HERO */}
+      <div className="relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-8 sm:px-10 sm:py-10">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[#FFB547]" />
+        <div className="pointer-events-none absolute -bottom-28 right-40 hidden h-60 w-60 rounded-full border-[36px] border-white/[0.07] sm:block" />
+        <div className="relative space-y-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="max-w-lg space-y-2">
+              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{t.classes}</h1>
+              <p className="text-sm leading-relaxed text-white/70">
+                {vi ? "Quản lý lớp học, sĩ số và ca học trong tuần." : "Manage classes, enrolled students and weekly schedules."}
+              </p>
+            </div>
+            <Button
+              onClick={openCreate}
+              className="h-11 shrink-0 gap-2 self-start rounded-xl bg-white px-5 text-sm font-bold text-[#0B1B3A] shadow-lg hover:bg-slate-100 sm:self-auto"
             >
-              <LayoutGrid className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setView("list")}
-              className={cn(
-                "p-2 rounded-xl transition-all cursor-pointer",
-                view === "list" ? "bg-white text-blue-600 shadow-xs font-bold" : "text-slate-400 hover:text-slate-600"
-              )}
-            >
-              <ListIcon className="h-4 w-4" />
-            </button>
+              <Plus className="h-4 w-4" strokeWidth={2.5} /> {t.addClass}
+            </Button>
           </div>
-
-          {/* Nút Thêm Lớp */}
-          <Button 
-            onClick={() => { setEditing(null); setOpen(true); }}
-            className="h-11 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-lg shadow-blue-600/20 flex items-center gap-2 transition-all cursor-pointer active:scale-95"
-          >
-            <Plus className="h-4 w-4" /> 
-            {t.addClass}
-          </Button>
+          <dl className="flex flex-wrap gap-x-10 gap-y-3">
+            {heroStats.map((s) => (
+              <div key={s.label}>
+                <dd className="text-2xl font-extrabold text-white">{s.value}</dd>
+                <dt className="text-xs text-white/60">{s.label}</dt>
+              </div>
+            ))}
+          </dl>
         </div>
       </div>
 
-      {/* 2. CÁC THẺ THỐNG KÊ TỔNG QUAN */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="rounded-3xl border-slate-100/80 bg-white p-5 shadow-xs flex items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <GraduationCap className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400">{lang === "vi" ? "Tổng số lớp học" : "Total Classes"}</p>
-            <p className="text-2xl font-black text-slate-900">{(classes.data || []).length}</p>
-          </div>
-        </Card>
-
-        <Card className="rounded-3xl border-slate-100/80 bg-white p-5 shadow-xs flex items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <Users className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400">{lang === "vi" ? "Tổng lượt học sinh" : "Total Enrollments"}</p>
-            <p className="text-2xl font-black text-slate-900">{totalStudentsAll}</p>
-          </div>
-        </Card>
-
-        <Card className="rounded-3xl border-slate-100/80 bg-white p-5 shadow-xs flex items-center gap-4">
-          <div className="h-12 w-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Calendar className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400">{lang === "vi" ? "Ca học hoạt động" : "Active Schedules"}</p>
-            <p className="text-2xl font-black text-slate-900">{(schedules.data || []).length}</p>
-          </div>
-        </Card>
-      </div>
-
-      {/* 🌟 3. THANH CÔNG CỤ: TÌM KIẾM, SẮP XẾP VÀ TABS MÔN HỌC */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        
-        {/* Lựa chọn Tab môn học */}
-        <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl w-full md:w-auto overflow-x-auto shrink-0">
+      {/* TOOLBAR */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
           {(["all", "math", "english", "none"] as const).map((k) => (
             <button
               key={k}
+              type="button"
+              aria-pressed={cat === k}
               onClick={() => setCat(k)}
               className={cn(
-                "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer",
-                cat === k
-                  ? "bg-white text-slate-900 shadow-xs"
-                  : "text-slate-500 hover:text-slate-900"
+                "h-9 shrink-0 whitespace-nowrap rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                cat === k ? "bg-white text-[#0B1B3A] shadow-sm" : "text-slate-500 hover:text-slate-900"
               )}
             >
               {catLabels[k]}
@@ -227,143 +191,115 @@ export default function Classes() {
           ))}
         </div>
 
-        {/* Tìm kiếm và Bộ lọc Sắp xếp */}
-        <div className="flex flex-col sm:flex-row items-center gap-2 w-full md:w-auto flex-1 md:justify-end">
-          {/* Ô Tìm kiếm */}
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input 
-              placeholder={lang === "vi" ? "Tìm theo tên lớp, môn học..." : "Search class name, subject..."} 
-              value={search} 
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              placeholder={vi ? "Tìm theo tên lớp, môn học..." : "Search class name, subject..."}
+              value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-10 bg-slate-50 border-slate-200 rounded-xl text-xs h-9 focus:bg-white transition-all"
+              className={cn(FIELD, "pl-10")}
             />
           </div>
-
-          {/* Dropdown Sắp xếp */}
-          <div className="w-full sm:w-48">
-            <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-              <SelectTrigger className="bg-slate-50 border-slate-200 rounded-xl text-xs h-9 text-slate-700 font-semibold focus:ring-0">
-                <div className="flex items-center gap-1.5 truncate">
-                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                  <SelectValue placeholder="Sắp xếp" />
-                </div>
-              </SelectTrigger>
-              <SelectContent className="rounded-xl text-xs">
-                <SelectItem value="name-asc" className="text-xs font-medium">Tên lớp (A → Z)</SelectItem>
-                <SelectItem value="name-desc" className="text-xs font-medium">Tên lớp (Z → A)</SelectItem>
-                <SelectItem value="created-desc" className="text-xs font-medium">Mới nhất (Ngày tạo)</SelectItem>
-                <SelectItem value="created-asc" className="text-xs font-medium">Cũ nhất (Ngày tạo)</SelectItem>
-                <SelectItem value="students-desc" className="text-xs font-medium">Sĩ số (Cao → Thấp)</SelectItem>
-                <SelectItem value="students-asc" className="text-xs font-medium">Sĩ số (Thấp → Cao)</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 sm:w-52 sm:flex-none">
+              <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
+                <SelectTrigger className={cn(FIELD, "font-medium text-slate-700")}>
+                  <div className="flex items-center gap-2 truncate">
+                    <ArrowUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                    <SelectValue placeholder="Sắp xếp" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent className="rounded-xl text-sm">
+                  <SelectItem value="name-asc">Tên lớp (A → Z)</SelectItem>
+                  <SelectItem value="name-desc">Tên lớp (Z → A)</SelectItem>
+                  <SelectItem value="created-desc">Mới nhất</SelectItem>
+                  <SelectItem value="created-asc">Cũ nhất</SelectItem>
+                  <SelectItem value="students-desc">Sĩ số (cao → thấp)</SelectItem>
+                  <SelectItem value="students-asc">Sĩ số (thấp → cao)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex shrink-0 gap-1 rounded-xl bg-slate-100 p-1">
+              {([["grid", LayoutGrid, "Lưới"], ["list", ListIcon, "Bảng"]] as const).map(([mode, Icon, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={view === mode}
+                  aria-label={label}
+                  onClick={() => setView(mode)}
+                  className={cn(
+                    "flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                    view === mode ? "bg-white text-[#0B1B3A] shadow-sm" : "text-slate-500 hover:text-slate-900"
+                  )}
+                >
+                  <Icon className="h-4 w-4" /> <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-
       </div>
 
-      {/* 4. HIỂN THỊ DANH SÁCH LỚP HỌC */}
+      {/* DANH SÁCH LỚP */}
       {visible.length === 0 ? (
-        <Card className="bg-white rounded-3xl border border-dashed border-slate-200 p-12 text-center space-y-4 max-w-md mx-auto my-8">
-          <div className="h-16 w-16 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto">
-            <Sparkles className="h-8 w-8" />
+        <div className="space-y-4 rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-slate-400">
+            <BookOpen className="h-6 w-6" />
           </div>
-          <div>
-            <h3 className="text-base font-black text-slate-900">{t.nothingHere}</h3>
-            <p className="text-xs font-semibold text-slate-400 mt-1">
-              {lang === "vi" 
-                ? "Không tìm thấy lớp học phù hợp với từ khóa hoặc bộ lọc." 
-                : "No classes found matching search or filter criteria."}
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900">{t.nothingHere}</h3>
+            <p className="text-sm text-slate-500">
+              {vi ? "Không tìm thấy lớp học phù hợp với từ khóa hoặc bộ lọc." : "No classes found matching search or filter criteria."}
             </p>
           </div>
-          <Button 
-            onClick={() => { setEditing(null); setOpen(true); }} 
-            className="h-10 px-6 rounded-2xl bg-blue-600 text-white font-bold text-xs shadow-md"
-          >
-            + {t.addClass}
+          <Button onClick={openCreate} className="h-10 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white hover:bg-[#13285a]">
+            {t.addClass}
           </Button>
-        </Card>
+        </div>
       ) : view === "grid" ? (
-        /* DẠNG DÒNG CỘT (GRID VIEW) */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {visible.map((c: any) => (
-            <Card
-              key={c.id}
-              className="group rounded-3xl border-slate-100 bg-white shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden relative"
-            >
-              <CardContent className="p-6 space-y-5">
-                
-                {/* Header Thẻ: Icon + Tên Lớp + Dropdown Menu */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div 
-                      className="h-12 w-12 rounded-2xl text-white flex items-center justify-center font-black shadow-md shrink-0"
-                      style={{ background: c.color || "#2563eb" }}
-                    >
-                      <BookOpen className="h-5 w-5" />
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {visible.map((c: any) => {
+            const color = resolveStudentColor(c.color, c.id);
+            const cs = slots(c.id);
+            return (
+              <div key={c.id} className="group relative">
+                <Card className="relative h-full space-y-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 pt-6 shadow-xs transition-all group-hover:border-slate-300 group-hover:shadow-lg group-hover:shadow-slate-900/5">
+                  <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: color }} />
+                  <Link
+                    to={`/classes/${c.id}`}
+                    aria-label={`Xem lớp ${c.name}`}
+                    className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  />
+
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div
+                        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ring-2 ring-offset-2 ring-offset-white"
+                        style={{ background: color, ["--tw-ring-color" as any]: color }}
+                      >
+                        <BookOpen className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-base font-bold text-slate-900">{c.name}</h3>
+                        <p className="flex items-center gap-1.5 truncate text-xs text-slate-500">
+                          <span className="truncate">{c.subject}</span>
+                          {c.grade && <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700">{c.grade}</span>}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <Link to={`/classes/${c.id}`} className="block">
-                        <h3 className="font-black text-slate-900 text-base group-hover:text-blue-600 transition-colors truncate">
-                          {c.name}
-                        </h3>
-                      </Link>
-                      <p className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
-                        <span>{c.subject}</span>
-                        {c.grade && (
-                          <>
-                            <span>•</span>
-                            <span className="text-blue-600">{c.grade}</span>
-                          </>
-                        )}
-                      </p>
-                    </div>
+                    {rowMenu(c)}
                   </div>
 
-                  {/* Menu 3 chấm Sửa/Xóa */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer shrink-0">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="rounded-2xl p-2 w-36">
-                      <DropdownMenuItem 
-                        onClick={() => { setEditing(c); setOpen(true); }}
-                        className="rounded-xl font-semibold text-xs gap-2 py-2 cursor-pointer"
-                      >
-                        <Pencil className="h-3.5 w-3.5 text-slate-500" />
-                        {t.edit || "Chỉnh sửa"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem 
-                        onClick={() => handleDelete(c.id)}
-                        className="rounded-xl font-semibold text-xs gap-2 py-2 text-red-600 cursor-pointer focus:bg-red-50 focus:text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {t.delete || "Xóa lớp"}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                {/* Nội dung: Lịch học & Số học sinh */}
-                <div className="space-y-3 pt-2 border-t border-slate-100">
-                  {/* Các ca học trong tuần */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      {t.weeklySchedule || "Lịch dạy"}
-                    </span>
-                    <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      {slots(c.id).length === 0 ? (
-                        <span className="text-xs text-slate-400 italic">Chưa xếp ca học</span>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-slate-500">{t.weeklySchedule || "Lịch dạy"}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {cs.length === 0 ? (
+                        <span className="text-xs text-slate-400">Chưa xếp ca học</span>
                       ) : (
-                        slots(c.id).map((s: any) => (
-                          <span
-                            key={s.id}
-                            className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-100/60"
-                          >
-                            <Clock className="h-3 w-3 text-blue-500" />
+                        cs.map((s: any) => (
+                          <span key={s.id} className={CHIP}>
+                            <Clock className="h-3 w-3 text-slate-400" />
                             {t.days[s.day_of_week]} {s.start_time.slice(0, 5)}
                           </span>
                         ))
@@ -371,98 +307,93 @@ export default function Classes() {
                     </div>
                   </div>
 
-                  {/* Sĩ số học sinh & Ngày học */}
-                  <div className="flex items-center justify-between pt-1 text-xs">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                      <Users className="h-4 w-4 text-emerald-500" />
-                      <span>{studentCount(c.id)} {t.students.toLowerCase()}</span>
+                  <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                      <Users className="h-4 w-4 text-slate-400" />
+                      {studentCount(c.id)} {t.students.toLowerCase()}
                     </div>
-
-                    {(c.start_date || c.end_date) && (
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {c.start_date && fmtDate(c.start_date)} {c.end_date && `– ${fmtDate(c.end_date)}`}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {(c.start_date || c.end_date) && (
+                        <span className="text-xs text-slate-500">
+                          {c.start_date && fmtDate(c.start_date)} {c.end_date && `– ${fmtDate(c.end_date)}`}
+                        </span>
+                      )}
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                    </div>
                   </div>
-                </div>
-
-                {/* Nút Xem Chi Tiết */}
-                <Button 
-                  asChild
-                  variant="outline" 
-                  className="w-full h-10 rounded-2xl border-slate-200 text-slate-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 font-bold text-xs transition-all cursor-pointer"
-                >
-                  <Link to={`/classes/${c.id}`}>Xem chi tiết lớp</Link>
-                </Button>
-
-              </CardContent>
-            </Card>
-          ))}
+                </Card>
+              </div>
+            );
+          })}
         </div>
       ) : (
-        /* DẠNG DANH SÁCH (LIST VIEW) */
-        <Card className="rounded-3xl border-slate-100 bg-white shadow-xs overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+            <table className="w-full min-w-[44rem] text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
                 <tr>
-                  <th className="p-4">{t.className}</th>
-                  <th className="p-4">{t.students}</th>
-                  <th className="p-4">{t.weeklySchedule}</th>
-                  <th className="p-4 text-right">Thao tác</th>
+                  <th className="px-6 py-3.5">{t.className}</th>
+                  <th className="px-4 py-3.5">{t.students}</th>
+                  <th className="px-4 py-3.5">{t.weeklySchedule}</th>
+                  <th className="px-6 py-3.5 text-right">Thao tác</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                {visible.map((c: any) => (
-                  <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="p-4">
-                      <Link to={`/classes/${c.id}`} className="font-bold text-slate-900 hover:text-blue-600 flex items-center gap-2.5">
-                        <span className="h-3 w-3 rounded-full shrink-0" style={{ background: c.color || "#2563eb" }} />
-                        <span className="truncate">{c.name}</span>
-                      </Link>
-                      <p className="text-[10px] text-slate-400 font-medium pl-5.5">{c.subject} {c.grade && `· ${c.grade}`}</p>
-                    </td>
-                    <td className="p-4 font-bold text-slate-900">
-                      {studentCount(c.id)}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex flex-wrap gap-1">
-                        {slots(c.id).map((s: any) => (
-                          <span key={s.id} className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700">
-                            {t.days[s.day_of_week]} {s.start_time.slice(0, 5)}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          onClick={() => { setEditing(c); setOpen(true); }}
-                          className="h-8 w-8 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button 
-                          size="icon" 
-                          variant="ghost" 
-                          onClick={() => handleDelete(c.id)}
-                          className="h-8 w-8 rounded-xl text-red-500 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-100">
+                {visible.map((c: any) => {
+                  const color = resolveStudentColor(c.color, c.id);
+                  return (
+                    <tr key={c.id} className="transition-colors hover:bg-slate-50/70">
+                      <td className="px-6 py-3.5">
+                        <Link to={`/classes/${c.id}`} className="group flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white" style={{ background: color }}>
+                            <BookOpen className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-slate-900 group-hover:text-[#0B1B3A]">{c.name}</p>
+                            <p className="text-xs text-slate-500">
+                              {c.subject} {c.grade && `· ${c.grade}`}
+                            </p>
+                          </div>
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3.5 font-semibold text-slate-900">{studentCount(c.id)}</td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          {slots(c.id).map((s: any) => (
+                            <span key={s.id} className={CHIP}>
+                              {t.days[s.day_of_week]} {s.start_time.slice(0, 5)}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-3.5">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            aria-label="Sửa"
+                            onClick={() => {
+                              setEditing(c);
+                              setOpen(true);
+                            }}
+                            className={ICON_BTN}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button size="icon" variant="ghost" aria-label="Xóa" onClick={() => handleDelete(c.id)} className={cn(ICON_BTN, "hover:bg-rose-50 hover:text-rose-600")}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </Card>
+        </div>
       )}
 
-      {/* COMPONENT DIALOG THÊM / SỬA LỚP */}
       <ClassDialog open={open} onOpenChange={setOpen} cls={editing} />
     </div>
   );
