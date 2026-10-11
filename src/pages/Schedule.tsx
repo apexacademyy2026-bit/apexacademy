@@ -20,12 +20,24 @@ import { toast } from "sonner";
 import { addDays, startOfWeek, format, isSameDay } from "date-fns";
 import { getStoredGoogleCalendarSelection, getStoredGoogleCalendarToken, listGoogleCalendarEvents } from "@/lib/google-calendar";
 import { cn } from "@/lib/utils";
+import { resolveStudentColor } from "@/lib/studentColor";
 
-// Cấu hình khung giờ gọn gàng vừa khít 1 trang A4 Landscape (08:00 - 20:00)
-const HOUR_START = 6;     // Bắt đầu từ 08:00
-const HOUR_END = 23;      // Kết thúc 20:00
-const HOUR_HEIGHT = 40;   // Thu gọn chiều cao ô giờ xuống 32px
+// Cấu hình khung giờ hiển thị của lịch tuần
+const HOUR_START = 6;     // Bắt đầu từ 06:00
+const HOUR_END = 23;      // Kết thúc 23:00
+const HOUR_HEIGHT = 40;   // Chiều cao mỗi ô giờ
 const SCHEDULE_MAX_HEIGHT = 700;
+
+/* Design tokens: navy #0B1B3A · hổ phách #FFB547 · nền trung tính slate (giống các trang khác) */
+const FIELD = "h-10 rounded-xl border-slate-200 bg-white text-sm shadow-xs focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20";
+const LABEL = "text-sm font-medium text-slate-700";
+const DLG = "gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif]";
+const PRIMARY = "h-10 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a]";
+const GHOST = "h-10 rounded-xl px-4 text-sm font-semibold text-slate-600 hover:bg-slate-200/60";
+
+// Màu nền nhạt cho khối sự kiện: hex thì thêm độ trong suốt, màu khác thì pha với trắng
+const tint = (c: string, a = "30") => (/^#[0-9a-f]{6}$/i.test(c) ? `${c}${a}` : `color-mix(in srgb, ${c} 20%, white)`);
+const GOOGLE_COLOR = "#4F46E5";
 
 const toMinutes = (t: string) => {
   const [h, m] = t.split(":").map(Number);
@@ -65,7 +77,7 @@ export default function Schedule() {
   const [confirmDel, setConfirmDel] = useState<{ open: boolean; ev?: any }>({ open: false });
   const [googleEvents, setGoogleEvents] = useState<any[]>([]);
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false);
-  
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   /* ---------------- DIALOG THÊM SỰ KIỆN ---------------- */
@@ -121,32 +133,35 @@ export default function Schedule() {
 
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="rounded-3xl max-w-md">
-          <DialogHeader><DialogTitle className="font-black text-slate-900">{t.addEvent}</DialogTitle></DialogHeader>
-          <div className="space-y-4 pt-2">
-            <div>
-              <Label className="text-xs font-bold text-slate-600 mb-1 block">{t.class}</Label>
+        <DialogContent className={cn(DLG, "sm:max-w-md")}>
+          <div className="h-1.5 bg-[#FFB547]" />
+          <DialogHeader className="border-b border-slate-100 px-6 py-5 text-left">
+            <DialogTitle className="text-lg font-extrabold text-slate-900">{t.addEvent}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 px-6 py-5">
+            <div className="space-y-1.5">
+              <Label className={LABEL}>{t.class}</Label>
               <Select value={classId} onValueChange={setClassId}>
-                <SelectTrigger className="rounded-2xl h-10 border-slate-200 text-xs font-semibold"><SelectValue placeholder={t.class} /></SelectTrigger>
-                <SelectContent className="rounded-2xl">
-                  {classes.map((c: any) => <SelectItem key={c.id} value={c.id} className="rounded-xl text-xs font-semibold">{c.name}</SelectItem>)}
+                <SelectTrigger className={FIELD}><SelectValue placeholder={t.class} /></SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {classes.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center space-x-2 pt-1">
-              <Checkbox id="fixed-schedule" checked={addToFixed} onCheckedChange={(v) => setAddToFixed(!!v)} className="rounded-lg" />
-              <Label htmlFor="fixed-schedule" className="text-xs font-bold text-slate-600 cursor-pointer">Thêm vào lịch cố định hàng tuần</Label>
+            <div className="flex items-center gap-2.5">
+              <Checkbox id="fixed-schedule" checked={addToFixed} onCheckedChange={(v) => setAddToFixed(!!v)} className="rounded-md" />
+              <Label htmlFor="fixed-schedule" className="cursor-pointer text-sm font-medium text-slate-700">Thêm vào lịch cố định hàng tuần</Label>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">{t.startDate}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={d} onChange={(e) => setD(e.target.value)} /></div>
-              <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Bắt đầu</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-              <div><Label className="text-[10px] font-bold text-slate-500 mb-1 block">Kết thúc</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label className={LABEL}>{t.startDate}</Label><Input type="date" className={cn(FIELD, "px-2")} value={d} onChange={(e) => setD(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label className={LABEL}>Bắt đầu</Label><Input type="time" className={cn(FIELD, "px-2")} value={start} onChange={(e) => setStart(e.target.value)} /></div>
+              <div className="space-y-1.5"><Label className={LABEL}>Kết thúc</Label><Input type="time" className={cn(FIELD, "px-2")} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
             </div>
-            <div><Label className="text-xs font-bold text-slate-600 mb-1 block">{t.notes}</Label><Textarea className="rounded-2xl border-slate-200 text-xs" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label className={LABEL}>{t.notes}</Label><Textarea className="rounded-xl border-slate-200 text-sm" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
           </div>
-          <DialogFooter className="pt-2">
-            <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
-            <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={submit}>{t.save}</Button>
+          <DialogFooter className="gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
+            <Button variant="ghost" className={GHOST} onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+            <Button className={PRIMARY} onClick={submit}>{t.save}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -218,10 +233,10 @@ export default function Schedule() {
       for (const s of enrolled) {
         const r = rows[s.id];
         const existing = (att.data || []).find((x: any) => x.student_id === s.id);
-        
+
         if (existing) {
-          await supabase.from("attendance").update({ 
-            present: r.present, 
+          await supabase.from("attendance").update({
+            present: r.present,
             homework_note: r.note,
             attendance_start_time: start as any,
             attendance_end_time: end as any
@@ -247,57 +262,65 @@ export default function Schedule() {
 
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="rounded-3xl max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base font-black text-slate-900">
-              <span className="h-3 w-3 rounded-full" style={{ background: cls?.color || "#3b82f6" }} />
-              {cls?.name || event?.title}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-3 gap-2 my-2">
-            <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.date}</Label><Input type="date" className="rounded-xl h-9 text-xs" value={evDate} onChange={(e) => setEvDate(e.target.value)} /></div>
-            <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.startDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div><Label className="text-[10px] font-bold text-slate-400 block mb-1">{t.endDate}</Label><Input type="time" className="rounded-xl h-9 text-xs" value={end} onChange={(e) => setEnd(e.target.value)} /></div>
-          </div>
-          <div className="space-y-3 pt-2">
-            <Label className="text-xs font-bold text-slate-700">Danh sách điểm danh</Label>
-            {enrolled.length === 0 ? (
-              <div className="text-xs font-semibold text-slate-400 py-4 text-center">{t.nothingHere}</div>
-            ) : enrolled.map((s: any) => (
-              <div key={s.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-100/80 space-y-2">
-                <label className="flex items-center gap-2.5 font-bold text-xs text-slate-800 cursor-pointer">
-                  <Checkbox
-                    className="rounded-lg"
-                    checked={rows[s.id]?.present ?? true}
-                    onCheckedChange={(v) => setRows({ ...rows, [s.id]: { ...rows[s.id], present: !!v } })}
-                  />
-                  {s.name}
-                </label>
-                <Textarea
-                  placeholder={t.homework}
-                  className="text-xs rounded-xl bg-white border-slate-200"
-                  value={rows[s.id]?.note || ""}
-                  onChange={(e) => setRows({ ...rows, [s.id]: { ...rows[s.id], note: e.target.value } })}
-                />
+        <DialogContent className={cn(DLG, "max-h-[90vh] sm:max-w-lg")}>
+          <div className="h-1.5 shrink-0" style={{ background: resolveStudentColor(cls?.color, cls?.id ?? event?.class_id ?? "") }} />
+          <div className="flex max-h-[calc(90vh-6px)] flex-col">
+            <DialogHeader className="border-b border-slate-100 px-6 py-5 text-left">
+              <DialogTitle className="text-lg font-extrabold text-slate-900">{cls?.name || event?.title}</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1.5"><Label className={LABEL}>{t.date}</Label><Input type="date" className={cn(FIELD, "px-2")} value={evDate} onChange={(e) => setEvDate(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label className={LABEL}>{t.startDate}</Label><Input type="time" className={cn(FIELD, "px-2")} value={start} onChange={(e) => setStart(e.target.value)} /></div>
+                <div className="space-y-1.5"><Label className={LABEL}>{t.endDate}</Label><Input type="time" className={cn(FIELD, "px-2")} value={end} onChange={(e) => setEnd(e.target.value)} /></div>
               </div>
-            ))}
-          </div>
-          <DialogFooter className="flex justify-between gap-2 sm:justify-between pt-4">
-            <Button variant="ghost" className="rounded-xl text-xs font-bold text-red-600 hover:bg-red-50" onClick={() => { onOpenChange(false); onDelete(event); }}>
-              <Trash2 className="h-4 w-4" /> {t.delete}
-            </Button>
-            <div className="flex gap-2">
-              <Button variant="ghost" className="rounded-xl text-xs font-bold" onClick={() => onOpenChange(false)}>{t.cancel}</Button>
-              <Button className="rounded-xl text-xs font-bold bg-blue-600 text-white" onClick={save}><Check className="h-4 w-4" /> {t.save}</Button>
+              <div className="space-y-2.5">
+                <h3 className="text-sm font-bold text-slate-900">Danh sách điểm danh</h3>
+                {enrolled.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-6 text-center text-sm text-slate-500">{t.nothingHere}</div>
+                ) : enrolled.map((s: any) => (
+                  <div key={s.id} className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="flex cursor-pointer items-center gap-3 text-sm font-semibold text-slate-900">
+                      <Checkbox
+                        className="rounded-md"
+                        checked={rows[s.id]?.present ?? true}
+                        onCheckedChange={(v) => setRows({ ...rows, [s.id]: { ...rows[s.id], present: !!v } })}
+                      />
+                      <span
+                        className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-extrabold text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]"
+                        style={{ background: resolveStudentColor(s.color, s.id) }}
+                      >
+                        {(s.name || "?").charAt(0).toUpperCase()}
+                      </span>
+                      {s.name}
+                    </label>
+                    <Textarea
+                      placeholder={t.homework}
+                      className="rounded-xl border-slate-200 bg-slate-50 text-sm"
+                      value={rows[s.id]?.note || ""}
+                      onChange={(e) => setRows({ ...rows, [s.id]: { ...rows[s.id], note: e.target.value } })}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </DialogFooter>
+            <DialogFooter className="flex flex-row items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4 sm:justify-between">
+              <Button variant="ghost" className="h-10 gap-2 rounded-xl px-3 text-sm font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={() => { onOpenChange(false); onDelete(event); }}>
+                <Trash2 className="h-4 w-4" /> {t.delete}
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" className={GHOST} onClick={() => onOpenChange(false)}>{t.cancel}</Button>
+                <Button className={PRIMARY} onClick={save}><Check className="h-4 w-4" /> {t.save}</Button>
+              </div>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     );
   }
 
   useEffect(() => { document.title = `${t.schedule} — ${t.appName}`; }, [t]);
-  
+
   useEffect(() => {
     if (view === "week" && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
@@ -305,10 +328,10 @@ export default function Schedule() {
   }, [view]);
 
   const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
-  const days = Array.from({ length: view === "week" ? 7 : 35 }, (_, i) => 
+  const days = Array.from({ length: view === "week" ? 7 : 35 }, (_, i) =>
     addDays(view === "week" ? weekStart : startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1), { weekStartsOn: 1 }), i)
   );
-  
+
   const fromISO = format(days[0], "yyyy-MM-dd");
   const toISO = format(days[days.length - 1], "yyyy-MM-dd");
   const events = useEvents(fromISO, toISO);
@@ -377,7 +400,7 @@ export default function Schedule() {
       .filter((e) => !savedGoogleEventIds.has(e.id))
       .map((e) => {
         const linkedClass = (classes.data || []).find((c: any) => c.google_calendar_id === e.calendarId);
-        return linkedClass 
+        return linkedClass
           ? { ...e, title: linkedClass.name, class_id: linkedClass.id, source: "google", virtual: false }
           : { ...e, virtual: false };
       });
@@ -385,7 +408,7 @@ export default function Schedule() {
   }, [events.data, schedules.data, classes.data, days, googleEvents]);
 
   const classOf = (cid: string) => (classes.data || []).find((c: any) => c.id === cid);
-  
+
   const hasFixedSlot = (ev: any) =>
     (schedules.data || []).some((s: any) => {
       const eventDay = new Date(`${ev.event_date}T00:00:00`).getDay();
@@ -416,7 +439,7 @@ export default function Schedule() {
     qc.invalidateQueries({ queryKey: ["events"] });
   };
 
- const handlePrint = () => {
+  const handlePrint = () => {
     const printArea = document.querySelector(".print-area");
     if (!printArea) {
       window.print();
@@ -475,7 +498,7 @@ export default function Schedule() {
       setTimeout(() => {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
-        
+
         setTimeout(() => {
           if (document.body.contains(iframe)) {
             document.body.removeChild(iframe);
@@ -496,10 +519,28 @@ export default function Schedule() {
       .filter((e: any) => e.event_date === format(d, "yyyy-MM-dd"))
       .sort((a: any, b: any) => a.start_time.localeCompare(b.start_time));
 
+  /* ---------------- GIAO DIỆN ---------------- */
+  const vi = lang === "vi";
+  const colorOfEvent = (ev: any, cls: any) => (ev.source === "google" ? GOOGLE_COLOR : resolveStudentColor(cls?.color, cls?.id ?? ev.class_id ?? ""));
+  const openEvent = (ev: any) => {
+    if (ev.source === "google") {
+      const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
+      if (!targetClass) {
+        toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
+        return;
+      }
+      setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
+    } else {
+      setAttDialog({ open: true, event: ev });
+    }
+  };
+
   return (
-  <div className="p-2 sm:p-6 pt-0 sm:pt-2 max-w-7xl mx-auto space-y-4 sm:space-y-6 animate-in fade-in duration-300">     {/* CSS CHUYÊN DỤNG CHO IN A4 LANDSCAPE & ÉP HIỂN THỊ SỰ KIỆN */}
-{/* CSS CHUYÊN DỤNG CHO IN BẢNG THỜI KHÓA BIỂU A4 LANDSCAPE */}
-<style>{`
+    <div className="mx-auto max-w-7xl space-y-6 pb-12 font-['Be_Vietnam_Pro',sans-serif]">
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+
+      {/* CSS CHUYÊN DỤNG CHO IN BẢNG THỜI KHÓA BIỂU A4 LANDSCAPE */}
+      <style>{`
   @media print {
     /* 1. Ép trang in A4 Landscape gọn gàng trong 1 trang */
     @page {
@@ -553,90 +594,90 @@ export default function Schedule() {
     }
   }
 `}</style>
-      {/* HEADER WEBSITE */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print-hide">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">{t.schedule}</h1>
-          <p className="text-xs font-semibold text-slate-400 mt-1">
-            {lang === "vi" ? "Quản lý lịch dạy, ca học và điểm danh học sinh" : "Manage your weekly teaching sessions and attendance"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? -7 : -30))}>
-              <ChevronLeft className="h-4 w-4 text-slate-600" />
-            </Button>
-            <span className="px-3 text-xs font-bold text-slate-800 min-w-[90px] text-center">
-              {format(anchor, "MMM yyyy")}
-            </span>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? 7 : 30))}>
-              <ChevronRight className="h-4 w-4 text-slate-600" />
-            </Button>
+
+      {/* HERO */}
+      <div className="print-hide relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-8 sm:px-10 sm:py-10">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[#FFB547]" />
+        <div className="pointer-events-none absolute -bottom-28 right-40 hidden h-60 w-60 rounded-full border-[36px] border-white/[0.07] sm:block" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-lg space-y-2">
+            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{t.schedule}</h1>
+            <p className="text-sm leading-relaxed text-white/70">
+              {vi ? "Quản lý lịch dạy, ca học và điểm danh học sinh." : "Manage your weekly teaching sessions and attendance."}
+            </p>
           </div>
-          <div className="flex items-center bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60">
-            <button
-              onClick={() => setView("week")}
-              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "week" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
-            >
-              {t.weekView}
-            </button>
-            <button
-              onClick={() => setView("month")}
-              className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer", view === "month" ? "bg-white text-blue-600 shadow-xs" : "text-slate-500")}
-            >
-              {t.monthView}
-            </button>
-          </div>
-          
-          <Button 
-            onClick={handlePrint}
-            variant="outline"
-            className="h-10 px-3.5 rounded-2xl border-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 hover:bg-slate-50 cursor-pointer"
-          >
-            <Printer className="h-4 w-4 text-slate-600" /> In lịch dạy
-          </Button>
-          <Button 
+          <Button
             onClick={() => setEventDialog({ open: true, date: new Date() })}
-            className="h-10 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
+            className="h-11 shrink-0 gap-2 self-start rounded-xl bg-white px-5 text-sm font-bold text-[#0B1B3A] shadow-lg hover:bg-slate-100 sm:self-auto"
           >
-            <Plus className="h-4 w-4" /> {t.addEvent}
+            <Plus className="h-4 w-4" strokeWidth={2.5} /> {t.addEvent}
           </Button>
         </div>
       </div>
 
+      {/* TOOLBAR */}
+      <div className="print-hide flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
+          <Button variant="ghost" size="icon" aria-label="Trước" className="h-9 w-9 rounded-lg text-slate-600 hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? -7 : -30))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-[96px] px-2 text-center text-sm font-bold text-slate-900">{format(anchor, "MMM yyyy")}</span>
+          <Button variant="ghost" size="icon" aria-label="Sau" className="h-9 w-9 rounded-lg text-slate-600 hover:bg-white" onClick={() => setAnchor(addDays(anchor, view === "week" ? 7 : 30))}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+          {(["week", "month"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              className={cn(
+                "h-9 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                view === v ? "bg-white text-[#0B1B3A] shadow-sm" : "text-slate-500 hover:text-slate-900"
+              )}
+            >
+              {v === "week" ? t.weekView : t.monthView}
+            </button>
+          ))}
+        </div>
+
+        <Button onClick={handlePrint} variant="outline" className="ml-auto h-11 gap-2 rounded-xl border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <Printer className="h-4 w-4" /> In lịch dạy
+        </Button>
+      </div>
+
       {googleCalendarBusy && (
-        <div className="text-xs font-semibold text-blue-600 bg-blue-50 p-3 rounded-2xl border border-blue-100 flex items-center gap-2 print-hide">
+        <div className="print-hide flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600">
           <Clock className="h-4 w-4 animate-spin" /> Đang đồng bộ từ Google Calendar...
         </div>
       )}
 
       {/* TIÊU ĐỀ BẢN IN (Chỉ hiển thị khi in) */}
-      <div className="hidden print:block text-center mb-2">
-        <h2 className="text-base font-black uppercase text-slate-900 tracking-wide">
-          THỜI KHÓA BIỂU GIẢNG DẠY
-        </h2>
-        <p className="text-[11px] font-bold text-slate-600 mt-0.5">
+      <div className="mb-2 hidden text-center print:block">
+        <h2 className="text-base font-black uppercase tracking-wide text-slate-900">THỜI KHÓA BIỂU GIẢNG DẠY</h2>
+        <p className="mt-0.5 text-[11px] font-bold text-slate-600">
           Tuần: {format(weekDays[0], "dd/MM/yyyy")} - {format(weekDays[6], "dd/MM/yyyy")}
         </p>
       </div>
 
       {/* WEEK VIEW */}
       {view === "week" ? (
-        <Card className="rounded-3xl border-slate-200/80 bg-white shadow-xs overflow-hidden print:overflow-visible print-area">
+        <Card className="print-area overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs print:overflow-visible">
           <div className="overflow-x-auto print:overflow-visible">
             <div className="min-w-[900px] print:min-w-full">
-              
+
               {/* Header Thứ / Ngày - Loại bỏ sticky khi in */}
-              <div className="sticky top-0 print:static z-20 grid bg-slate-50 border-b border-slate-200/80" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
-                <div className="p-2 text-right text-[10px] font-black uppercase text-slate-400 border-r border-slate-200/60">
-                  Giờ
-                </div>
+              <div className="sticky top-0 z-20 grid border-b border-slate-200 bg-slate-50 print:static" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
+                <div className="border-r border-slate-200 p-2 text-right text-xs font-semibold text-slate-400">Giờ</div>
                 {weekDays.map((d, i) => {
                   const isToday = isSameDay(d, new Date());
                   return (
-                    <div key={i} className={cn("p-2 text-center border-r border-slate-200/60 last:border-r-0", isToday && "bg-blue-50/50")}>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">{t.daysLong[d.getDay()]}</div>
-                      <div className={cn("text-sm font-black mt-0.5", isToday ? "text-blue-600" : "text-slate-800")}>
+                    <div key={i} className="border-r border-slate-200 p-2 text-center last:border-r-0">
+                      <div className="text-xs font-semibold text-slate-500">{t.daysLong[d.getDay()]}</div>
+                      <div className={cn("mx-auto mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm font-extrabold", isToday ? "bg-[#0B1B3A] text-white" : "text-slate-800")}>
                         {format(d, "dd/MM")}
                       </div>
                     </div>
@@ -645,11 +686,11 @@ export default function Schedule() {
               </div>
 
               {/* Thân bảng giờ và các lớp học */}
-              <div ref={scrollContainerRef} className="overflow-y-auto print-scroll-container" style={{ maxHeight: SCHEDULE_MAX_HEIGHT }}>
-                <div className="grid relative" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
-                  <div className="border-r border-slate-200/60 bg-slate-50/50" style={{ height: totalH }}>
+              <div ref={scrollContainerRef} className="print-scroll-container overflow-y-auto" style={{ maxHeight: SCHEDULE_MAX_HEIGHT }}>
+                <div className="relative grid" style={{ gridTemplateColumns: "60px repeat(7, minmax(0, 1fr))" }}>
+                  <div className="border-r border-slate-200 bg-slate-50/60" style={{ height: totalH }}>
                     {hours.map((h) => (
-                      <div key={h} style={{ height: HOUR_HEIGHT }} className="border-b border-slate-100 text-[10px] font-bold text-slate-400 text-right pr-2 pt-1">
+                      <div key={h} style={{ height: HOUR_HEIGHT }} className="border-b border-slate-100 pr-2 pt-1 text-right text-xs font-medium text-slate-400">
                         {String(h).padStart(2, "0")}:00
                       </div>
                     ))}
@@ -657,10 +698,11 @@ export default function Schedule() {
                   {weekDays.map((d, di) => {
                     const evs = eventsForDay(d);
                     const laid = layoutColumns(evs as any);
+                    const isToday = isSameDay(d, new Date());
                     return (
                       <div
                         key={di}
-                        className="relative border-r border-slate-200/60 last:border-r-0 group cursor-pointer"
+                        className={cn("group relative cursor-pointer border-r border-slate-200 last:border-r-0", isToday && "bg-amber-50/50")}
                         style={{ height: totalH }}
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest("[data-event]")) return;
@@ -671,11 +713,12 @@ export default function Schedule() {
                         }}
                       >
                         {hours.map((h) => (
-                          <div key={h} className="border-b border-slate-100/80" style={{ height: HOUR_HEIGHT }} />
+                          <div key={h} className="border-b border-slate-100" style={{ height: HOUR_HEIGHT }} />
                         ))}
                         {laid.map(({ ev, col, cols }: any) => {
                           const cls = classOf(ev.class_id);
                           const isGoogleEvent = ev.source === "google";
+                          const color = colorOfEvent(ev, cls);
                           const startMin = toMinutes(ev.start_time) - HOUR_START * 60;
                           const endMin = toMinutes(ev.end_time) - HOUR_START * 60;
                           const top = (startMin / 60) * HOUR_HEIGHT;
@@ -685,41 +728,31 @@ export default function Schedule() {
                             <button
                               key={ev.id}
                               data-event
-                              className="absolute rounded-xl p-1.5 text-xs text-left overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between"
-                             style={{
-  top,
-  height,
-  left: `calc(${col * widthPct}% + 2px)`,
-  width: `calc(${widthPct}% - 4px)`,
-  // Tăng độ đậm nền: dùng mã màu gốc đầy đủ (đổi từ + "20" nhạt sang đậm đà + "35" hoặc đậm hơn)
-  backgroundColor: isGoogleEvent ? "#dbeafe" : (cls?.color ? cls.color + "35" : "#3b82f635"),
-  borderLeft: `4px solid ${isGoogleEvent ? "#2563eb" : (cls?.color || "#2563eb")}`,
-  borderStyle: ev.virtual ? "dashed" : "solid",
-  color: "#0f172a",
-}}
+                              className="absolute flex cursor-pointer flex-col justify-between overflow-hidden rounded-lg p-1.5 text-left text-xs transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                              style={{
+                                top,
+                                height,
+                                left: `calc(${col * widthPct}% + 2px)`,
+                                width: `calc(${widthPct}% - 4px)`,
+                                backgroundColor: tint(color),
+                                borderLeft: `4px solid ${color}`,
+                                borderStyle: ev.virtual ? "dashed" : "solid",
+                                color: "#0f172a",
+                              }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (ev.source === "google") {
-                                  const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
-                                  if (!targetClass) {
-                                    toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
-                                    return;
-                                  }
-                                  setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
-                                } else {
-                                  setAttDialog({ open: true, event: ev });
-                                }
+                                openEvent(ev);
                               }}
                             >
-                             <div>
-  <div className="font-black text-slate-950 truncate text-[11.5px] tracking-tight">
-    {isGoogleEvent ? ev.title : cls?.name || ev.title}
-  </div>
-  <div className="text-[9.5px] font-bold text-slate-700 flex items-center gap-0.5 mt-0.5">
-    <Clock className="h-2.5 w-2.5 text-blue-600 shrink-0 print-hide" />
-    <span>{ev.start_time.slice(0,5)} - {ev.end_time.slice(0,5)}</span>
-  </div>
-</div>
+                              <div>
+                                <div className="truncate text-[11.5px] font-extrabold tracking-tight text-slate-950">
+                                  {isGoogleEvent ? ev.title : cls?.name || ev.title}
+                                </div>
+                                <div className="mt-0.5 flex items-center gap-0.5 text-[10px] font-semibold text-slate-700">
+                                  <Clock className="print-hide h-2.5 w-2.5 shrink-0" style={{ color }} />
+                                  <span>{ev.start_time.slice(0, 5)} - {ev.end_time.slice(0, 5)}</span>
+                                </div>
+                              </div>
                             </button>
                           );
                         })}
@@ -733,10 +766,10 @@ export default function Schedule() {
         </Card>
       ) : (
         /* MONTH VIEW */
-        <Card className="rounded-3xl border-slate-200/80 bg-white p-4 shadow-xs overflow-x-auto print-area">
-          <div className="grid gap-2 grid-cols-7 min-w-[700px] print:min-w-full">
+        <Card className="print-area overflow-x-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+          <div className="grid min-w-[700px] grid-cols-7 gap-2 print:min-w-full">
             {weekDays.map((d, i) => (
-              <div key={i} className="text-xs font-black uppercase text-slate-400 text-center py-2">
+              <div key={i} className="py-2 text-center text-xs font-semibold text-slate-500">
                 {t.daysLong[d.getDay()]}
               </div>
             ))}
@@ -747,46 +780,38 @@ export default function Schedule() {
                 <div
                   key={i}
                   className={cn(
-                    "min-h-[100px] rounded-2xl border p-1.5 cursor-pointer hover:border-blue-400 transition-all",
-                    isToday ? "border-blue-500 bg-blue-50/30" : "border-slate-100 bg-slate-50/50"
+                    "min-h-[100px] cursor-pointer rounded-xl border p-1.5 transition-colors hover:border-slate-400",
+                    isToday ? "border-[#0B1B3A] bg-amber-50/60" : "border-slate-200 bg-slate-50/60"
                   )}
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest("[data-event]")) return;
                     setEventDialog({ open: true, date: d });
                   }}
                 >
-                  <div className={cn("text-xs font-black mb-1", isToday ? "text-blue-600" : "text-slate-700")}>
+                  <div className={cn("mb-1 text-xs font-extrabold", isToday ? "text-[#0B1B3A]" : "text-slate-600")}>
                     {format(d, "d/M")}
                   </div>
                   <div className="space-y-1">
                     {evs.map((ev: any) => {
                       const cls = classOf(ev.class_id);
                       const isGoogleEvent = ev.source === "google";
+                      const color = colorOfEvent(ev, cls);
                       return (
                         <div
                           key={ev.id}
                           data-event
-                          className="text-[9px] font-bold p-1 rounded-lg truncate hover:opacity-80 transition-opacity"
+                          className="truncate rounded-md p-1 text-[10px] font-semibold transition-opacity hover:opacity-80"
                           style={{
-  backgroundColor: isGoogleEvent ? "#dbeafe" : (cls?.color ? cls.color + "35" : "#3b82f635"),
-  color: "#0f172a",
-  borderLeft: `3px solid ${isGoogleEvent ? "#2563eb" : (cls?.color || "#2563eb")}`
-}}
+                            backgroundColor: tint(color),
+                            color: "#0f172a",
+                            borderLeft: `3px solid ${color}`,
+                          }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (ev.source === "google") {
-                              const targetClass = (classes.data || []).find((c: any) => c.google_calendar_id === ev.calendarId);
-                              if (!targetClass) {
-                                toast.error("Lịch Google này chưa được liên kết với lớp học nào.");
-                                return;
-                              }
-                              setAttDialog({ open: true, event: { ...ev, class_id: targetClass.id, virtual: true } });
-                            } else {
-                              setAttDialog({ open: true, event: ev });
-                            }
+                            openEvent(ev);
                           }}
                         >
-                          {ev.start_time.slice(0,5)} {isGoogleEvent ? ev.title : cls?.name || ev.title}
+                          {ev.start_time.slice(0, 5)} {isGoogleEvent ? ev.title : cls?.name || ev.title}
                         </div>
                       );
                     })}
@@ -801,17 +826,18 @@ export default function Schedule() {
       {/* DIALOGS */}
       <EventDialog open={eventDialog.open} onOpenChange={(o) => setEventDialog({ open: o })} date={eventDialog.date} defaultHour={(eventDialog as any).event?._newHour} classes={classes.data || []} />
       <AttendanceDialog open={attDialog.open} onOpenChange={(o) => setAttDialog({ open: o })} event={attDialog.event} students={students.data || []} enrollments={enrollments.data || []} classes={classes.data || []} onDelete={requestDelete} />
-      
+
       <AlertDialog open={confirmDel.open} onOpenChange={(o) => setConfirmDel({ open: o, ev: o ? confirmDel.ev : undefined })}>
-        <AlertDialogContent className="rounded-3xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-black text-slate-900">{(t as any).confirmDeleteTitle || t.confirmDelete}</AlertDialogTitle>
-            <AlertDialogDescription className="text-xs font-semibold text-slate-500">{(t as any).confirmDeleteDesc || "Hành động này không thể hoàn tác."}</AlertDialogDescription>
+        <AlertDialogContent className={cn(DLG, "sm:max-w-sm")}>
+          <div className="h-1.5 bg-rose-500" />
+          <AlertDialogHeader className="space-y-2 px-6 py-5 text-left">
+            <AlertDialogTitle className="text-lg font-extrabold text-slate-900">{(t as any).confirmDeleteTitle || t.confirmDelete}</AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-slate-500">{(t as any).confirmDeleteDesc || "Hành động này không thể hoàn tác."}</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl font-bold">{t.cancel}</AlertDialogCancel>
+          <AlertDialogFooter className="gap-2 border-t border-slate-100 bg-slate-50 px-6 py-4">
+            <AlertDialogCancel className="mt-0 h-10 rounded-xl border-slate-200 px-4 text-sm font-semibold">{t.cancel}</AlertDialogCancel>
             <AlertDialogAction
-              className="rounded-xl font-bold bg-red-600 hover:bg-red-700 text-white"
+              className="h-10 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700"
               onClick={async () => {
                 const ev = confirmDel.ev;
                 setConfirmDel({ open: false });
