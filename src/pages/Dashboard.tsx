@@ -686,7 +686,7 @@ export default function Dashboard() {
           <div className="max-h-[22rem] space-y-2 overflow-y-auto pr-1">
             {groupedUpcoming.map((item) => (
               <Link
-                to="/students"
+                to={`/students/${item.studentId}`}
                 key={item.studentId}
                 className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-3.5 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
               >
