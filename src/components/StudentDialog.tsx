@@ -10,10 +10,9 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { PALETTE, resolveStudentColor } from "@/lib/studentColor";
 
-// Giá trị lưu trong cột payment_mode. "monthly" khớp với trang danh sách;
-// nếu DB của bạn dùng tên khác cho "Theo buổi", đổi ở đây.
+// Giá trị lưu trong cột payment_mode, khớp với StudentBill và Dashboard ("monthly" / "by_session").
 const MONTHLY = "monthly";
-const PER_SESSION = "per_session";
+const PER_SESSION = "by_session";
 
 const GRADES = Array.from({ length: 12 }, (_, i) => String(i + 1));
 

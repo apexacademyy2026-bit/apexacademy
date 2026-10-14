@@ -13,6 +13,7 @@ import {
   GraduationCap,
   BookOpen,
   Clock,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,7 @@ import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { cn } from "@/lib/utils";
 import { resolveStudentColor } from "@/lib/studentColor";
+import { getBillingPeriod, shortDate } from "@/lib/Billingperiod";
 
 /* Design tokens: navy #0B1B3A · hổ phách #FFB547 · nền trung tính slate (giống trang Học sinh) */
 const CARD = "rounded-2xl border border-slate-200 bg-white p-6 shadow-xs";
@@ -68,6 +70,7 @@ export default function StudentDetail() {
   const [editRowTime, setEditRowTime] = useState<Record<string, { start: string; end: string }>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [payFilter, setPayFilter] = useState<"unpaid" | "paid" | "all">("all");
+  const [savingBillingDay, setSavingBillingDay] = useState(false);
 
   // Fetch thông tin học sinh
   const { data: student, isLoading: studentLoading } = useQuery({
@@ -239,6 +242,19 @@ export default function StudentDetail() {
     );
   }
 
+  // Lưu ngày thu học phí (1–31) vào cột billing_day của bảng students
+  const saveBillingDay = async (val: string) => {
+    const billing_day = val === "none" ? null : Number(val);
+    setSavingBillingDay(true);
+    const { error } = await supabase.from("students").update({ billing_day } as any).eq("id", student.id);
+    setSavingBillingDay(false);
+    if (error) return toast.error(error.message);
+    toast.success("Đã lưu ngày thu học phí");
+    qc.invalidateQueries({ queryKey: ["student", id] });
+    qc.invalidateQueries({ queryKey: ["students"] });
+  };
+  const billingPeriod = Number(student.billing_day) >= 1 ? getBillingPeriod(Number(student.billing_day)) : null;
+
   /* ---------------- GIAO DIỆN ---------------- */
   const accent = resolveStudentColor(student.color, student.id);
 
@@ -270,6 +286,11 @@ export default function StudentDetail() {
                   <Calendar className="h-3.5 w-3.5" /> Bắt đầu {fmtDate(student.start_date || student.created_at)}
                 </span>
                 <span className={HERO_PILL}>{student.payment_mode === "monthly" ? "Theo tháng" : "Theo buổi"}</span>
+                {student.billing_day ? (
+                  <span className={HERO_PILL}>
+                    <CalendarClock className="h-3.5 w-3.5" /> Thu ngày {student.billing_day}
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>
@@ -297,6 +318,30 @@ export default function StudentDetail() {
               <InfoRow icon={Mail} label="Email" value="Chưa cập nhật" tone="font-medium text-slate-400" />
               <InfoRow icon={Phone} label="Số điện thoại" value={student.phone || "Chưa cập nhật"} tone={student.phone ? "text-indigo-700" : "font-medium text-slate-400"} />
               <InfoRow icon={GraduationCap} label="Khối lớp" value={student.grade ? `Lớp ${student.grade}` : "Chưa cập nhật"} tone={student.grade ? undefined : "font-medium text-slate-400"} />
+              <InfoRow
+                icon={CalendarClock}
+                label="Ngày thu học phí"
+                value={
+                  <Select value={student.billing_day ? String(student.billing_day) : "none"} onValueChange={saveBillingDay} disabled={savingBillingDay}>
+                    <SelectTrigger className={cn(INPUT, "h-8 w-44")} aria-label="Ngày thu học phí">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64 rounded-xl">
+                      <SelectItem value="none">Chưa đặt</SelectItem>
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                        <SelectItem key={day} value={String(day)}>
+                          Ngày {day} hằng tháng
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                }
+              />
+              {billingPeriod && (
+                <p className="px-1 text-xs text-slate-500">
+                  Kỳ học phí hiện tại: {shortDate(billingPeriod.start)} – {shortDate(billingPeriod.end)} (các buổi trong khoảng này tính vào lần thu kế tiếp)
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <h2 className="text-base font-bold text-slate-900">Phụ huynh</h2>

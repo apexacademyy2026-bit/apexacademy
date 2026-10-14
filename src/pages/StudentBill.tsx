@@ -44,6 +44,8 @@ export default function StudentBill() {
     enabled: !!id,
   });
 
+  // Chỉ lấy các buổi học sinh có mặt (present = true):
+  // buổi vắng hoặc chưa điểm danh không nằm trong danh sách này nên không bị tính học phí
   const { data: attendance } = useQuery({
     queryKey: ["student-attendance-all", id],
     queryFn: async () =>
@@ -135,26 +137,32 @@ export default function StudentBill() {
         cycles.push({ periodStart: new Date(cur), periodEnd });
         cur = next;
       }
-      return cycles.map(({ periodStart, periodEnd }) => {
-        const inCycle = sortedAttendance.filter((a: any) => {
-          if (!a?.schedule_events?.event_date) return false;
-          const d = new Date(a.schedule_events.event_date);
-          return d >= periodStart && d <= periodEnd;
-        });
-        const m = periodStart.getMonth() + 1;
-        const y = periodStart.getFullYear();
-        const label = `${safeName}_Thang${m}_${y}`;
-        return {
-          cycle_type: "monthly",
-          cycle_label: label,
-          period_start: periodStart.toISOString().slice(0, 10),
-          period_end: periodEnd.toISOString().slice(0, 10),
-          amount: Number(student.fee_per_month || 0),
-          description: `${fmtDate(periodStart)} – ${fmtDate(periodEnd)}`,
-          attendances: inCycle,
-          autoPaid: false,
-        };
-      });
+      return cycles
+        .map(({ periodStart, periodEnd }) => {
+          const inCycle = sortedAttendance.filter((a: any) => {
+            if (!a?.schedule_events?.event_date) return false;
+            const d = new Date(a.schedule_events.event_date);
+            return d >= periodStart && d <= periodEnd;
+          });
+          const m = periodStart.getMonth() + 1;
+          const y = periodStart.getFullYear();
+          const label = `${safeName}_Thang${m}_${y}`;
+          return {
+            cycle_type: "monthly",
+            cycle_label: label,
+            period_start: periodStart.toISOString().slice(0, 10),
+            period_end: periodEnd.toISOString().slice(0, 10),
+            amount: Number(student.fee_per_month || 0),
+            description: `${fmtDate(periodStart)} – ${fmtDate(periodEnd)}`,
+            attendances: inCycle,
+            autoPaid: false,
+          };
+        })
+        // Kỳ mà học sinh không có buổi nào có mặt (vắng cả kỳ / chưa điểm danh) thì không tính học phí,
+        // trừ khi kỳ đó đã có thanh toán được ghi nhận
+        .filter(
+          (b) => b.attendances.length > 0 || (payments || []).some((p: any) => p.cycle_label === b.cycle_label)
+        );
     } else {
       const sessionPayments = (payments || []).filter((p: any) => p.cycle_type === "session");
       return availableAttendance.map((a: any) => {
