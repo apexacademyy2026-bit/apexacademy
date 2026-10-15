@@ -89,17 +89,22 @@ export default function StudentBill() {
 
   // Chỉ lấy các buổi học sinh có mặt (present = true):
   // buổi vắng hoặc chưa điểm danh không nằm trong danh sách này nên không bị tính học phí
+  // Khóa riêng cho hóa đơn: không dùng chung với trang lịch sử điểm danh (trang đó cần cả buổi vắng),
+  // nếu không hóa đơn có thể lấy nhầm dữ liệu đã lưu sẵn của trang kia và tính tiền cả buổi vắng.
+  // Luôn tải lại khi mở trang, và lọc present = true thêm một lần ở phía ứng dụng cho chắc.
   const { data: attendance } = useQuery({
-    queryKey: ["student-attendance-all", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("attendance")
-          .select("*, schedule_events(event_date, start_time, end_time, class_id)")
-          .eq("student_id", id)
-          .eq("present", true)
-      ).data || [],
+    queryKey: ["student-bill-attendance", id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("attendance")
+        .select("*, schedule_events(event_date, start_time, end_time, class_id)")
+        .eq("student_id", id)
+        .eq("present", true);
+      return (data || []).filter((a: any) => a.present === true);
+    },
     enabled: !!id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: payments } = useQuery({
@@ -443,15 +448,21 @@ export default function StudentBill() {
     toast.success(t?.save || "Saved");
   };
 
+  // Làm mới dữ liệu điểm danh của hóa đơn và của trang lịch sử điểm danh
+  const refreshAttendance = () => {
+    qc.invalidateQueries({ queryKey: ["student-bill-attendance", id] });
+    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+  };
+
   const updateFee = async (a: any, val: string) => {
     const num = val === "" ? null : Number(val);
     await supabase.from("attendance").update({ fee_override: num }).eq("id", a.id);
-    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+    refreshAttendance();
   };
 
   const updateHomeworkNote = async (a: any, val: string) => {
     await supabase.from("attendance").update({ homework_note: val }).eq("id", a.id);
-    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+    refreshAttendance();
   };
 
   const addAttendance = async () => {
@@ -479,7 +490,7 @@ export default function StudentBill() {
     toast.success(t?.save || "Saved");
     setAddForm({ date: new Date().toISOString().slice(0, 10), class_id: myClasses[0]?.id || "", note: "" });
     setAddOpen(false);
-    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+    refreshAttendance();
   };
 
   // Tắt chế độ chỉnh sửa trước khi in / lưu ảnh để hoá đơn luôn ở dạng sạch
