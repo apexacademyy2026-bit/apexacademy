@@ -37,6 +37,9 @@ const shortDate = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
 type SessionItem = { key: string; classId: string; className: string; date: string; start: string; end: string; eventId: string | null };
 
+// Một dòng trong chi tiết lương mặc định: học phí tháng cố định của một lớp mà học sinh đang học
+type SalaryItem = { classId: string; className: string; fee: number };
+
 // Các buổi học của một lớp trong khoảng [from, to] (YYYY-MM-DD, gồm cả hai đầu):
 // theo lịch cố định hằng tuần + buổi thêm tay, bỏ các buổi đã hủy, và nằm trong ngày bắt đầu/kết thúc của lớp
 const buildClassSessions = (c: any, from: string, to: string, schedules: any[], events: any[]): SessionItem[] => {
@@ -148,6 +151,7 @@ export default function Dashboard() {
   const [attendanceMap, setAttendanceMap] = useState<Record<string, Record<string, boolean>>>({});
   const [savingAttendance, setSavingAttendance] = useState(false);
   const [showCollectedModal, setShowCollectedModal] = useState(false);
+  const [showSalaryModal, setShowSalaryModal] = useState(false);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -535,6 +539,51 @@ export default function Dashboard() {
     [upcomingByStudent],
   );
 
+  // Lương mặc định theo từng học sinh: học phí tháng cố định của mỗi lớp học sinh đó đang học.
+  // Không phụ thuộc kỳ thu, lịch học, điểm danh hay bộ lọc thời gian.
+  const salaryByStudent = useMemo(() => {
+    const classById = new Map<string, any>((classes.data || []).map((c: any) => [String(c.id), c]));
+    const studentIds = new Set(students.map((s: any) => String(s.id)));
+    const seen = new Set<string>();
+    const map = new Map<string, { total: number; items: SalaryItem[] }>();
+    (enrollments.data || []).forEach((e: any) => {
+      const sid = String(e.student_id);
+      if (!studentIds.has(sid)) return;
+      const pairKey = `${sid}|${e.class_id}`;
+      if (seen.has(pairKey)) return; // tránh cộng trùng nếu một học sinh bị ghi danh hai lần vào cùng lớp
+      seen.add(pairKey);
+      const cls = classById.get(String(e.class_id));
+      if (!cls) return;
+      const fee = Number(cls.fee_per_month || 0);
+      const entry = map.get(sid) || { total: 0, items: [] };
+      entry.total += fee;
+      entry.items.push({ classId: String(cls.id), className: cls.name || "Lớp học", fee });
+      map.set(sid, entry);
+    });
+    return map;
+  }, [students, classes.data, enrollments.data]);
+
+  // Tổng lương mặc định = tổng của tất cả học sinh ở trên
+  const defaultSalary = useMemo(
+    () => Array.from(salaryByStudent.values()).reduce((sum, v) => sum + v.total, 0),
+    [salaryByStudent],
+  );
+
+  // Danh sách trong popup lương mặc định: học sinh nhiều tiền nhất lên đầu, bằng nhau thì xếp theo tên
+  const salaryStudentList = useMemo(
+    () =>
+      students
+        .map((s: any) => {
+          const info = salaryByStudent.get(String(s.id));
+          return { student: s, total: info?.total || 0, items: info?.items || [] };
+        })
+        .sort(
+          (a: any, b: any) =>
+            b.total - a.total || String(a.student.name || "").localeCompare(String(b.student.name || ""), "vi"),
+        ),
+    [students, salaryByStudent],
+  );
+
   // Danh sách học sinh trong popup, sắp xếp theo ngày thu học phí sắp tới (kỳ kết thúc sớm nhất lên đầu).
   // Học sinh chưa đặt ngày thu xếp cuối; cùng ngày thu thì xếp theo tên.
   const studentsByBillingDate = useMemo(
@@ -597,16 +646,6 @@ export default function Dashboard() {
     return (attendanceAll.data || []).filter((a: any) => evIds.has(a.event_id) && a.present);
   }, [attendanceAll.data, filteredEvents]);
 
-  const totalRevenue = students.reduce((totalSum, student: any) => {
-    const studentCycles = student.cycles || [];
-    const studentTotal = studentCycles.reduce((cycleSum: number, cycle: any) => {
-      const sessionsCount = cycle.sessionsCount || cycle.attendance?.length || 0;
-      const feePerSession = cycle.fee_per_session || student.fee_per_session || 0;
-      return cycleSum + sessionsCount * feePerSession;
-    }, 0);
-    return totalSum + studentTotal;
-  }, 0);
-
   const activeStudentIds = new Set<string>();
   filteredPayments.forEach((p: any) => p.student_id && activeStudentIds.add(p.student_id));
   filteredAttendance.forEach((a: any) => a.student_id && activeStudentIds.add(a.student_id));
@@ -617,7 +656,6 @@ export default function Dashboard() {
   const activeClasses = activeClassIds.size;
 
   const paymentsCount = filteredPayments.length;
-  const avgPayment = paymentsCount > 0 ? totalRevenue / paymentsCount : 0;
 
   // Lấy danh sách hóa đơn
   const rawUpcoming: { studentId: string; studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
@@ -760,7 +798,7 @@ export default function Dashboard() {
     { key: "classes", to: "/classes", label: vi ? "Lớp có hoạt động" : "Active classes", value: activeClasses, icon: GraduationCap, tone: "bg-emerald-50 text-emerald-600" },
     { key: "tuition", onClick: () => setShowCollectedModal(true), label: vi ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition", value: formatVND(totalUpcomingFee), icon: Wallet, tone: "bg-amber-50 text-amber-600" },
     { key: "payments", to: "/students", label: vi ? "Số lần thanh toán" : "Payments count", value: paymentsCount, icon: CalendarClock, tone: "bg-rose-50 text-rose-600" },
-    { key: "avg", to: "/students", label: vi ? "Trung bình / lần thu" : "Average / payment", value: formatVND(avgPayment), icon: TrendingUp, tone: "bg-violet-50 text-violet-600" },
+    { key: "avg", onClick: () => setShowSalaryModal(true), label: vi ? "Lương mặc định" : "Default salary", value: formatVND(defaultSalary), icon: TrendingUp, tone: "bg-violet-50 text-violet-600" },
     { key: "pending", to: "/students", label: vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period", value: formatVND(pendingTotal), icon: Hourglass, tone: "bg-[#FFB547] text-[#0B1B3A]", highlight: true },
   ];
 
@@ -1145,6 +1183,65 @@ export default function Dashboard() {
                   </div>
                 );
               })
+            ) : (
+              <div className="py-4 text-center text-sm text-slate-500">Chưa có dữ liệu học sinh</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* POPUP CHI TIẾT LƯƠNG MẶC ĐỊNH */}
+      <Dialog open={showSalaryModal} onOpenChange={setShowSalaryModal}>
+        <DialogContent className="max-h-[90vh] gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
+          <div className="h-1.5 bg-[#FFB547]" />
+          <DialogHeader className="space-y-1 border-b border-slate-100 px-6 py-5 text-left">
+            <DialogTitle className="text-lg font-extrabold text-slate-900">
+              {vi ? "Chi tiết lương mặc định" : "Default salary details"}
+            </DialogTitle>
+            <p className="text-sm text-slate-500">
+              {vi ? "Tổng cộng" : "Total"} <span className="font-bold text-slate-900">{formatVND(defaultSalary)}</span>
+              {` · ${salaryStudentList.length} ${vi ? "học sinh" : "students"}`}
+            </p>
+            <p className="text-xs text-slate-400">
+              {vi
+                ? "Tổng học phí tháng cố định của các lớp mỗi học sinh đang học."
+                : "Fixed monthly fee of every class each student is enrolled in."}
+            </p>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
+            {salaryStudentList.length > 0 ? (
+              salaryStudentList.map(({ student, total, items }: any) => (
+                <Link
+                  key={student.id}
+                  to={`/students/${student.id}`}
+                  onClick={() => setShowSalaryModal(false)}
+                  className="group flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className={cn("h-10 w-10 shrink-0 rounded-xl text-sm", bubble)} style={{ background: colorOf(student.id) }}>
+                      {student.name ? student.name.slice(0, 2).toUpperCase() : "HS"}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-slate-900">{student.name}</div>
+                      {items.length === 0 ? (
+                        <div className="text-xs text-slate-400">{vi ? "Chưa ghi danh lớp nào" : "Not enrolled in any class"}</div>
+                      ) : (
+                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-slate-500">
+                          {items.map((it: SalaryItem) => (
+                            <span key={it.classId}>
+                              {it.className}: <span className="font-semibold text-slate-700">{formatVND(it.fee)}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-sm font-extrabold text-violet-600">{formatVND(total)}</span>
+                    <ChevronRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </Link>
+              ))
             ) : (
               <div className="py-4 text-center text-sm text-slate-500">Chưa có dữ liệu học sinh</div>
             )}

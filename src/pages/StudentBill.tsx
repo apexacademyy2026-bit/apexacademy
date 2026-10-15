@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar } from "lucide-react";
+import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,6 +18,45 @@ import { toPng } from "html-to-image";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { resolveStudentColor } from "@/lib/studentColor";
 
+// Tên và số điện thoại giáo viên sửa trên hoá đơn được nhớ trong trình duyệt (dùng chung cho mọi học sinh)
+const TEACHER_NAME_KEY = "bill_teacher_name";
+const TEACHER_PHONE_KEY = "bill_teacher_phone";
+const readStored = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+const writeStored = (key: string, val: string | null) => {
+  try {
+    if (val === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, val);
+  } catch {
+    /* bỏ qua nếu trình duyệt chặn lưu trữ */
+  }
+};
+
+/* ---------- Thành phần nhỏ dùng trong hoá đơn ---------- */
+
+function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <div className="text-xs font-medium text-slate-400">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-800">{children}</div>
+    </div>
+  );
+}
+
+function BankRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-slate-200/80 py-2 last:border-0">
+      <dt className="shrink-0 text-xs text-slate-500">{label}</dt>
+      <dd className="min-w-0 break-words text-right text-sm font-semibold text-slate-900">{children}</dd>
+    </div>
+  );
+}
+
 export default function StudentBill() {
   const { id } = useParams();
   const { t, profile, user } = useApp();
@@ -29,9 +68,13 @@ export default function StudentBill() {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({ date: new Date().toISOString().slice(0, 10), class_id: "", note: "" });
   const [showAtt, setShowAtt] = useState(true);
+  const [editing, setEditing] = useState(false);
   const [feeDraft, setFeeDraft] = useState<Record<string, string>>({});
   const [homeworkDraft, setHomeworkDraft] = useState<Record<string, string>>({});
   const [footnote, setFootnote] = useState<string>("");
+  // null = chưa sửa, dùng thông tin trong hồ sơ
+  const [teacherNameOv, setTeacherNameOv] = useState<string | null>(() => readStored(TEACHER_NAME_KEY));
+  const [teacherPhoneOv, setTeacherPhoneOv] = useState<string | null>(() => readStored(TEACHER_PHONE_KEY));
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
   const [selectedCycles, setSelectedCycles] = useState<Set<string>>(new Set());
   const billRef = useRef<HTMLDivElement | null>(null);
@@ -268,6 +311,47 @@ export default function StudentBill() {
     : (displayBill?.attendances?.length || 0);
   const billNum = `${safeStudentName}_${sessionsCount}BUOI`;
 
+  // Thông tin phục vụ giao diện hoá đơn
+  const billPaid =
+    mode === "by_session"
+      ? false
+      : selectedCycles.size > 0
+        ? selectedCyclesArray.length > 0 && selectedCyclesArray.every((b: any) => isPaid(b))
+        : isPaid(current);
+
+  // Tên và số điện thoại giáo viên: lấy từ hồ sơ, trừ khi đã sửa trực tiếp trên hoá đơn
+  const profileTeacherName = String(profile?.display_name || t?.teacher || "Giáo viên");
+  const profileTeacherPhone = String((profile as any)?.phone || "");
+  const teacherName = (teacherNameOv ?? "").trim() || profileTeacherName;
+  const teacherPhone = teacherPhoneOv !== null ? teacherPhoneOv.trim() : profileTeacherPhone;
+  const teacherInitial = teacherName.trim().charAt(0).toUpperCase() || "G";
+  const teacherEdited = teacherNameOv !== null || teacherPhoneOv !== null;
+  const issueDate = fmtDate(new Date());
+
+  const onTeacherNameChange = (val: string) => {
+    setTeacherNameOv(val);
+    writeStored(TEACHER_NAME_KEY, val);
+  };
+  const onTeacherNameBlur = () => {
+    // Để trống tên thì quay về tên trong hồ sơ
+    if (!(teacherNameOv ?? "").trim()) {
+      setTeacherNameOv(null);
+      writeStored(TEACHER_NAME_KEY, null);
+    }
+  };
+  const onTeacherPhoneChange = (val: string) => {
+    setTeacherPhoneOv(val);
+    writeStored(TEACHER_PHONE_KEY, val);
+  };
+  const resetTeacherInfo = () => {
+    setTeacherNameOv(null);
+    setTeacherPhoneOv(null);
+    writeStored(TEACHER_NAME_KEY, null);
+    writeStored(TEACHER_PHONE_KEY, null);
+  };
+
+  /* ---------- Hành động ---------- */
+
   const paySelectedSessions = async () => {
     if (!student || selectedSessionIds.size === 0) {
       toast.error((t as any)?.selectAtLeastOne || "Please select at least 1 session!");
@@ -398,22 +482,36 @@ export default function StudentBill() {
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
   };
 
-  const handlePrint = () => {
-    window.print();
+  // Tắt chế độ chỉnh sửa trước khi in / lưu ảnh để hoá đơn luôn ở dạng sạch
+  const withViewMode = async (fn: () => void | Promise<void>) => {
+    if (editing) {
+      setEditing(false);
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    await fn();
   };
 
-  const saveAsImage = async () => {
-    if (!billRef.current) return;
-    try {
-      const dataUrl = await toPng(billRef.current, { cacheBust: true, backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${displayBill?.cycle_label || "bill"}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (e: any) {
-      toast.error(e.message || "Error");
-    }
-  };
+  const handlePrint = () => withViewMode(() => window.print());
+
+  const saveAsImage = () =>
+    withViewMode(async () => {
+      if (!billRef.current) return;
+      try {
+        const dataUrl = await toPng(billRef.current, {
+          cacheBust: true,
+          backgroundColor: "#ffffff",
+          pixelRatio: 2,
+          // Bỏ các phần chỉ dành cho màn hình (nút, ô nhập...) khỏi ảnh
+          filter: (node) => !(node instanceof HTMLElement && node.classList?.contains("no-print")),
+        });
+        const link = document.createElement("a");
+        link.download = `${displayBill?.cycle_label || "bill"}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch (e: any) {
+        toast.error(e.message || "Error");
+      }
+    });
 
   if (!student) return <div className="p-8 text-center text-muted-foreground flex items-center justify-center min-h-[400px]">Đang tải dữ liệu học sinh...</div>;
 
@@ -436,8 +534,8 @@ export default function StudentBill() {
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
-            padding: 24px !important;
             border: none !important;
+            border-radius: 0 !important;
             box-shadow: none !important;
             background: #ffffff !important;
           }
@@ -686,266 +784,331 @@ export default function StudentBill() {
           </Card>
         </div>
 
-        {/* RIGHT COLUMN: Interactive Bill Preview Card */}
-        <div className="lg:col-span-7 xl:col-span-8 flex justify-center">
+        {/* RIGHT COLUMN: Hoá đơn */}
+        <div className="lg:col-span-7 xl:col-span-8 flex justify-center font-['Be_Vietnam_Pro',sans-serif]">
           {displayBill && (
-            <Card
-              ref={billRef as any}
-              className="printable-bill-card w-full max-w-2xl p-8 border rounded-2xl shadow-xl bg-white text-slate-900 space-y-6 relative overflow-hidden"
-            >
-              <div 
-                className="absolute top-0 left-0 right-0 h-2" 
-                style={{ backgroundColor: accent }} 
-              />
-              
-              {/* Header */}
-              <div className="flex items-start justify-between border-b pb-4 pt-1">
-                <div className="space-y-1">
-                  <div className="text-3xl font-black tracking-tight uppercase" style={{ color: accent }}>
-                    {(t as any)?.invoice || "HOÁ ĐƠN THANH TOÁN"}
-                  </div>
-                  <div className="text-xs text-slate-400 font-mono tracking-wide">
-                    {(t as any)?.billNo || "Mã HD"}: <span className="font-bold text-slate-600">{billNum}</span>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-base text-slate-800">{profile?.display_name || t?.teacher || "Giáo viên"}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{(profile as any)?.phone || ""}</div>
+            <div className="w-full max-w-2xl space-y-4">
+
+              {/* Thanh công cụ (không in, không vào ảnh) */}
+              <div className="no-print flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-slate-500">Xem trước hóa đơn</div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-9 gap-1.5 rounded-xl border-slate-200 text-sm font-semibold text-slate-700"
+                    onClick={() => setShowAtt((s) => !s)}
+                  >
+                    {showAtt
+                      ? <><EyeOff className="h-4 w-4" /> {(t as any)?.hide || "Ẩn danh sách buổi học"}</>
+                      : <><Eye className="h-4 w-4" /> {(t as any)?.show || "Hiện danh sách buổi học"}</>}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={editing ? "default" : "outline"}
+                    className={`h-9 gap-1.5 rounded-xl text-sm font-semibold ${
+                      editing ? "bg-[#0B1B3A] text-white hover:bg-[#13285a]" : "border-slate-200 text-slate-700"
+                    }`}
+                    onClick={() => setEditing((e) => !e)}
+                  >
+                    {editing
+                      ? <><Check className="h-4 w-4" /> Xong</>
+                      : <><Pencil className="h-4 w-4" /> Sửa hóa đơn</>}
+                  </Button>
                 </div>
               </div>
 
-              {/* Student Summary */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 text-xs">
-                <div className="space-y-1.5">
-                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                    {(t as any)?.billedTo || "NGƯỜI NHẬN HOÁ ĐƠN"}
-                  </div>
-                  <div className="font-bold text-sm text-slate-900 inline-block px-2.5 py-1 rounded-lg bg-white border border-slate-200/80 shadow-sm">
-                    {student.name}
-                  </div>
-                  {(student as any)?.phone && (
-                    <p className="text-xs text-slate-500">{(student as any).phone}</p>
-                  )}
-                  {student.grade && (
-                    <div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200/60 text-slate-700">
-                        Lớp: {student.grade}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="text-right space-y-2">
-                  <div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      {mode === "monthly" 
-                        ? (t?.feePerMonth || "HỌC PHÍ / THÁNG") 
-                        : ((t as any)?.feePerSession || "HỌC PHÍ / BUỔI")}
-                    </div>
-                    <div className="font-bold text-sm text-slate-800 mt-0.5">
-                      {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                      {mode === "monthly" 
-                        ? (t?.period || "KỲ THANH TOÁN") 
-                        : ((t as any)?.billedSessions || "SỐ BUỔI TÍNH PHÍ")}
-                    </div>
-                    <div className="font-semibold text-xs text-slate-700 mt-0.5">
-                      {mode === "monthly" 
-                        ? (displayBill.period_start ? `${fmtDate(displayBill.period_start)} – ${fmtDate(displayBill.period_end)}` : displayBill.description) 
-                        : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "buổi")}`}
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* ===== HOÁ ĐƠN ===== */}
+              <div
+                ref={billRef}
+                className="printable-bill-card relative w-full overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-900 shadow-xl"
+              >
+                {/* Dải màu của học sinh */}
+                <div className="h-2 w-full" style={{ background: accent }} />
 
-              {/* Sessions Table */}
-              {displayBill.attendances?.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      {(t as any)?.sessionDetails || "CHI TIẾT CÁC BUỔI HỌC"}
-                    </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="no-print h-7 text-xs text-slate-500 hover:text-slate-800"
-                      onClick={() => setShowAtt((s) => !s)}
+                {/* Đầu hoá đơn */}
+                <div className="px-8 pb-6 pt-7">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#0B1B3A] text-base font-extrabold text-white">
+                        {teacherInitial}
+                      </div>
+                      {editing ? (
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <Input
+                            type="text"
+                            aria-label="Tên giáo viên"
+                            className="no-print h-8 w-full max-w-[260px] border-slate-200 bg-white text-sm font-bold focus-visible:ring-1 focus-visible:ring-blue-400"
+                            value={teacherNameOv ?? profileTeacherName}
+                            placeholder="Tên giáo viên"
+                            onChange={(e) => onTeacherNameChange(e.target.value)}
+                            onBlur={onTeacherNameBlur}
+                          />
+                          <Input
+                            type="tel"
+                            inputMode="tel"
+                            aria-label="Số điện thoại giáo viên"
+                            className="no-print h-8 w-full max-w-[260px] border-slate-200 bg-white text-xs focus-visible:ring-1 focus-visible:ring-blue-400"
+                            value={teacherPhoneOv ?? profileTeacherPhone}
+                            placeholder="Số điện thoại"
+                            onChange={(e) => onTeacherPhoneChange(e.target.value)}
+                          />
+                          {teacherEdited && (
+                            <button
+                              type="button"
+                              onClick={resetTeacherInfo}
+                              className="no-print text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                            >
+                              Dùng lại thông tin trong hồ sơ
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-bold text-slate-900">{teacherName}</div>
+                          <div className="truncate text-xs text-slate-500">{teacherPhone || "Giáo viên"}</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="max-w-[240px] shrink-0 text-right">
+                      <div className="text-xs text-slate-400">{(t as any)?.billNo || "Mã hóa đơn"}</div>
+                      <div className="mt-0.5 break-all font-mono text-[13px] font-bold text-slate-900">{billNum}</div>
+                      <div className="mt-1.5 text-xs text-slate-500">Ngày lập {issueDate}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+                    <h2 className="text-[28px] font-extrabold leading-none tracking-tight text-[#0B1B3A]">
+                      {(t as any)?.invoice || "Hóa đơn thanh toán"}
+                    </h2>
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                        billPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                      }`}
                     >
-                      {showAtt
-                        ? <><EyeOff className="h-3.5 w-3.5 mr-1" /> {(t as any)?.hide || "Ẩn danh sách"}</>
-                        : <><Eye className="h-3.5 w-3.5 mr-1" /> {(t as any)?.show || "Hiện danh sách"}</>}
-                    </Button>
+                      <span className={`h-1.5 w-1.5 rounded-full ${billPaid ? "bg-emerald-500" : "bg-amber-500"}`} />
+                      {billPaid ? "Đã thanh toán" : "Chưa thanh toán"}
+                    </span>
                   </div>
-                  {showAtt && (
-                    <div className="border rounded-xl overflow-hidden text-xs bg-white border-slate-200">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 text-[11px] font-semibold">
-                            {mode === "by_session" && (
-                              <th className="py-2.5 px-3 w-10 text-center no-print">{(t as any)?.select || "Chọn"}</th>
-                            )}
-                            <th className="py-2.5 px-3 w-8 text-center">STT</th>
-                            <th className="py-2.5 px-3 w-28">{t?.date || "Ngày học"}</th>
-                            <th className="py-2.5 px-3">{t?.homework || "Nội dung bài học / Ghi chú"}</th>
-                            <th className="py-2.5 px-3 text-right w-28">{t?.feePerOne || "Học phí"}</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {displayBill.attendances.map((a: any, i: number) => {
-                            const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
-                            const feeDraftVal = feeDraft[a.id] ?? (a.fee_override == null ? "" : String(a.fee_override));
-                            const hwDraftVal = homeworkDraft[a.id] ?? (a.homework_note || "");
-                            const isChecked = selectedSessionIds.has(a.id);
-                            const isPaidSession = (payments || []).some((p: any) => {
-                              if (p.attendance_id === a.id) return true;
-                              if (Array.isArray(p.attendance_ids) && p.attendance_ids.includes(a.id)) return true;
-                              return false;
-                            });
-                            return (
-                              <tr key={a.id} className={`hover:bg-slate-50/50 ${isChecked ? "bg-blue-50/40" : ""}`}>
-                                {mode === "by_session" && (
-                                  <td className="py-2 px-3 text-center no-print align-middle">
-                                    <Checkbox
-                                      checked={isPaidSession || isChecked}
-                                      disabled={isPaidSession}
-                                      onCheckedChange={(v) => {
-                                        if (isPaidSession) return;
-                                        setSelectedSessionIds((s) => {
-                                          const n = new Set(s);
-                                          if (v) n.add(a.id);
-                                          else n.delete(a.id);
-                                          return n;
-                                        });
-                                      }}
-                                    />
-                                  </td>
-                                )}
-                                <td className="py-2 px-3 align-middle text-center text-slate-500 font-medium">{i + 1}</td>
-                                <td className="py-2 px-3 align-middle font-medium text-slate-800 whitespace-nowrap">
-                                  {fmtDate(a.schedule_events?.event_date)}
-                                </td>
-                                <td className="py-2 px-3 align-middle">
+
+                  {/* Học sinh và kỳ học phí */}
+                  <div className="mt-6 grid gap-5 border-y border-slate-200 py-5 sm:grid-cols-2 sm:gap-0 sm:divide-x sm:divide-slate-200">
+                    <div className="flex items-center gap-3 sm:pr-6">
+                      <div
+                        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
+                        style={{ background: accent }}
+                      >
+                        {(student.name || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-slate-400">{(t as any)?.billedTo || "Học sinh"}</div>
+                        <div className="truncate text-base font-bold text-slate-900">{student.name}</div>
+                        <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
+                          {student.grade && <span>Lớp {student.grade}</span>}
+                          {(student as any)?.phone && <span>{(student as any).phone}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 sm:pl-6">
+                      <Field
+                        label={mode === "monthly" ? (t?.period || "Kỳ thanh toán") : ((t as any)?.billedSessions || "Số buổi tính phí")}
+                      >
+                        {mode === "monthly"
+                          ? (displayBill.period_start
+                              ? <span className="text-[13px]">{fmtDate(displayBill.period_start)} – {fmtDate(displayBill.period_end)}</span>
+                              : displayBill.description)
+                          : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "buổi")}`}
+                      </Field>
+                      <Field
+                        label={mode === "monthly" ? (t?.feePerMonth || "Học phí mỗi tháng") : ((t as any)?.feePerSession || "Học phí mỗi buổi")}
+                      >
+                        {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
+                      </Field>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chi tiết các buổi học */}
+                {displayBill.attendances?.length > 0 && showAtt && (
+                  <div className="px-8">
+                    <div className="mb-2 text-sm font-bold text-slate-900">
+                      {(t as any)?.sessionDetails || "Chi tiết các buổi học"}
+                    </div>
+                    <table className="w-full border-collapse text-left text-[13px]">
+                      <thead>
+                        <tr className="border-b-2 text-xs font-semibold text-slate-500" style={{ borderColor: accent }}>
+                          <th className="w-12 py-2.5 pr-3 text-center">STT</th>
+                          <th className="w-28 py-2.5 pr-3">{t?.date || "Ngày học"}</th>
+                          <th className="py-2.5 pr-3">{t?.homework || "Nội dung / ghi chú"}</th>
+                          <th className="w-32 py-2.5 text-right">{t?.feePerOne || "Học phí"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayBill.attendances.map((a: any, i: number) => {
+                          const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
+                          const feeDraftVal = feeDraft[a.id] ?? (a.fee_override == null ? "" : String(a.fee_override));
+                          const hwDraftVal = homeworkDraft[a.id] ?? (a.homework_note || "");
+                          return (
+                            <tr key={a.id} className="break-inside-avoid border-b border-slate-100 last:border-0">
+                              <td className="py-3 pr-3 text-center align-middle font-medium tabular-nums text-slate-400">{i + 1}</td>
+                              <td className="whitespace-nowrap py-3 pr-3 align-middle font-semibold tabular-nums text-slate-800">
+                                {fmtDate(a.schedule_events?.event_date)}
+                              </td>
+                              <td className="py-3 pr-3 align-middle text-slate-600">
+                                {editing ? (
                                   <Input
                                     type="text"
-                                    className="no-print h-8 text-xs border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-400 bg-white"
+                                    className="no-print h-8 border-slate-200 bg-white text-xs focus-visible:ring-1 focus-visible:ring-blue-400"
                                     value={hwDraftVal}
                                     placeholder="Thêm ghi chú..."
                                     onChange={(e) => setHomeworkDraft((d) => ({ ...d, [a.id]: e.target.value }))}
                                     onBlur={(e) => updateHomeworkNote(a, e.target.value)}
                                   />
-                                  <span className="print:inline hidden text-xs text-slate-700">{a.homework_note || "—"}</span>
-                                </td>
-                                <td className="py-2 px-3 text-right align-middle">
-                                  <span className="print:inline hidden text-xs font-semibold">{formatVND(fee)}</span>
+                                ) : (
+                                  a.homework_note || <span className="text-slate-300">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 text-right align-middle font-bold tabular-nums text-slate-900">
+                                {editing ? (
                                   <Input
                                     type="number"
-                                    className="no-print h-8 text-right w-28 ml-auto text-xs border-slate-200 focus-visible:ring-1 focus-visible:ring-blue-400 bg-white"
+                                    className="no-print ml-auto h-8 w-28 border-slate-200 bg-white text-right text-xs focus-visible:ring-1 focus-visible:ring-blue-400"
                                     value={feeDraftVal}
                                     placeholder={String(student.fee_per_session || 0)}
                                     onChange={(e) => setFeeDraft((d) => ({ ...d, [a.id]: e.target.value }))}
                                     onBlur={(e) => updateFee(a, e.target.value)}
                                   />
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                                ) : (
+                                  formatVND(fee)
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Tổng cộng */}
+                <div className="px-8 pb-7 pt-5">
+                  <div className="ml-auto w-full sm:w-80">
+                    <div className="flex items-center justify-between py-1.5 text-sm text-slate-500">
+                      <span>Số buổi tính phí</span>
+                      <span className="font-semibold tabular-nums text-slate-800">{sessionsCount} buổi</span>
                     </div>
+                    <div className="flex items-baseline justify-between gap-4 border-t-2 border-[#0B1B3A] pt-3">
+                      <span className="text-sm font-bold text-slate-900">Tổng cộng</span>
+                      <span className="text-[34px] font-extrabold leading-none tracking-tight tabular-nums text-[#0B1B3A]">
+                        {formatVND(billTotal)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {footnote && (
+                    <p className="mt-6 whitespace-pre-line text-center text-sm italic text-slate-500">{footnote}</p>
                   )}
                 </div>
-              )}
 
-              {/* Total Summary */}
-              <div className="flex justify-end pt-2">
-                <div className="w-full sm:w-72 space-y-2 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
-                  <div className="flex justify-between text-xs text-slate-500 font-medium">
-                    <span>Tạm tính</span>
-                    <span>{formatVND(billTotal)}</span>
-                  </div>
-                  <div
-                    className="flex justify-between items-center font-bold text-slate-900 px-3 py-2 rounded-lg"
-                    style={{ backgroundColor: `${accent}22` }}
-                  >
-                    <span className="text-xs uppercase tracking-wider">Tổng cộng</span>
-                    <span className="text-xl font-black">{formatVND(billTotal)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* VietQR Section */}
-              <div className="border-t border-slate-200 pt-4">
-                <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2">
-                  {(t as any)?.mobileBankingPayment || "THANH TOÁN QUA CHUYỂN KHOẢN (VIETQR)"}
-                </div>
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
-                  <div className="space-y-1.5 text-xs w-full">
-                    <div className="font-bold text-sm text-slate-800">{(t as any)?.scanToPayShort || "Quét mã QR để thanh toán"}</div>
-                    <div className="text-[11px] text-slate-500 leading-relaxed">
-                      {(t as any)?.scanQrInstr || "Sử dụng ứng dụng Ngân hàng để quét mã QR và hoàn tất chuyển khoản."}
+                {/* Phiếu thanh toán: cắt rời theo đường đứt nét */}
+                {qrUrl ? (
+                  <div>
+                    <div className="relative">
+                      <div className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-background" />
+                      <div className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-background" />
+                      <div className="mx-6 border-t-2 border-dashed border-slate-300" />
                     </div>
-                    <div className="pt-2 text-xs space-y-1 border-t border-slate-200 mt-2">
-                      <div className="text-slate-600">Số tiền: <span className="font-bold text-slate-900">{formatVND(billTotal)}</span></div>
-                      <div className="font-mono text-[11px] text-slate-600">
-                        Nội dung: <span className="bg-slate-200/80 px-2 py-0.5 rounded text-slate-900 font-bold">{billNum}</span>
+                    <div className="bg-slate-50 px-8 pb-8 pt-7">
+                      <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
+                        <div className="shrink-0 text-center">
+                          <img
+                            src={qrUrl}
+                            alt="VietQR"
+                            className="h-40 w-40 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
+                          />
+                          <div className="mt-2 text-xs text-slate-500">Quét bằng app ngân hàng</div>
+                        </div>
+                        <div className="w-full min-w-0 flex-1">
+                          <div className="text-base font-bold text-slate-900">
+                            {(t as any)?.scanToPayShort || "Thanh toán qua chuyển khoản"}
+                          </div>
+                          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                            {(t as any)?.scanQrInstr || "Mở ứng dụng ngân hàng, quét mã QR và giữ nguyên nội dung chuyển khoản."}
+                          </p>
+                          <dl className="mt-3">
+                            {profile?.bank_code && <BankRow label="Ngân hàng">{profile.bank_code}</BankRow>}
+                            {profile?.bank_account_name && <BankRow label="Chủ tài khoản">{profile.bank_account_name}</BankRow>}
+                            {profile?.bank_account_number && (
+                              <BankRow label="Số tài khoản">
+                                <span className="font-mono tabular-nums">{profile.bank_account_number}</span>
+                              </BankRow>
+                            )}
+                            <BankRow label="Số tiền">
+                              <span className="tabular-nums">{formatVND(billTotal)}</span>
+                            </BankRow>
+                            <BankRow label="Nội dung">
+                              <span
+                                className="inline-block rounded-md px-2 py-0.5 font-mono text-[13px] font-bold text-[#0B1B3A]"
+                                style={{ background: "#FFB54733" }}
+                              >
+                                {billNum}
+                              </span>
+                            </BankRow>
+                          </dl>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div className="flex-shrink-0">
-                    {qrUrl ? (
-                      <img src={qrUrl} alt="VietQR" className="h-36 w-36 rounded-xl bg-white p-2 border border-slate-200 shadow-sm object-contain" />
-                    ) : (
-                      <div className="text-xs text-slate-400 no-print text-center p-4 border border-dashed rounded-xl bg-white">
-                        {t?.vietQR || "VietQR"}: <Link to="/settings" className="text-blue-600 underline font-medium">{t?.settings || "Thiết lập"}</Link>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Button */}
-              <div className="no-print pt-2 flex flex-col items-end gap-2">
-                {mode === "by_session" ? (
-                  <Button
-                    variant="success"
-                    className="rounded-xl px-6 font-medium shadow-md"
-                    disabled={selectedSessionIds.size === 0}
-                    onClick={paySelectedSessions}
-                  >
-                    <Check className="h-4 w-4 mr-1.5" />
-                    {(t as any)?.markAsPaid || "Đánh dấu đã thanh toán"} ({selectedSessionIds.size})
-                  </Button>
                 ) : (
-                  <Button
-                    variant={isPaid(current) ? "outline" : "success"}
-                    className={`rounded-xl px-6 font-medium ${isPaid(current) ? "border-red-300 text-red-600 hover:bg-red-50" : ""}`}
-                    onClick={() => togglePaid(current)}
-                  >
-                    <Check className="h-4 w-4 mr-1.5" />
-                    {isPaid(current) ? "Hủy đánh dấu đã đóng (Unpaid)" : (t?.markPaid || "Đã thanh toán")}
-                  </Button>
-                )}
-              </div>
-
-              {/* Footnote */}
-              <div className="border-t border-slate-200 pt-3">
-                <Label className="text-xs font-semibold text-slate-600 no-print mb-1.5 block">{(t as any)?.footnote || "Lời cảm ơn / Ghi chú chân trang"}</Label>
-                <Textarea
-                  rows={2}
-                  value={footnote}
-                  onChange={(e) => setFootnote(e.target.value)}
-                  placeholder={(t as any)?.footnoteDefault || "Cảm ơn quý phụ huynh và học sinh!"}
-                  className="no-print text-xs rounded-xl border-slate-200 bg-white"
-                />
-                {footnote && (
-                  <div className="hidden print:block text-xs italic text-center pt-2 text-slate-500">
-                    {footnote}
+                  <div className="no-print border-t border-dashed border-slate-300 bg-slate-50 px-8 py-4 text-center text-xs text-slate-500">
+                    {t?.vietQR || "VietQR"}:{" "}
+                    <Link to="/settings" className="font-medium text-blue-600 underline">
+                      {t?.settings || "Thiết lập"}
+                    </Link>
                   </div>
                 )}
               </div>
-            </Card>
+
+              {/* Phần dưới hoá đơn (không in, không vào ảnh) */}
+              <div className="no-print space-y-3">
+                <div className="flex justify-end">
+                  {mode === "by_session" ? (
+                    <Button
+                      variant="success"
+                      className="rounded-xl px-6 font-medium shadow-md"
+                      disabled={selectedSessionIds.size === 0}
+                      onClick={paySelectedSessions}
+                    >
+                      <Check className="mr-1.5 h-4 w-4" />
+                      {(t as any)?.markAsPaid || "Đánh dấu đã thanh toán"} ({selectedSessionIds.size})
+                    </Button>
+                  ) : (
+                    <Button
+                      variant={isPaid(current) ? "outline" : "success"}
+                      className={`rounded-xl px-6 font-medium ${isPaid(current) ? "border-red-300 text-red-600 hover:bg-red-50" : ""}`}
+                      onClick={() => togglePaid(current)}
+                    >
+                      <Check className="mr-1.5 h-4 w-4" />
+                      {isPaid(current) ? "Hủy đánh dấu đã đóng (Unpaid)" : (t?.markPaid || "Đã thanh toán")}
+                    </Button>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <Label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                    {(t as any)?.footnote || "Lời cảm ơn / ghi chú cuối hóa đơn"}
+                  </Label>
+                  <Textarea
+                    rows={2}
+                    value={footnote}
+                    onChange={(e) => setFootnote(e.target.value)}
+                    placeholder={(t as any)?.footnoteDefault || "Cảm ơn quý phụ huynh và học sinh!"}
+                    className="rounded-xl border-slate-200 bg-white text-sm"
+                  />
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
