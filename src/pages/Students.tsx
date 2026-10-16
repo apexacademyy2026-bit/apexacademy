@@ -13,6 +13,7 @@ import {
   FileText,
   Phone,
   Users,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -56,6 +57,9 @@ export default function Students() {
   const { data: students = [] } = useQuery({
     queryKey: ["students-list", user?.id],
     enabled: !!user?.id,
+    // Luôn tải lại khi mở trang, để các chỉnh sửa trong hồ sơ học sinh (như ngày thu học phí) hiện ngay ở đây
+    staleTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
       const { data, error } = await supabase.from("students").select("*").eq("user_id", user.id).order("name");
       if (error) throw error;
@@ -73,6 +77,10 @@ export default function Students() {
       const rawParentPhone = st.parent_phone?.trim();
       const cids = enrollmentsList.filter((e: any) => e.student_id === st.id).map((e: any) => e.class_id);
 
+      // Ngày thu học phí hằng tháng (cột billing_day), chưa đặt thì để trống
+      const billingDayNum = Number(st.billing_day);
+      const billingDay = billingDayNum >= 1 && billingDayNum <= 31 ? billingDayNum : null;
+
       return {
         ...st,
         displayName: cleaned || "Chưa đặt tên",
@@ -83,6 +91,7 @@ export default function Students() {
         displayParentPhone: rawParentPhone ? rawParentPhone : null,
         accent: resolveStudentColor(st.color, st.id ?? cleaned),
         studentClasses: classesList.filter((c: any) => cids.includes(c.id)),
+        billingDay,
       };
     });
   }, [students, enrollmentsQuery, classesQuery]);
@@ -295,6 +304,18 @@ export default function Students() {
                       {st.displayParentPhone ?? "Chưa có"}
                     </p>
                   </div>
+
+                  {/* Ngày đóng học phí */}
+                  <div className="col-span-2 flex items-center justify-between gap-3 border-t border-slate-200/80 pt-3">
+                    <p className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+                      <CalendarClock className="h-3.5 w-3.5" /> Ngày đóng học phí
+                    </p>
+                    {st.billingDay ? (
+                      <p className="shrink-0 whitespace-nowrap text-sm font-semibold text-slate-900">Ngày {st.billingDay}</p>
+                    ) : (
+                      <p className="text-sm text-slate-400">Chưa đặt</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-end justify-between gap-3">
@@ -308,7 +329,7 @@ export default function Students() {
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[56rem] text-left text-sm">
+            <table className="w-full min-w-[64rem] text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
                 <tr>
                   <th className="px-6 py-3.5">Học sinh</th>
@@ -316,6 +337,7 @@ export default function Students() {
                   <th className="px-4 py-3.5">Phụ huynh & SĐT</th>
                   <th className="px-4 py-3.5">Lớp tham gia</th>
                   <th className="px-4 py-3.5">Hình thức</th>
+                  <th className="px-4 py-3.5">Ngày đóng học phí</th>
                   <th className="px-6 py-3.5 text-right">Thao tác</th>
                 </tr>
               </thead>
@@ -338,6 +360,13 @@ export default function Students() {
                     </td>
                     <td className="px-4 py-3.5">{st.studentClasses.length === 0 ? <span className="text-slate-300">—</span> : classChips(st, 4)}</td>
                     <td className="px-4 py-3.5">{paymentPill(st)}</td>
+                    <td className="px-4 py-3.5">
+                      {st.billingDay ? (
+                        <p className="font-semibold text-slate-900">Ngày {st.billingDay}</p>
+                      ) : (
+                        <span className="text-slate-400">Chưa đặt</span>
+                      )}
+                    </td>
                     <td className="px-6 py-3.5">
                       <div className="flex items-center justify-end gap-0.5">
                         <Button asChild variant="ghost" size="icon" aria-label="Xem hồ sơ" className={ICON_BTN}>
