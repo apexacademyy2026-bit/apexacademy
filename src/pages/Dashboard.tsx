@@ -40,6 +40,20 @@ type SessionItem = { key: string; classId: string; className: string; date: stri
 // Một dòng trong chi tiết lương mặc định: học phí tháng cố định của một lớp mà học sinh đang học
 type SalaryItem = { classId: string; className: string; fee: number };
 
+// Nhóm học sinh cùng ngày thu học phí (cột billing_day) trong popup học phí kỳ sắp tới
+// key = "25" (ngày thu) hoặc "none" (chưa đặt ngày thu); dueDate = ngày thu thực tế của kỳ hiện tại (YYYY-MM-DD)
+type BillingGroup = {
+  key: string;
+  day: number | null;
+  count: number;
+  fee: number; // tổng cần thu = kỳ hiện tại + các kỳ trước chưa thu
+  currentFee: number;
+  overdueFee: number;
+  start: string;
+  end: string;
+  dueDate: string | null;
+};
+
 // Các buổi học của một lớp trong khoảng [from, to] (YYYY-MM-DD, gồm cả hai đầu):
 // theo lịch cố định hằng tuần + buổi thêm tay, bỏ các buổi đã hủy, và nằm trong ngày bắt đầu/kết thúc của lớp
 const buildClassSessions = (c: any, from: string, to: string, schedules: any[], events: any[]): SessionItem[] => {
@@ -153,6 +167,8 @@ export default function Dashboard() {
   const [showCollectedModal, setShowCollectedModal] = useState(false);
   const [showSalaryModal, setShowSalaryModal] = useState(false);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  // Lọc popup học phí kỳ sắp tới theo ngày thu: "all" | "none" | "25" ...
+  const [billingFilter, setBillingFilter] = useState<string>("all");
 
   useEffect(() => {
     document.title = `${t.dashboard} — ${t.appName}`;
@@ -405,6 +421,7 @@ export default function Dashboard() {
     start: string;
     end: string;
     hasBillingDay: boolean;
+    billingDay: number | null; // ngày thu học phí hằng tháng (1–31), null nếu chưa đặt
   };
   const upcomingByStudent = useMemo(() => {
     const classById = new Map<string, any>((classes.data || []).map((c: any) => [String(c.id), c]));
@@ -523,6 +540,7 @@ export default function Dashboard() {
         start,
         end,
         hasBillingDay,
+        billingDay: hasBillingDay ? billingDay : null,
       });
     });
     return result;
@@ -598,6 +616,53 @@ export default function Dashboard() {
         return String(a.name || "").localeCompare(String(b.name || ""), "vi");
       }),
     [students, upcomingByStudent],
+  );
+
+  // Gom học sinh theo ngày thu học phí: mỗi nhóm có số học sinh và tổng tiền sẽ nhận được đến ngày thu.
+  // Nhóm sắp đến ngày thu nhất đứng đầu; nhóm chưa đặt ngày thu đứng cuối.
+  const billingGroups = useMemo<BillingGroup[]>(() => {
+    const map = new Map<string, BillingGroup>();
+    students.forEach((s: any) => {
+      const info = upcomingByStudent.get(String(s.id));
+      if (!info) return;
+      const key = info.billingDay ? String(info.billingDay) : "none";
+      let g = map.get(key);
+      if (!g) {
+        let dueDate: string | null = null;
+        if (info.hasBillingDay) {
+          // Kỳ kết thúc ngày 24/10 thì ngày thu là 25/10 (ngày kế tiếp)
+          const d = new Date(`${info.end}T00:00:00`);
+          d.setDate(d.getDate() + 1);
+          dueDate = toISODate(d);
+        }
+        g = { key, day: info.billingDay, count: 0, fee: 0, currentFee: 0, overdueFee: 0, start: info.start, end: info.end, dueDate };
+        map.set(key, g);
+      }
+      g.count += 1;
+      g.fee += info.fee;
+      g.currentFee += info.currentFee;
+      g.overdueFee += info.overdueFee;
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      if ((a.day == null) !== (b.day == null)) return a.day == null ? 1 : -1;
+      return a.end.localeCompare(b.end) || (a.day || 0) - (b.day || 0);
+    });
+  }, [students, upcomingByStudent]);
+
+  // Nhóm đang được chọn (null = tất cả, hoặc nhóm đã chọn không còn tồn tại)
+  const activeGroup = billingFilter === "all" ? null : billingGroups.find((g) => g.key === billingFilter) || null;
+  const activeGroupKey = activeGroup?.key ?? null;
+
+  // Danh sách học sinh hiển thị trong popup sau khi lọc (giữ nguyên thứ tự theo ngày thu)
+  const visibleStudents = useMemo(
+    () =>
+      activeGroupKey === null
+        ? studentsByBillingDate
+        : studentsByBillingDate.filter((s: any) => {
+            const info = upcomingByStudent.get(String(s.id));
+            return (info?.billingDay ? String(info.billingDay) : "none") === activeGroupKey;
+          }),
+    [studentsByBillingDate, upcomingByStudent, activeGroupKey],
   );
 
   // Gom các buổi trong kỳ hiện tại của một học sinh: đã học (có mặt) / chưa học (sắp tới)
@@ -1044,10 +1109,16 @@ export default function Dashboard() {
       </Card>
 
       {/* POPUP CHI TIẾT HỌC PHÍ KỲ SẮP TỚI */}
-      <Dialog open={showCollectedModal} onOpenChange={setShowCollectedModal}>
-        <DialogContent className="max-h-[90vh] gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
-          <div className="h-1.5 bg-[#FFB547]" />
-          <DialogHeader className="space-y-1 border-b border-slate-100 px-6 py-5 text-left">
+      <Dialog
+        open={showCollectedModal}
+        onOpenChange={(open) => {
+          setShowCollectedModal(open);
+          if (!open) setBillingFilter("all");
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
+          <div className="h-1.5 shrink-0 bg-[#FFB547]" />
+          <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-6 py-5 text-left">
             <DialogTitle className="text-lg font-extrabold text-slate-900">
               {vi ? "Chi tiết học phí kỳ sắp tới" : "Upcoming tuition details"}
             </DialogTitle>
@@ -1060,9 +1131,84 @@ export default function Dashboard() {
               )}
             </p>
           </DialogHeader>
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
-            {studentsByBillingDate.length > 0 ? (
-              studentsByBillingDate.map((student: any) => {
+
+          {/* BỘ LỌC THEO NGÀY THU HỌC PHÍ */}
+          {billingGroups.length > 1 && (
+            <div className="shrink-0 space-y-3 border-b border-slate-100 bg-slate-50/60 px-6 py-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                {vi ? "Lọc theo ngày thu học phí" : "Filter by billing day"}
+              </div>
+              <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+                {[
+                  { key: "all", label: vi ? "Tất cả" : "All", count: students.length, fee: totalUpcomingFee },
+                  ...billingGroups.map((g) => ({
+                    key: g.key,
+                    label: g.day ? (vi ? `Ngày ${g.day}` : `Day ${g.day}`) : vi ? "Chưa đặt ngày" : "Not set",
+                    count: g.count,
+                    fee: g.fee,
+                  })),
+                ].map((c) => {
+                  const active = (activeGroupKey ?? "all") === c.key;
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setBillingFilter(c.key)}
+                      className={cn(
+                        "rounded-xl border px-3 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                        active
+                          ? "border-[#0B1B3A] bg-[#0B1B3A] text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                      )}
+                    >
+                      <div className="whitespace-nowrap text-xs font-bold">
+                        {c.label}
+                        <span className={cn("font-semibold", active ? "text-white/60" : "text-slate-400")}>
+                          {` · ${c.count} ${vi ? "HS" : "students"}`}
+                        </span>
+                      </div>
+                      <div className={cn("whitespace-nowrap text-xs font-extrabold", active ? "text-[#FFB547]" : "text-emerald-600")}>
+                        {formatVND(c.fee)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeGroup && (
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0B1B3A] px-4 py-3 text-white">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-xs font-semibold text-white/80">
+                      {activeGroup.dueDate
+                        ? vi
+                          ? `Tổng nhận được đến ngày ${shortDate(activeGroup.dueDate)}`
+                          : `Total to collect by ${shortDate(activeGroup.dueDate)}`
+                        : vi
+                        ? "Học sinh chưa đặt ngày thu học phí"
+                        : "Students without a billing day"}
+                    </div>
+                    <div className="text-xs text-white/60">
+                      {activeGroup.count} {vi ? "học sinh" : "students"}
+                      {` · ${vi ? "kỳ" : "period"} ${shortDate(activeGroup.start)} – ${shortDate(activeGroup.end)}`}
+                    </div>
+                    {activeGroup.overdueFee > 0 && (
+                      <div className="text-xs font-semibold text-rose-300">
+                        {vi
+                          ? `Gồm ${formatVND(activeGroup.overdueFee)} chưa thu từ các kỳ trước`
+                          : `Includes ${formatVND(activeGroup.overdueFee)} unpaid from previous periods`}
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-xl font-extrabold text-[#FFB547]">+{formatVND(activeGroup.fee)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
+            {visibleStudents.length > 0 ? (
+              visibleStudents.map((student: any) => {
                 const info = upcomingByStudent.get(String(student.id));
                 const fee = info?.fee || 0;
                 const open = expandedStudent === String(student.id);
