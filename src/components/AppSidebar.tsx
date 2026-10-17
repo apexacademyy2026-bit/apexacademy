@@ -9,6 +9,7 @@ import {
   Plus,
   BookOpen,
   FileText,
+  Globe,
 } from "lucide-react";
 
 import {
@@ -53,6 +54,7 @@ export function AppSidebar() {
     { title: lang === "vi" ? "Học sinh" : "Students", icon: Users, to: "/students" },
     { title: lang === "vi" ? "Lớp học" : "Classes", icon: GraduationCap, to: "/classes" },
     { title: lang === "vi" ? "Lịch dạy" : "Schedule", icon: CalendarDays, to: "/schedule" },
+    { title: lang === "vi" ? "Trang lớp học" : "Public page", icon: Globe, to: "/lop-hoc" },
     { title: lang === "vi" ? "Cài đặt" : "Settings", icon: Settings, to: "/settings" },
   ];
 

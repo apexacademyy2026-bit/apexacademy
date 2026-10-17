@@ -3,7 +3,7 @@ import { useApp } from "@/contexts/AppContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Plus,
@@ -257,7 +257,7 @@ export default function ClassLandingPage() {
           </div>
 
           <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
-            <a href="#about" className="transition-colors hover:text-[#0B1B3A]">Về lớp học</a>
+<Link to="/lop-hoc" className="transition-colors hover:text-[#0B1B3A]">Về lớp học</Link>
             <a href="#workflow" className="transition-colors hover:text-[#0B1B3A]">Lộ trình bứt phá</a>
             <a href="#feedbacks" className="transition-colors hover:text-[#0B1B3A]">Cảm nhận thủ khoa</a>
           </nav>

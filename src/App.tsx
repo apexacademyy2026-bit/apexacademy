@@ -6,7 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider } from "@/contexts/AppContext";
 import { ConfirmProvider } from "@/components/ConfirmProvider";
 import AppLayout from "@/components/AppLayout";
+import Registrations from "./pages/Registrations";
 import Auth from "./pages/Auth";
+import PublicClasses from "./pages/PublicClasses";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import StudentDetail from "./pages/StudentDetail";
@@ -52,6 +54,8 @@ const App = () => (
           <ConfirmProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/lop-hoc" element={<PublicClasses />} />
+            <Route path="/dang-ky" element={<Registrations />} />
             <Route path="/account/delete-confirm" element={<DeleteConfirm />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<RoleHome />} />
