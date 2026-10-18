@@ -6,7 +6,6 @@ import {
   Check,
   Eye,
   EyeOff,
-  Globe,
   Info,
   LayoutDashboard,
   MapPin,
@@ -79,6 +78,7 @@ type Content = {
   zalo: string;
   facebook: string;
   address: string;
+  maps: string; // liên kết Google Maps (không bắt buộc)
   classes: ShowcaseClass[];
 };
 
@@ -94,6 +94,7 @@ const EMPTY: Content = {
   zalo: "",
   facebook: "",
   address: "",
+  maps: "",
   classes: [],
 };
 
@@ -112,6 +113,7 @@ const normalize = (raw: any): Content => {
     zalo: str(r.zalo, ""),
     facebook: str(r.facebook, ""),
     address: str(r.address, ""),
+    maps: str(r.maps, ""),
     classes: (Array.isArray(r.classes) ? r.classes : []).map((c: any, i: number) => ({
       id: String(c?.id || uid()),
       classId: c?.classId ? String(c.classId) : null,
@@ -175,6 +177,20 @@ const paragraphs = (text: string) =>
 
 const digits = (s: string) => s.replace(/[^\d+]/g, "");
 const withProtocol = (s: string) => (/^https?:\/\//i.test(s.trim()) ? s.trim() : `https://${s.trim()}`);
+const isUrl = (s: string) => /^https?:\/\//i.test(s.trim());
+// Chuỗi trông giống đường dẫn (có tên miền); "Apex Academy" thì không phải
+const looksLikeUrl = (s: string) => /^(https?:\/\/)?[^\s/]+\.[^\s]{2,}/i.test(s.trim());
+// "0868994242" → "0868 994 242"
+const formatPhone = (s: string) => {
+  const d = s.replace(/\D/g, "");
+  return d.length === 10 ? `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : s.trim();
+};
+const FacebookIcon = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+  </svg>
+);
+const CONTACT_LINK = "inline-flex items-center gap-2.5 rounded transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB547]";
 
 const isMissingTable = (err: any) =>
   !!err && (err.code === "42P01" || err.code === "PGRST205" || /public_pages/i.test(String(err.message || "")));
@@ -958,9 +974,14 @@ export default function PublicClasses() {
       ? view.zalo.trim()
       : `https://zalo.me/${digits(view.zalo).replace(/^\+?84/, "0")}`
     : "";
-  const facebookHref = view.facebook.trim() ? withProtocol(view.facebook) : "";
+  const facebookHref = looksLikeUrl(view.facebook) ? withProtocol(view.facebook) : "";
+  // Địa chỉ có thể là chữ hoặc dán thẳng link Google Maps. Link được chuyển thành "Xem trên Google Maps".
+  const addressIsUrl = isUrl(view.address);
+  const mapsHref = looksLikeUrl(view.maps) ? withProtocol(view.maps) : addressIsUrl ? view.address.trim() : "";
+  const addressText = addressIsUrl ? "" : view.address.trim();
+  const phoneLabel = formatPhone(view.phone);
   const contactHref = zaloHref || phoneHref;
-  const hasContact = !!(phoneHref || zaloHref || facebookHref || view.address.trim());
+  const hasContact = !!(phoneHref || zaloHref || facebookHref || addressText || mapsHref);
   const hasAbout = !!(view.aboutText.trim() || view.highlights.some((h) => h.trim()));
 
   const showAbout = editing || hasAbout;
@@ -1282,56 +1303,77 @@ export default function PublicClasses() {
         {/* LIÊN HỆ */}
         {showContact && (
           <section id="contact" className="scroll-mt-0 bg-[#0B1B3A] text-white">
-            <div className="mx-auto grid max-w-6xl gap-8 px-4 py-16 md:grid-cols-2 md:gap-14 md:px-6 md:py-20">
+            <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-2 md:gap-14 md:px-6 md:py-14">
               <div>
                 <h2 className="text-2xl font-extrabold tracking-tight md:text-3xl">Liên hệ tư vấn</h2>
                 <p className="mt-3 max-w-md leading-relaxed text-white/70">Nhắn hoặc gọi để hỏi về lớp, giờ học và học phí.</p>
               </div>
               {editing ? (
                 <div className="space-y-3">
-                  <input aria-label="Số điện thoại" className={cn(darkInputCls, "h-11")} placeholder="Số điện thoại" value={view.phone} onChange={(e) => patch({ phone: e.target.value })} />
+                  <input aria-label="Số điện thoại" className={cn(darkInputCls, "h-10 text-sm")} placeholder="Số điện thoại" value={view.phone} onChange={(e) => patch({ phone: e.target.value })} />
                   <input
                     aria-label="Zalo"
-                    className={cn(darkInputCls, "h-11")}
+                    className={cn(darkInputCls, "h-10 text-sm")}
                     placeholder="Số Zalo hoặc đường dẫn Zalo"
                     value={view.zalo}
                     onChange={(e) => patch({ zalo: e.target.value })}
                   />
                   <input
-                    aria-label="Facebook hoặc website"
-                    className={cn(darkInputCls, "h-11")}
-                    placeholder="Đường dẫn Facebook hoặc website"
+                    aria-label="Facebook"
+                    className={cn(darkInputCls, "h-10 text-sm")}
+                    placeholder="Đường dẫn trang Facebook"
                     value={view.facebook}
                     onChange={(e) => patch({ facebook: e.target.value })}
                   />
-                  <input aria-label="Địa chỉ" className={cn(darkInputCls, "h-11")} placeholder="Địa chỉ lớp (nếu có)" value={view.address} onChange={(e) => patch({ address: e.target.value })} />
+                  <input aria-label="Địa chỉ" className={cn(darkInputCls, "h-10 text-sm")} placeholder="Địa chỉ lớp (nếu có)" value={view.address} onChange={(e) => patch({ address: e.target.value })} />
+                  <input
+                    aria-label="Liên kết Google Maps"
+                    className={cn(darkInputCls, "h-10 text-sm")}
+                    placeholder="Liên kết Google Maps (không bắt buộc)"
+                    value={view.maps}
+                    onChange={(e) => patch({ maps: e.target.value })}
+                  />
                 </div>
               ) : (
-                <ul className="space-y-3">
+                <ul className="space-y-3 text-sm text-white/80">
                   {phoneHref && (
                     <li>
-                      <a href={phoneHref} className="flex items-center gap-3 rounded-xl border border-white/20 px-4 py-3.5 font-semibold transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB547]">
-                        <Phone className="h-5 w-5 text-[#FFB547]" /> Gọi {view.phone}
+                      <a href={phoneHref} className={CONTACT_LINK}>
+                        <Phone className="h-4 w-4 shrink-0 text-[#FFB547]" aria-hidden /> {phoneLabel}
                       </a>
                     </li>
                   )}
                   {zaloHref && (
                     <li>
-                      <a href={zaloHref} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-white/20 px-4 py-3.5 font-semibold transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB547]">
-                        <MessageCircle className="h-5 w-5 text-[#FFB547]" /> Nhắn Zalo
+                      <a href={zaloHref} target="_blank" rel="noreferrer" className={CONTACT_LINK}>
+                        <MessageCircle className="h-4 w-4 shrink-0 text-[#FFB547]" aria-hidden /> Nhắn Zalo
                       </a>
                     </li>
                   )}
                   {facebookHref && (
                     <li>
-                      <a href={facebookHref} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-white/20 px-4 py-3.5 font-semibold transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB547]">
-                        <Globe className="h-5 w-5 text-[#FFB547]" /> Facebook
+                      <a href={facebookHref} target="_blank" rel="noreferrer" className={CONTACT_LINK}>
+                        <FacebookIcon className="h-4 w-4 shrink-0 text-[#FFB547]" /> Facebook
                       </a>
                     </li>
                   )}
-                  {view.address.trim() && (
-                    <li className="flex items-start gap-3 px-4 py-2 text-white/80">
-                      <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#FFB547]" /> {view.address}
+                  {(addressText || mapsHref) && (
+                    <li>
+                      {mapsHref ? (
+                        <a
+                          href={mapsHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`${addressText || "Địa chỉ lớp"}, mở Google Maps`}
+                          className={cn(CONTACT_LINK, "items-start")}
+                        >
+                          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#FFB547]" aria-hidden /> {addressText || "Xem trên Google Maps"}
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-start gap-2.5">
+                          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#FFB547]" aria-hidden /> {addressText}
+                        </span>
+                      )}
                     </li>
                   )}
                 </ul>
@@ -1341,8 +1383,10 @@ export default function PublicClasses() {
         )}
       </main>
 
-      <footer className="bg-[#0B1B3A] pb-8 text-center text-xs text-white/50">
-        <div className="mx-auto max-w-6xl border-t border-white/10 px-4 pt-6 md:px-6">© {new Date().getFullYear()} {view.brand}</div>
+      <footer className="bg-[#0B1B3A] text-center text-xs text-white/50">
+        <p className="mx-auto max-w-6xl border-t border-white/10 px-4 py-5 md:px-6">
+          © {new Date().getFullYear()} {view.brand}{addressText && `. ${addressText}`}.
+        </p>
       </footer>
 
       {/* POPUP CHI TIẾT + ĐĂNG KÝ CỦA TỪNG LỚP */}

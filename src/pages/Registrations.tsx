@@ -51,9 +51,13 @@ const fmtDate = (d: string) => {
 };
 
 /** Số đăng ký chưa xử lý, dùng làm huy hiệu ở menu. */
-export function useNewRegistrationCount() {
+export function useNewRegistrationCount(enabled = true) {
   const [n, setN] = useState(0);
   useEffect(() => {
+    if (!enabled) {
+      setN(0);
+      return;
+    }
     let alive = true;
     const load = async () => {
       const { count } = await sb.from("class_registrations").select("id", { count: "exact", head: true }).eq("status", "new");
@@ -68,7 +72,7 @@ export function useNewRegistrationCount() {
       alive = false;
       sb.removeChannel(ch);
     };
-  }, []);
+  }, [enabled]);
   return n;
 }
 

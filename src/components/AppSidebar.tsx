@@ -10,6 +10,7 @@ import {
   BookOpen,
   FileText,
   Globe,
+  UserPlus,
 } from "lucide-react";
 
 import {
@@ -29,6 +30,14 @@ import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { resolveStudentColor } from "@/lib/studentColor";
+import { useNewRegistrationCount } from "@/pages/Registrations";
+
+type NavItem = {
+  title: string;
+  icon: typeof LayoutDashboard;
+  to: string;
+  badge?: number; // số đăng ký mới, hiện chấm đỏ kèm số khi > 0
+};
 
 export function AppSidebar() {
   const location = useLocation();
@@ -37,6 +46,9 @@ export function AppSidebar() {
 
   // 🌟 Lấy role an toàn từ profile context
   const role = (profile as any)?.role || "student";
+
+  // Số học sinh đăng ký chưa xử lý (chỉ tải với giáo viên)
+  const newRegistrations = useNewRegistrationCount(role === "teacher");
 
   const handleLogout = async () => {
     try {
@@ -49,17 +61,18 @@ export function AppSidebar() {
   };
 
   // 🌟 1. Danh sách Menu dành cho GIÁO VIÊN
-  const teacherNavItems = [
+  const teacherNavItems: NavItem[] = [
     { title: lang === "vi" ? "Tổng quan" : "Dashboard", icon: LayoutDashboard, to: "/teacher" },
     { title: lang === "vi" ? "Học sinh" : "Students", icon: Users, to: "/students" },
     { title: lang === "vi" ? "Lớp học" : "Classes", icon: GraduationCap, to: "/classes" },
     { title: lang === "vi" ? "Lịch dạy" : "Schedule", icon: CalendarDays, to: "/schedule" },
     { title: lang === "vi" ? "Trang lớp học" : "Public page", icon: Globe, to: "/lop-hoc" },
+    { title: lang === "vi" ? "Đăng ký học" : "Registrations", icon: UserPlus, to: "/dang-ky", badge: newRegistrations },
     { title: lang === "vi" ? "Cài đặt" : "Settings", icon: Settings, to: "/settings" },
   ];
 
   // 🌟 2. Danh sách Menu dành riêng cho HỌC SINH
-  const studentNavItems = [
+  const studentNavItems: NavItem[] = [
     { title: lang === "vi" ? "Trang chủ" : "Home", icon: LayoutDashboard, to: "/student" },
     { title: lang === "vi" ? "Lớp học của tôi" : "My Classes", icon: BookOpen, to: "/student/classes" },
     { title: lang === "vi" ? "Bài tập & Đề thi" : "Assignments", icon: FileText, to: "/student/assignments" },
@@ -122,13 +135,14 @@ export function AppSidebar() {
                 const isActive =
                   location.pathname === item.to ||
                   (item.to !== "/teacher" && item.to !== "/student" && location.pathname.startsWith(item.to));
+                const badge = item.badge ?? 0;
 
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       asChild
                       isActive={isActive}
-                      tooltip={item.title}
+                      tooltip={badge > 0 ? `${item.title} (${badge})` : item.title}
                       className={
                         isActive
                           ? "h-10 rounded-xl bg-[#0B1B3A] font-semibold text-white hover:bg-[#13285a] hover:text-white data-[active=true]:bg-[#0B1B3A] data-[active=true]:text-white"
@@ -136,8 +150,31 @@ export function AppSidebar() {
                       }
                     >
                       <Link to={item.to} className="flex items-center gap-3 px-3">
-                        <item.icon className={`h-4 w-4 ${isActive ? "text-[#FFB547]" : "text-slate-400"}`} />
+                        <span className="relative shrink-0">
+                          <item.icon className={`h-4 w-4 ${isActive ? "text-[#FFB547]" : "text-slate-400"}`} />
+                          {/* Thanh menu thu gọn: chỉ có chấm đỏ trên biểu tượng */}
+                          {badge > 0 && (
+                            <span
+                              className="absolute -right-1 -top-1 hidden h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white group-data-[collapsible=icon]:block"
+                              aria-hidden
+                            />
+                          )}
+                        </span>
                         <span>{item.title}</span>
+                        {/* Thanh menu mở rộng: chấm đỏ kèm số đăng ký mới */}
+                        {badge > 0 && (
+                          <>
+                            <span
+                              className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-xs font-bold tabular-nums leading-none text-white group-data-[collapsible=icon]:hidden"
+                              aria-hidden
+                            >
+                              {badge > 99 ? "99+" : badge}
+                            </span>
+                            <span className="sr-only">
+                              {lang === "vi" ? `${badge} đăng ký mới` : `${badge} new registrations`}
+                            </span>
+                          </>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
