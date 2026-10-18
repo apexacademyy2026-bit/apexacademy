@@ -81,13 +81,27 @@ const todayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
+// "0912 345 678", "0912.345.678", "+84 912 345 678" → "0912345678"
+const normalizePhone = (s: string) => {
+  let d = s.replace(/[^\d+]/g, "");
+  if (d.startsWith("+84")) d = `0${d.slice(3)}`;
+  else if (d.startsWith("84") && d.length >= 11) d = `0${d.slice(2)}`;
+  return d.replace(/\D/g, "");
+};
+const isValidPhone = (s: string) => /^0\d{9,10}$/.test(normalizePhone(s));
+// "0912345678" → "0912 345 678"
+const prettyPhone = (d: string) => (d.length === 10 ? `${d.slice(0, 4)} ${d.slice(4, 7)} ${d.slice(7)}` : d);
+
+// Thứ tự thêm lỗi theo đúng thứ tự các ô trên form, để ô sai đầu tiên được đưa con trỏ vào.
 const validate = (f: Form): Errors => {
   const e: Errors = {};
   if (f.fullName.trim().length < 2) e.fullName = "Nhập họ và tên";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim())) e.email = "Email chưa đúng định dạng";
+  if (!f.phone.trim()) e.phone = "Nhập số điện thoại để giáo viên liên hệ";
+  else if (!isValidPhone(f.phone)) e.phone = "Số điện thoại chưa đúng, ví dụ 0912 345 678";
   if (!f.birthDate) e.birthDate = "Chọn ngày sinh";
   else if (f.birthDate > todayStr()) e.birthDate = "Ngày sinh không hợp lệ";
-  if (f.phone.trim() && f.phone.replace(/\D/g, "").length < 9) e.phone = "Số điện thoại chưa đúng";
+  // Email không bắt buộc, nhưng nếu có điền thì phải đúng định dạng
+  if (f.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim())) e.email = "Email chưa đúng định dạng";
   if (!f.province) e.province = "Chọn tỉnh / thành phố";
   if (f.school.trim().length < 2) e.school = "Nhập tên trường";
   if (!f.grade) e.grade = "Chọn khối lớp";
@@ -119,6 +133,7 @@ function Field({
   label,
   required,
   error,
+  hint,
   className,
   children,
 }: {
@@ -126,6 +141,7 @@ function Field({
   label: string;
   required?: boolean;
   error?: string;
+  hint?: string;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -136,10 +152,12 @@ function Field({
         {required && <span className="text-rose-500"> *</span>}
       </label>
       {children}
-      {error && (
+      {error ? (
         <p id={`reg-${k}-err`} className="text-xs font-medium text-rose-600">
           {error}
         </p>
+      ) : (
+        hint && <p className="text-xs text-slate-500">{hint}</p>
       )}
     </div>
   );
@@ -150,7 +168,7 @@ export default function ClassDialog({ cls, tone, open, onOpenChange }: Props) {
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [errors, setErrors] = useState<Errors>({});
   const [sending, setSending] = useState(false);
-  const [sentTo, setSentTo] = useState("");
+  const [sentPhone, setSentPhone] = useState("");
 
   // Giữ lại lớp vừa mở để nội dung không biến mất giữa chừng khi popup đang đóng
   const last = useRef<DialogClass | null>(cls);
@@ -207,8 +225,8 @@ export default function ClassDialog({ cls, tone, open, onOpenChange }: Props) {
         class_name: c.name,
         class_schedule: scheduleText || null,
         full_name: form.fullName.trim(),
-        email: form.email.trim().toLowerCase(),
-        phone: form.phone.trim() || null,
+        email: form.email.trim().toLowerCase() || null,
+        phone: normalizePhone(form.phone),
         birth_date: form.birthDate,
         province: form.province,
         address: form.address.trim() || null,
@@ -218,7 +236,7 @@ export default function ClassDialog({ cls, tone, open, onOpenChange }: Props) {
         note: form.note.trim() || null,
       });
       if (error) throw error;
-      setSentTo(form.email.trim());
+      setSentPhone(prettyPhone(normalizePhone(form.phone)));
       setForm(EMPTY_FORM);
       setStep("done");
     } catch {
@@ -394,15 +412,15 @@ export default function ClassDialog({ cls, tone, open, onOpenChange }: Props) {
                 <Field k="fullName" label="Họ và tên" required error={errors.fullName}>
                   <input {...bind("fullName")} type="text" autoComplete="name" placeholder="Ví dụ: Nguyễn Văn A" maxLength={120} />
                 </Field>
-                <Field k="email" label="Địa chỉ Gmail" required error={errors.email}>
-                  <input {...bind("email")} type="email" autoComplete="email" inputMode="email" placeholder="hocsinh@gmail.com" maxLength={160} />
+                <Field k="phone" label="Số điện thoại / Zalo" required error={errors.phone} hint="Của học sinh hoặc phụ huynh">
+                  <input {...bind("phone")} type="tel" autoComplete="tel" inputMode="tel" placeholder="0912 345 678" maxLength={30} />
                 </Field>
                 <Field k="birthDate" label="Ngày sinh" required error={errors.birthDate}>
                   <input {...bind("birthDate")} type="date" autoComplete="bday" max={todayStr()} />
                 </Field>
               </div>
-              <Field k="phone" label="Số điện thoại / Zalo (không bắt buộc)" error={errors.phone} className="sm:max-w-sm">
-                <input {...bind("phone")} type="tel" autoComplete="tel" inputMode="tel" placeholder="Của học sinh hoặc phụ huynh" maxLength={30} />
+              <Field k="email" label="Địa chỉ Gmail (không bắt buộc)" error={errors.email} className="sm:max-w-sm">
+                <input {...bind("email")} type="email" autoComplete="email" inputMode="email" placeholder="hocsinh@gmail.com" maxLength={160} />
               </Field>
             </Section>
 
@@ -480,7 +498,14 @@ export default function ClassDialog({ cls, tone, open, onOpenChange }: Props) {
             <CheckCircle2 className="mx-auto h-14 w-14" style={{ color: tone.solid }} aria-hidden />
             <p className="mt-4 text-lg font-extrabold">Giáo viên đã nhận đăng ký của bạn</p>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-600">
-              Đăng ký lớp <b>{c.name}</b> đã được gửi. Giáo viên sẽ liên hệ qua email <b>{sentTo}</b> để xác nhận chỗ học.
+              Đăng ký lớp <b>{c.name}</b> đã được gửi.{" "}
+              {sentPhone ? (
+                <>
+                  Giáo viên sẽ liên hệ qua số điện thoại <b>{sentPhone}</b> để xác nhận chỗ học.
+                </>
+              ) : (
+                "Giáo viên sẽ liên hệ với bạn để xác nhận chỗ học."
+              )}
             </p>
             <button
               type="button"

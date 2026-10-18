@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Route, Routes } from "react-router-dom"; 
+import { HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -32,7 +32,7 @@ import ClassMemberDetail from "./pages/ClassMemberDetail";
 import ClassDocViewer from "./pages/ClassDocViewer";
 import LessonDetail from "./pages/LessonDetail";
 import StudentLessonView from "./pages/StudentLessonView";
-
+import TeacherShell from "@/components/TeacherShell";
 // CẤU HÌNH TẮT TỰ ĐỘNG RELOAD KHI ĐỔI TAB
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,8 +54,8 @@ const App = () => (
           <ConfirmProvider>
           <Routes>
             <Route path="/auth" element={<Auth />} />
-            <Route path="/lop-hoc" element={<PublicClasses />} />
-            <Route path="/dang-ky" element={<Registrations />} />
+            {/* Trang công khai: khách xem bình thường, giáo viên đã đăng nhập thấy thêm sidebar */}
+            <Route path="/lop-hoc" element={<TeacherShell trigger="floating"><PublicClasses /></TeacherShell>} />
             <Route path="/account/delete-confirm" element={<DeleteConfirm />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<RoleHome />} />
@@ -73,6 +73,7 @@ const App = () => (
               <Route path="/tests/:testId/edit" element={<TestEditor />} />
               <Route path="/tests/:testId/students/:studentId" element={<StudentProgress />} />
               <Route path="/schedule" element={<Schedule />} />
+              <Route path="/dang-ky" element={<Registrations />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/join" element={<JoinClass />} />
               <Route path="/student" element={<StudentHome />} />
