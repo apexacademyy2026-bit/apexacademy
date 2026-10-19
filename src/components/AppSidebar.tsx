@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -46,6 +47,19 @@ export function AppSidebar() {
 
   // 🌟 Lấy role an toàn từ profile context
   const role = (profile as any)?.role || "student";
+
+  // 🌟 Ảnh đại diện đã đổi ở trang Cài đặt: ưu tiên ảnh trong profile, sau đó đến ảnh trong tài khoản đăng nhập.
+  // Nếu chưa có ảnh hoặc ảnh lỗi thì quay về biểu tượng sách (logo) và chữ cái đầu (avatar) như cũ.
+  const avatarUrl: string | null =
+    (profile as any)?.avatar_url ||
+    user?.user_metadata?.avatar_url ||
+    user?.user_metadata?.picture ||
+    null;
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => {
+    setAvatarFailed(false); // đổi ảnh mới thì thử tải lại
+  }, [avatarUrl]);
+  const showAvatar = !!avatarUrl && !avatarFailed;
 
   // Số học sinh đăng ký chưa xử lý (chỉ tải với giáo viên)
   const newRegistrations = useNewRegistrationCount(role === "teacher");
@@ -98,8 +112,17 @@ export function AppSidebar() {
       {/* 1. HEADER LOGO - pt-safe để chừa khoảng trống cho Tai thỏ / Dynamic Island */}
       <SidebarHeader className="border-b border-slate-100 p-4 pt-safe">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0B1B3A] text-[#FFB547]">
-            <BookOpen className="h-5 w-5" />
+          <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#0B1B3A] text-[#FFB547]">
+            {showAvatar ? (
+              <img
+                src={avatarUrl!}
+                alt={displayName}
+                className="h-full w-full object-cover"
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              <BookOpen className="h-5 w-5" />
+            )}
           </div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <h2 className="truncate text-sm font-extrabold tracking-tight text-slate-900">{brandName}</h2>
@@ -189,10 +212,19 @@ export function AppSidebar() {
       <SidebarFooter className="space-y-2 border-t border-slate-100 p-3 pb-safe">
         <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2.5 group-data-[collapsible=icon]:hidden">
           <div
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xs font-extrabold text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]"
-            style={{ background: resolveStudentColor(null, user?.id ?? displayName) }}
+            className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl text-xs font-extrabold text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]"
+            style={showAvatar ? undefined : { background: resolveStudentColor(null, user?.id ?? displayName) }}
           >
-            {displayName.slice(0, 2).toUpperCase()}
+            {showAvatar ? (
+              <img
+                src={avatarUrl!}
+                alt={displayName}
+                className="h-full w-full object-cover"
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              displayName.slice(0, 2).toUpperCase()
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h4 className="truncate text-sm font-bold text-slate-900">{displayName}</h4>

@@ -108,6 +108,15 @@ const buildClassSessions = (c: any, from: string, to: string, schedules: any[], 
   return list;
 };
 
+// Số tháng (theo lịch) mà khoảng [from, to] chạm tới, gồm cả tháng đầu và tháng cuối; 0 nếu khoảng không hợp lệ.
+// Ví dụ 01/01 – 31/12 = 12; 15/03 – 02/04 = 2.
+const monthsBetween = (from: string, to: string) => {
+  const f = new Date(`${from}T00:00:00`);
+  const e = new Date(`${to}T00:00:00`);
+  if (isNaN(f.getTime()) || isNaN(e.getTime()) || e < f) return 0;
+  return (e.getFullYear() - f.getFullYear()) * 12 + e.getMonth() - f.getMonth() + 1;
+};
+
 // Một kỳ học phí đã qua mà còn buổi chưa thu
 type OverduePeriod = { start: string; end: string; fee: number; sessionList: SessionItem[] };
 
@@ -166,6 +175,7 @@ export default function Dashboard() {
   const [savingAttendance, setSavingAttendance] = useState(false);
   const [showCollectedModal, setShowCollectedModal] = useState(false);
   const [showSalaryModal, setShowSalaryModal] = useState(false);
+  const [showExpectedModal, setShowExpectedModal] = useState(false);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   // Lọc popup học phí kỳ sắp tới theo ngày thu: "all" | "none" | "25" ...
   const [billingFilter, setBillingFilter] = useState<string>("all");
@@ -386,13 +396,9 @@ export default function Dashboard() {
     s.payment_type === "session" ||
     s.payment_mode === "session";
 
-  // Số tháng nằm trong khoảng thời gian đang lọc (chỉ dùng cho học sinh tính theo tháng mà chưa đặt ngày thu)
-  const monthsInRange = useMemo(() => {
-    const f = new Date(`${fromDate}T00:00:00`);
-    const e = new Date(`${toDate}T00:00:00`);
-    if (isNaN(f.getTime()) || isNaN(e.getTime()) || e < f) return 1;
-    return Math.max(1, (e.getFullYear() - f.getFullYear()) * 12 + e.getMonth() - f.getMonth() + 1);
-  }, [fromDate, toDate]);
+  // Số tháng nằm trong khoảng thời gian đang lọc: Tháng này / Tháng trước = 1, 3 tháng gần nhất = 3, Năm nay = 12.
+  // Dùng cho thẻ "Lương mặc định" và cho học sinh tính theo tháng mà chưa đặt ngày thu (ở thẻ "Tổng học phí kỳ sắp tới").
+  const monthsInRange = useMemo(() => Math.max(1, monthsBetween(fromDate, toDate)), [fromDate, toDate]);
 
   // Tra cứu nhanh điểm danh theo (buổi học, học sinh)
   const attendanceByKey = useMemo(() => {
@@ -407,9 +413,11 @@ export default function Dashboard() {
   //  - Theo buổi: học phí 1 buổi của lớp × số buổi trong kỳ của học sinh đó
   //  - Theo tháng: học phí tháng của lớp × 1 kỳ
   // Trong kỳ hiện tại, các buổi đã qua mà vắng / chưa điểm danh không hiện và không tính tiền.
+  // Buổi (học theo buổi) hoặc kỳ (học theo tháng) đã có thanh toán khớp thì cũng không hiện và không tính tiền,
+  // ở cả kỳ hiện tại lẫn các kỳ trước.
   // Ngoài kỳ hiện tại, các kỳ trước (từ ngày học sinh bắt đầu học) mà còn buổi chưa thu cũng được cộng thêm vào.
   // Các kỳ trước chỉ tính những buổi học sinh đã có mặt (buổi vắng / chưa điểm danh không tính tiền).
-  // Một buổi/kỳ được coi là đã thu khi có lần thanh toán khớp (cùng cách danh sách hóa đơn bên dưới xác định "Đã thu").
+  // Một buổi/kỳ được coi là đã thu khi có lần thanh toán khớp (cùng cách danh sách hóa đơn sắp tới (popup "Học phí dự kiến trong kỳ") xác định "Đã thu").
   // Học sinh chưa đặt ngày thu thì tạm dùng khoảng ngày đang lọc ở bộ lọc thời gian và không có kỳ trước.
   type StudentUpcoming = {
     fee: number; // tổng cần thu = kỳ hiện tại + các kỳ trước chưa thu
@@ -423,65 +431,52 @@ export default function Dashboard() {
     hasBillingDay: boolean;
     billingDay: number | null; // ngày thu học phí hằng tháng (1–31), null nếu chưa đặt
   };
-  const upcomingByStudent = useMemo(() => {
-    const classById = new Map<string, any>((classes.data || []).map((c: any) => [String(c.id), c]));
-    const scheduleRows = schedules.data || [];
-    const eventRows = events.data || [];
-    // Nhiều học sinh có cùng ngày thu và cùng lớp thì chỉ tính danh sách buổi một lần
-    const sessionCache = new Map<string, SessionItem[]>();
-    const sessionsOf = (cls: any, start: string, end: string) => {
-      const key = `${cls.id}|${start}|${end}`;
-      let list = sessionCache.get(key);
-      if (!list) {
-        list = buildClassSessions(cls, start, end, scheduleRows, eventRows);
-        sessionCache.set(key, list);
-      }
-      return list;
-    };
-    const byDateTime = (a: SessionItem, b: SessionItem) => (a.date + a.start).localeCompare(b.date + b.start);
+  const upcomingByStudent = useMemo(
+    () => {
+      const classById = new Map<string, any>((classes.data || []).map((c: any) => [String(c.id), c]));
+      const scheduleRows = schedules.data || [];
+      const eventRows = events.data || [];
+      // Nhiều học sinh có cùng ngày thu và cùng lớp thì chỉ tính danh sách buổi một lần
+      const sessionCache = new Map<string, SessionItem[]>();
+      const sessionsOf = (cls: any, start: string, end: string) => {
+        const key = `${cls.id}|${start}|${end}`;
+        let list = sessionCache.get(key);
+        if (!list) {
+          list = buildClassSessions(cls, start, end, scheduleRows, eventRows);
+          sessionCache.set(key, list);
+        }
+        return list;
+      };
+      const byDateTime = (a: SessionItem, b: SessionItem) => (a.date + a.start).localeCompare(b.date + b.start);
 
-    // Buổi đã qua mà học sinh không có mặt (vắng hoặc chưa điểm danh): không hiện, không tính tiền.
-    // Buổi hôm nay chưa điểm danh vẫn được coi là "chưa học".
-    const isMissedSession = (sess: SessionItem, studentId: any) => {
-      const rec = sess.eventId ? attendanceByKey.get(`${sess.eventId}|${studentId}`) : undefined;
-      if (rec?.present) return false;
-      return sess.date < todayStr || (sess.date === todayStr && !!rec);
-    };
+      // Buổi đã qua mà học sinh không có mặt (vắng hoặc chưa điểm danh): không hiện, không tính tiền.
+      // Buổi hôm nay chưa điểm danh vẫn được coi là "chưa học".
+      const isMissedSession = (sess: SessionItem, studentId: any) => {
+        const rec = sess.eventId ? attendanceByKey.get(`${sess.eventId}|${studentId}`) : undefined;
+        if (rec?.present) return false;
+        return sess.date < todayStr || (sess.date === todayStr && !!rec);
+      };
 
-    const paymentsByStudent = new Map<string, any[]>();
-    (payments.data || []).forEach((p: any) => {
-      const key = String(p.student_id);
-      paymentsByStudent.set(key, [...(paymentsByStudent.get(key) || []), p]);
-    });
-
-    const now = new Date();
-    const result = new Map<string, StudentUpcoming>();
-    students.forEach((s: any) => {
-      const billingDay = Number(s.billing_day);
-      const hasBillingDay = billingDay >= 1 && billingDay <= 31;
-      const { start, end } = hasBillingDay ? getBillingPeriod(billingDay, now) : { start: fromDate, end: toDate };
-      const bySession = isBySessionStudent(s);
-      const months = hasBillingDay ? 1 : monthsInRange;
-      const studentClasses = (enrollments.data || [])
-        .filter((e: any) => String(e.student_id) === String(s.id))
-        .map((e: any) => classById.get(String(e.class_id)))
-        .filter(Boolean);
-
-      // Kỳ hiện tại (bỏ các buổi vắng / chưa điểm danh)
-      const sessionList: SessionItem[] = [];
-      let currentFee = 0;
-      studentClasses.forEach((cls: any) => {
-        const list = sessionsOf(cls, start, end).filter((sess) => !isMissedSession(sess, s.id));
-        sessionList.push(...list);
-        currentFee += bySession ? Number(cls.fee_per_session || 0) * list.length : Number(cls.fee_per_month || 0) * months;
+      const paymentsByStudent = new Map<string, any[]>();
+      (payments.data || []).forEach((p: any) => {
+        const key = String(p.student_id);
+        paymentsByStudent.set(key, [...(paymentsByStudent.get(key) || []), p]);
       });
-      sessionList.sort(byDateTime);
 
-      // Các kỳ trước còn buổi chưa thu
-      const overdue: OverduePeriod[] = [];
-      let overdueFee = 0;
-      if (hasBillingDay) {
-        const notBefore = String(s.start_date || s.created_at || "").slice(0, 10) || null;
+      const now = new Date();
+      const result = new Map<string, StudentUpcoming>();
+      students.forEach((s: any) => {
+        const billingDay = Number(s.billing_day);
+        const hasBillingDay = billingDay >= 1 && billingDay <= 31;
+        const { start, end } = hasBillingDay ? getBillingPeriod(billingDay, now) : { start: fromDate, end: toDate };
+        const bySession = isBySessionStudent(s);
+        const months = hasBillingDay ? 1 : monthsInRange;
+        const studentClasses = (enrollments.data || [])
+          .filter((e: any) => String(e.student_id) === String(s.id))
+          .map((e: any) => classById.get(String(e.class_id)))
+          .filter(Boolean);
+
+        // Các lần thanh toán của học sinh này: dùng để loại buổi / kỳ ĐÃ THU ở cả kỳ hiện tại lẫn các kỳ trước
         const pays = paymentsByStudent.get(String(s.id)) || [];
 
         // Học sinh tính theo tháng: kỳ coi là đã thu khi có lần thanh toán phủ lên kỳ đó
@@ -499,52 +494,82 @@ export default function Dashboard() {
           });
         }
 
-        getPastBillingPeriods(billingDay, now, notBefore).forEach((per) => {
-          let perFee = 0;
-          const perSessions: SessionItem[] = [];
-          studentClasses.forEach((cls: any) => {
-            const list = sessionsOf(cls, per.start, per.end).filter((sess) => !notBefore || sess.date >= notBefore);
-            if (bySession) {
-              // Kỳ trước chỉ tính các buổi học sinh đã có mặt; buổi vắng / chưa điểm danh không tính tiền
-              const owed = list.filter((sess) => {
-                const rec = sess.eventId ? attendanceByKey.get(`${sess.eventId}|${s.id}`) : undefined;
-                return !!rec?.present && !isSessionCollected(pays, sess, rec);
-              });
-              perSessions.push(...owed);
-              perFee += Number(cls.fee_per_session || 0) * owed.length;
-            } else if (Number(cls.fee_per_month || 0) > 0 && !paidRanges.some((r) => r.start <= per.end && r.end >= per.start)) {
-              // Theo tháng: kỳ trước chỉ tính khi học sinh có ít nhất một buổi có mặt trong kỳ đó
-              const attended = list.filter((sess) => !!(sess.eventId ? attendanceByKey.get(`${sess.eventId}|${s.id}`) : undefined)?.present);
-              if (attended.length > 0) {
-                perSessions.push(...attended);
-                perFee += Number(cls.fee_per_month || 0);
+        // Kỳ hiện tại: bỏ các buổi vắng / chưa điểm danh đã qua VÀ bỏ các buổi / kỳ đã thu tiền
+        const sessionList: SessionItem[] = [];
+        let currentFee = 0;
+        const currentPeriodPaid = !bySession && paidRanges.some((r) => r.start <= end && r.end >= start);
+        studentClasses.forEach((cls: any) => {
+          let list = sessionsOf(cls, start, end).filter((sess) => !isMissedSession(sess, s.id));
+          if (bySession) {
+            // Theo buổi: buổi đã có thanh toán khớp (attendance_id / attendance_ids / khoảng ngày) thì không tính nữa
+            list = list.filter((sess) => {
+              const rec = sess.eventId ? attendanceByKey.get(`${sess.eventId}|${s.id}`) : undefined;
+              return !isSessionCollected(pays, sess, rec);
+            });
+            currentFee += Number(cls.fee_per_session || 0) * list.length;
+          } else {
+            // Theo tháng: kỳ hiện tại đã có thanh toán phủ lên thì không còn gì cần thu
+            if (currentPeriodPaid) return;
+            currentFee += Number(cls.fee_per_month || 0) * months;
+          }
+          sessionList.push(...list);
+        });
+        sessionList.sort(byDateTime);
+
+        // Các kỳ trước còn buổi chưa thu
+        const overdue: OverduePeriod[] = [];
+        let overdueFee = 0;
+        if (hasBillingDay) {
+          const notBefore = String(s.start_date || s.created_at || "").slice(0, 10) || null;
+
+          getPastBillingPeriods(billingDay, now, notBefore).forEach((per) => {
+            let perFee = 0;
+            const perSessions: SessionItem[] = [];
+            studentClasses.forEach((cls: any) => {
+              const list = sessionsOf(cls, per.start, per.end).filter((sess) => !notBefore || sess.date >= notBefore);
+              if (bySession) {
+                // Kỳ trước chỉ tính các buổi học sinh đã có mặt; buổi vắng / chưa điểm danh không tính tiền
+                const owed = list.filter((sess) => {
+                  const rec = sess.eventId ? attendanceByKey.get(`${sess.eventId}|${s.id}`) : undefined;
+                  return !!rec?.present && !isSessionCollected(pays, sess, rec);
+                });
+                perSessions.push(...owed);
+                perFee += Number(cls.fee_per_session || 0) * owed.length;
+              } else if (Number(cls.fee_per_month || 0) > 0 && !paidRanges.some((r) => r.start <= per.end && r.end >= per.start)) {
+                // Theo tháng: kỳ trước chỉ tính khi học sinh có ít nhất một buổi có mặt trong kỳ đó
+                const attended = list.filter((sess) => !!(sess.eventId ? attendanceByKey.get(`${sess.eventId}|${s.id}`) : undefined)?.present);
+                if (attended.length > 0) {
+                  perSessions.push(...attended);
+                  perFee += Number(cls.fee_per_month || 0);
+                }
               }
+            });
+            if (perSessions.length > 0 && perFee > 0) {
+              perSessions.sort(byDateTime);
+              overdue.push({ start: per.start, end: per.end, fee: perFee, sessionList: perSessions });
+              overdueFee += perFee;
             }
           });
-          if (perSessions.length > 0 && perFee > 0) {
-            perSessions.sort(byDateTime);
-            overdue.push({ start: per.start, end: per.end, fee: perFee, sessionList: perSessions });
-            overdueFee += perFee;
-          }
-        });
-        overdue.reverse(); // kỳ cũ nhất lên đầu
-      }
+          overdue.reverse(); // kỳ cũ nhất lên đầu
+        }
 
-      result.set(String(s.id), {
-        fee: currentFee + overdueFee,
-        currentFee,
-        overdueFee,
-        sessions: sessionList.length,
-        sessionList,
-        overdue,
-        start,
-        end,
-        hasBillingDay,
-        billingDay: hasBillingDay ? billingDay : null,
+        result.set(String(s.id), {
+          fee: currentFee + overdueFee,
+          currentFee,
+          overdueFee,
+          sessions: sessionList.length,
+          sessionList,
+          overdue,
+          start,
+          end,
+          hasBillingDay,
+          billingDay: hasBillingDay ? billingDay : null,
+        });
       });
-    });
-    return result;
-  }, [students, classes.data, enrollments.data, schedules.data, events.data, payments.data, attendanceByKey, fromDate, toDate, monthsInRange, todayStr]);
+      return result;
+    },
+    [students, classes.data, enrollments.data, schedules.data, events.data, payments.data, attendanceByKey, fromDate, toDate, monthsInRange, todayStr],
+  );
 
   const totalUpcomingFee = useMemo(
     () => Array.from(upcomingByStudent.values()).reduce((sum, v) => sum + v.fee, 0),
@@ -557,8 +582,9 @@ export default function Dashboard() {
     [upcomingByStudent],
   );
 
-  // Lương mặc định theo từng học sinh: học phí tháng cố định của mỗi lớp học sinh đó đang học.
-  // Không phụ thuộc kỳ thu, lịch học, điểm danh hay bộ lọc thời gian.
+  // Lương mặc định theo từng học sinh: học phí tháng cố định của mỗi lớp học sinh đó đang học × số tháng trong khoảng lọc
+  // (Tháng này = ×1, 3 tháng gần nhất = ×3, Năm nay = ×12...).
+  // Không phụ thuộc kỳ thu, lịch học hay điểm danh.
   const salaryByStudent = useMemo(() => {
     const classById = new Map<string, any>((classes.data || []).map((c: any) => [String(c.id), c]));
     const studentIds = new Set(students.map((s: any) => String(s.id)));
@@ -572,14 +598,14 @@ export default function Dashboard() {
       seen.add(pairKey);
       const cls = classById.get(String(e.class_id));
       if (!cls) return;
-      const fee = Number(cls.fee_per_month || 0);
+      const fee = Number(cls.fee_per_month || 0) * monthsInRange;
       const entry = map.get(sid) || { total: 0, items: [] };
       entry.total += fee;
       entry.items.push({ classId: String(cls.id), className: cls.name || "Lớp học", fee });
       map.set(sid, entry);
     });
     return map;
-  }, [students, classes.data, enrollments.data]);
+  }, [students, classes.data, enrollments.data, monthsInRange]);
 
   // Tổng lương mặc định = tổng của tất cả học sinh ở trên
   const defaultSalary = useMemo(
@@ -725,7 +751,6 @@ export default function Dashboard() {
   // Lấy danh sách hóa đơn
   const rawUpcoming: { studentId: string; studentName: string; due: Date; label: string; amount: number; paid: boolean }[] = [];
   const today = new Date();
-  let pendingTotal = 0;
   const evList = events.data || [];
   const allPresentAttendance = (attendanceAll.data || []).filter((a: any) => a.present);
   const payList = payments.data || [];
@@ -757,7 +782,6 @@ export default function Dashboard() {
           const fee = a.fee_override != null ? Number(a.fee_override) : Number(s.fee_per_session || s.tuition_fee || s.fee || 0);
           return sum + fee;
         }, 0);
-        pendingTotal += totalFee;
         rawUpcoming.push({
           studentId: s.id,
           studentName: s.name,
@@ -785,9 +809,6 @@ export default function Dashboard() {
           const isPaid = payList.some((p: any) => {
             return String(p.student_id) === String(s.id) && (p.cycle_label === c.label || p.cycle_label?.includes(c.label));
           });
-          if (!isPaid) {
-            pendingTotal += cycleAmount;
-          }
           rawUpcoming.push({
             studentId: s.id,
             studentName: s.name,
@@ -827,6 +848,13 @@ export default function Dashboard() {
     return Object.values(map);
   }, [rawUpcoming, payFilter]);
 
+  // 🌟 HỌC PHÍ DỰ KIẾN TRONG KỲ (thẻ "Học phí dự kiến trong kỳ"): CỐ ĐỊNH, không phụ thuộc bộ lọc thời gian.
+  // = tổng các hóa đơn CHƯA THU trong danh sách hóa đơn sắp tới (rawUpcoming ở trên), cộng tất cả học sinh.
+  // Ví dụ: Thư 640.000 + Cua 1.000.000 + ... = tổng hiện trên thẻ.
+  const expectedTotal = rawUpcoming.filter((u) => !u.paid).reduce((sum, u) => sum + u.amount, 0);
+  // Tổng của danh sách đang hiển thị trong popup (theo tab Chưa thu / Đã thu / Tất cả)
+  const billsListTotal = groupedUpcoming.reduce((sum, g) => sum + g.totalAmount, 0);
+
   const periodLabel =
     preset === "thisMonth"
       ? lang === "vi" ? "Tháng này" : "This month"
@@ -864,7 +892,7 @@ export default function Dashboard() {
     { key: "tuition", onClick: () => setShowCollectedModal(true), label: vi ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition", value: formatVND(totalUpcomingFee), icon: Wallet, tone: "bg-amber-50 text-amber-600" },
     { key: "payments", to: "/students", label: vi ? "Số lần thanh toán" : "Payments count", value: paymentsCount, icon: CalendarClock, tone: "bg-rose-50 text-rose-600" },
     { key: "avg", onClick: () => setShowSalaryModal(true), label: vi ? "Lương mặc định" : "Default salary", value: formatVND(defaultSalary), icon: TrendingUp, tone: "bg-violet-50 text-violet-600" },
-    { key: "pending", to: "/students", label: vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period", value: formatVND(pendingTotal), icon: Hourglass, tone: "bg-[#FFB547] text-[#0B1B3A]", highlight: true },
+    { key: "pending", onClick: () => setShowExpectedModal(true), label: vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period", value: formatVND(expectedTotal), icon: Hourglass, tone: "bg-[#FFB547] text-[#0B1B3A]", highlight: true },
   ];
 
   const renderStat = (s: (typeof stats)[number]) => {
@@ -1051,62 +1079,6 @@ export default function Dashboard() {
 
       {/* SỐ LIỆU */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">{stats.map(renderStat)}</div>
-
-      {/* HỌC PHÍ SẮP TỚI */}
-      <Card className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">{t.upcomingBills}</h3>
-            <p className="text-xs text-slate-500">
-              {vi ? "Học phí tổng hợp, gộp theo từng học sinh" : "Aggregated fees, grouped by student"}
-            </p>
-          </div>
-          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-            {(["unpaid", "paid", "all"] as const).map((k) => (
-              <button key={k} type="button" aria-pressed={payFilter === k} onClick={() => setPayFilter(k)} className={segBtn(payFilter === k)}>
-                {k === "unpaid" ? (vi ? "Chưa thu" : "Unpaid") : k === "paid" ? (vi ? "Đã thu" : "Paid") : vi ? "Tất cả" : "All"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {groupedUpcoming.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center text-sm text-slate-500">{t.nothingHere}</div>
-        ) : (
-          <div className="max-h-[22rem] space-y-2 overflow-y-auto pr-1">
-            {groupedUpcoming.map((item) => (
-              <Link
-                to={`/students/${item.studentId}`}
-                key={item.studentId}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-3.5 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className={cn("h-10 w-10 shrink-0 rounded-xl text-sm", bubble)} style={{ background: colorOf(item.studentId) }}>
-                    {item.studentName.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="truncate text-sm font-bold text-slate-900">{item.studentName}</h4>
-                    <p className="truncate text-xs text-slate-500">
-                      Gộp {item.cycles.length} kỳ ({item.cycles.join(", ")})
-                    </p>
-                  </div>
-                </div>
-                <div className="ml-auto flex items-center gap-4">
-                  <span className="text-base font-extrabold text-slate-900">{formatVND(item.totalAmount)}</span>
-                  <span
-                    className={cn(
-                      "rounded-full px-2.5 py-1 text-xs font-semibold",
-                      item.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                    )}
-                  >
-                    {item.isPaid ? (vi ? "Đã thu" : "Paid") : vi ? "Chưa thu" : "Unpaid"}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </Card>
 
       {/* POPUP CHI TIẾT HỌC PHÍ KỲ SẮP TỚI */}
       <Dialog
@@ -1350,8 +1322,8 @@ export default function Dashboard() {
             </p>
             <p className="text-xs text-slate-400">
               {vi
-                ? "Tổng học phí tháng cố định của các lớp mỗi học sinh đang học."
-                : "Fixed monthly fee of every class each student is enrolled in."}
+                ? `Học phí tháng cố định của các lớp mỗi học sinh đang học × ${monthsInRange} tháng (${periodLabel.toLowerCase()}).`
+                : `Fixed monthly fee of every class each student is enrolled in × ${monthsInRange} month${monthsInRange > 1 ? "s" : ""} (${periodLabel.toLowerCase()}).`}
             </p>
           </DialogHeader>
           <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
@@ -1390,6 +1362,81 @@ export default function Dashboard() {
               ))
             ) : (
               <div className="py-4 text-center text-sm text-slate-500">Chưa có dữ liệu học sinh</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* POPUP CHI TIẾT HỌC PHÍ DỰ KIẾN TRONG KỲ (danh sách hóa đơn sắp tới, không phụ thuộc bộ lọc thời gian) */}
+      <Dialog
+        open={showExpectedModal}
+        onOpenChange={(open) => {
+          setShowExpectedModal(open);
+          if (!open) setPayFilter("unpaid");
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
+          <div className="h-1.5 shrink-0 bg-[#FFB547]" />
+          <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-6 py-5 text-left">
+            <DialogTitle className="text-lg font-extrabold text-slate-900">
+              {vi ? "Chi tiết học phí dự kiến trong kỳ" : "Upcoming in period details"}
+            </DialogTitle>
+            <p className="text-sm text-slate-500">
+              {vi ? "Tổng cộng" : "Total"} <span className="font-bold text-slate-900">{formatVND(billsListTotal)}</span>
+              {` · ${groupedUpcoming.length} ${vi ? "học sinh" : "students"}`}
+            </p>
+            <p className="text-xs text-slate-400">
+              {vi
+                ? "Học phí tổng hợp, gộp theo từng học sinh. Con số trên thẻ là tổng các hóa đơn chưa thu, cố định và không thay đổi theo bộ lọc thời gian."
+                : "Aggregated fees, grouped by student. The card shows the total of unpaid bills, fixed and not affected by the date filter."}
+            </p>
+          </DialogHeader>
+
+          <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 px-6 py-3">
+            <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-1">
+              {(["unpaid", "paid", "all"] as const).map((k) => (
+                <button key={k} type="button" aria-pressed={payFilter === k} onClick={() => setPayFilter(k)} className={segBtn(payFilter === k)}>
+                  {k === "unpaid" ? (vi ? "Chưa thu" : "Unpaid") : k === "paid" ? (vi ? "Đã thu" : "Paid") : vi ? "Tất cả" : "All"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
+            {groupedUpcoming.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center text-sm text-slate-500">{t.nothingHere}</div>
+            ) : (
+              groupedUpcoming.map((item) => (
+                <Link
+                  to={`/students/${item.studentId}`}
+                  key={item.studentId}
+                  onClick={() => setShowExpectedModal(false)}
+                  className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className={cn("h-10 w-10 shrink-0 rounded-xl text-sm", bubble)} style={{ background: colorOf(item.studentId) }}>
+                      {item.studentName ? item.studentName.slice(0, 2).toUpperCase() : "HS"}
+                    </div>
+                    <div className="min-w-0">
+                      <h4 className="truncate text-sm font-bold text-slate-900">{item.studentName}</h4>
+                      <p className="truncate text-xs text-slate-500">
+                        Gộp {item.cycles.length} kỳ ({item.cycles.join(", ")})
+                      </p>
+                    </div>
+                  </div>
+                  <div className="ml-auto flex shrink-0 items-center gap-3">
+                    <span className="text-sm font-extrabold text-[#0B1B3A]">{formatVND(item.totalAmount)}</span>
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-xs font-semibold",
+                        item.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                      )}
+                    >
+                      {item.isPaid ? (vi ? "Đã thu" : "Paid") : vi ? "Chưa thu" : "Unpaid"}
+                    </span>
+                  </div>
+                </Link>
+              ))
             )}
           </div>
         </DialogContent>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Printer, Check, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar, Pencil } from "lucide-react";
+import { ArrowLeft, Printer, Check, X, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -273,6 +273,12 @@ export default function StudentBill() {
       return sum + Number(a.fee_override ?? student?.fee_per_session ?? 0);
     }, 0);
   }, [selectedSessionsArray, student]);
+
+  // Chọn / bỏ chọn tất cả các buổi chưa thanh toán trong danh sách
+  const allSessionsSelected = availableAttendance.length > 0 && selectedSessionsArray.length === availableAttendance.length;
+  const toggleAllSessions = () => {
+    setSelectedSessionIds(allSessionsSelected ? new Set() : new Set(availableAttendance.map((a: any) => a.id)));
+  };
 
   const selectedCyclesArray = useMemo(() => {
     return bills.filter((b: any) => selectedCycles.has(b.cycle_label));
@@ -676,6 +682,24 @@ export default function StudentBill() {
                 <div className="flex justify-end">
                   <Button onClick={addAttendance} className="h-9 rounded-xl bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a]">{t?.save || "Save"}</Button>
                 </div>
+              </div>
+            )}
+
+            {/* Chọn / bỏ chọn tất cả các buổi (đặt ngoài vùng cuộn để luôn nhìn thấy) */}
+            {mode === "by_session" && availableAttendance.length > 0 && (
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-2">
+                <span className="text-xs font-medium text-slate-500">
+                  Đã chọn <b className="font-bold text-slate-800">{selectedSessionsArray.length}</b>/{availableAttendance.length} buổi
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={toggleAllSessions}
+                  className="h-8 gap-1.5 rounded-lg border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {allSessionsSelected ? <X className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+                  {allSessionsSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                </Button>
               </div>
             )}
 
