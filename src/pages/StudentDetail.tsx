@@ -14,6 +14,7 @@ import {
   BookOpen,
   Clock,
   CalendarClock,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,6 +39,10 @@ const CARD = "rounded-2xl border border-slate-200 bg-white p-6 shadow-xs";
 const INPUT = "h-9 rounded-xl border-slate-200 bg-white text-sm shadow-xs focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20";
 const HERO_PILL = "inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white";
 
+// Học phí hiển thị của một lớp: ưu tiên học phí tháng, nếu không có thì lấy học phí buổi
+const classFee = (c: any) =>
+  Number(c.fee_per_month || 0) > 0 ? formatVND(Number(c.fee_per_month)) : formatVND(Number(c.fee_per_session || c.fee || 0));
+
 const InfoRow = ({ icon: Icon, label, value, tone }: { icon: any; label: string; value: React.ReactNode; tone?: string }) => (
   <div className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-4 py-3 text-sm">
     <span className="flex items-center gap-2 text-slate-500">
@@ -59,6 +64,11 @@ export default function StudentDetail() {
   // Dialog control
   const [editing, setEditing] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+
+  // Đăng ký lớp cho học sinh
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [enrolling, setEnrolling] = useState(false);
 
   // Form states cho Điểm danh
   const [addForm, setAddForm] = useState({
@@ -124,6 +134,23 @@ export default function StudentDetail() {
     return (classes.data || []).filter((c: any) => cids.includes(c.id));
   }, [enrollments.data, classes.data, student]);
 
+  // Các lớp học sinh đã đăng ký (để loại khỏi danh sách chọn)
+  const joinedClassIds = useMemo(() => {
+    if (!student) return new Set<string>();
+    return new Set<string>(
+      (enrollments.data || []).filter((e: any) => String(e.student_id) === String(student.id)).map((e: any) => String(e.class_id)),
+    );
+  }, [enrollments.data, student]);
+
+  // Các lớp học sinh CHƯA đăng ký, xếp theo tên
+  const availableClasses = useMemo(
+    () =>
+      (classes.data || [])
+        .filter((c: any) => !joinedClassIds.has(String(c.id)))
+        .sort((a: any, b: any) => String(a.name || "").localeCompare(String(b.name || ""), "vi")),
+    [classes.data, joinedClassIds],
+  );
+
   useEffect(() => {
     if (myClasses[0] && !addForm.class_id) {
       setAddForm((f) => ({ ...f, class_id: myClasses[0].id }));
@@ -163,6 +190,46 @@ export default function StudentDetail() {
     setAddForm({ date: new Date().toISOString().slice(0, 10), class_id: myClasses[0]?.id || "", note: "" });
     setAddOpen(false);
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+  };
+
+  const toggleSelectClass = (classId: string | number) => {
+    const cid = String(classId);
+    setSelectedClassIds((prev) => (prev.includes(cid) ? prev.filter((x) => x !== cid) : [...prev, cid]));
+  };
+
+  const closeEnroll = () => {
+    setEnrollOpen(false);
+    setSelectedClassIds([]);
+  };
+
+  // Đăng ký học sinh vào các lớp đã chọn (thêm dòng vào bảng enrollments)
+  const enrollClasses = async () => {
+    if (!user || !student) return;
+    // Bỏ các lớp học sinh đã có sẵn để tránh đăng ký trùng
+    const classIds = selectedClassIds.filter((cid) => !joinedClassIds.has(cid));
+    if (classIds.length === 0) return;
+
+    setEnrolling(true);
+    const buildRows = (withUser: boolean) =>
+      classIds.map((class_id) => ({ ...(withUser ? { user_id: user.id } : {}), class_id, student_id: student.id }));
+
+    let { error } = await supabase.from("enrollments").insert(buildRows(true) as any);
+    // Dự phòng: nếu bảng enrollments không có cột user_id thì thử lại không kèm user_id
+    if (error && /user_id/i.test(error.message)) {
+      ({ error } = await supabase.from("enrollments").insert(buildRows(false) as any));
+    }
+    setEnrolling(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`Đã đăng ký ${classIds.length} lớp cho ${student.name}`);
+    closeEnroll();
+    qc.invalidateQueries({ queryKey: ["enrollments"] });
+    qc.invalidateQueries({ queryKey: ["students"] });
+    qc.invalidateQueries({ queryKey: ["classes"] });
+    await (enrollments as any).refetch?.();
   };
 
   const removeAttendance = async (a: any) => {
@@ -495,11 +562,78 @@ export default function StudentDetail() {
           </Card>
         </div>
 
-        {/* LỚP ĐANG THAM GIA */}
+        {/* LỚP ĐANG THAM GIA + ĐĂNG KÝ LỚP */}
         <Card className={cn(CARD, "space-y-4")}>
-          <h2 className="flex items-center gap-2 text-base font-bold text-slate-900">
-            <BookOpen className="h-4 w-4 text-slate-400" /> Lớp đang tham gia
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-base font-bold text-slate-900">
+              <BookOpen className="h-4 w-4 text-slate-400" /> Lớp đang tham gia
+            </h2>
+            <Button
+              type="button"
+              aria-expanded={enrollOpen}
+              onClick={() => (enrollOpen ? closeEnroll() : setEnrollOpen(true))}
+              className="h-9 gap-1.5 rounded-xl bg-[#0B1B3A] px-3 text-sm font-bold text-white hover:bg-[#13285a]"
+            >
+              <Plus className="h-4 w-4" /> Đăng ký lớp
+            </Button>
+          </div>
+
+          {enrollOpen && (
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-500">Chọn lớp để đăng ký cho {student.name}</p>
+              {availableClasses.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-300 bg-white py-5 text-center text-sm text-slate-500">
+                  Không còn lớp nào để đăng ký. Hãy tạo lớp mới ở trang Lớp học.
+                </p>
+              ) : (
+                <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+                  {availableClasses.map((c: any) => {
+                    const checked = selectedClassIds.includes(String(c.id));
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        aria-pressed={checked}
+                        onClick={() => toggleSelectClass(c.id)}
+                        className={cn(
+                          "flex w-full items-center justify-between gap-3 rounded-xl border bg-white p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                          checked ? "border-[#0B1B3A] ring-2 ring-[#0B1B3A]/15" : "border-slate-200 hover:border-slate-300"
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          <span
+                            className={cn(
+                              "grid h-5 w-5 shrink-0 place-items-center rounded-md border",
+                              checked ? "border-[#0B1B3A] bg-[#0B1B3A] text-white" : "border-slate-300 bg-white text-transparent"
+                            )}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: resolveStudentColor(c.color, c.id) }} />
+                          <span className="truncate text-sm font-semibold text-slate-900">{c.name}</span>
+                        </span>
+                        <span className="shrink-0 text-xs font-bold text-emerald-700">{classFee(c)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={closeEnroll} className="h-9 rounded-xl px-3 text-sm font-semibold text-slate-600">
+                  Hủy
+                </Button>
+                <Button
+                  type="button"
+                  onClick={enrollClasses}
+                  disabled={enrolling || selectedClassIds.length === 0}
+                  className="h-9 rounded-xl bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a]"
+                >
+                  {enrolling ? "Đang lưu..." : selectedClassIds.length > 0 ? `Đăng ký (${selectedClassIds.length})` : "Đăng ký"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {myClasses.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-6 text-center text-sm text-slate-500">Chưa đăng ký lớp học nào</p>
           ) : (
@@ -512,9 +646,7 @@ export default function StudentDetail() {
                     </div>
                     <span className="truncate text-sm font-bold text-slate-900">{c.name}</span>
                   </div>
-                  <span className="shrink-0 text-sm font-bold text-emerald-700">
-                    {Number(c.fee_per_month || 0) > 0 ? formatVND(Number(c.fee_per_month)) : formatVND(Number(c.fee_per_session || c.fee || 0))}
-                  </span>
+                  <span className="shrink-0 text-sm font-bold text-emerald-700">{classFee(c)}</span>
                 </div>
               ))}
             </div>
