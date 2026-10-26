@@ -310,17 +310,19 @@ export default function StudentBill() {
     ? (selectedSessionIds.size > 0 ? selectedSessionsAmount : displayBill?.amount || 0)
     : (selectedCycles.size > 0 ? selectedCyclesAmount : effectiveAmount(displayBill));
 
-  const qrContent = displayBill ? displayBill.cycle_label : "";
-  const qrUrl = displayBill && profile?.bank_code && profile?.bank_account_number
-    ? vietQRUrl(profile?.bank_code, profile?.bank_account_number, profile?.bank_account_name, billTotal, qrContent)
-    : null;
-
   const accent = resolveStudentColor(student?.color, student?.id ?? "");
   const safeStudentName = student?.name ? student.name.trim().toUpperCase().replace(/\s+/g, '') : "STUDENT";
   const sessionsCount = mode === "by_session"
     ? (selectedSessionIds.size > 0 ? selectedSessionIds.size : availableAttendance.length)
     : (displayBill?.attendances?.length || 0);
   const billNum = `${safeStudentName}_${sessionsCount}BUOI`;
+
+  // Nội dung chuyển khoản trong mã QR dùng đúng mã hiển thị trên hoá đơn (billNum),
+  // không dùng displayBill.cycle_label vì nhãn đó chỉ là nhãn nội bộ (vd. "TEN_BuoiLe").
+  const qrContent = billNum;
+  const qrUrl = displayBill && profile?.bank_code && profile?.bank_account_number
+    ? vietQRUrl(profile?.bank_code, profile?.bank_account_number, profile?.bank_account_name, billTotal, qrContent)
+    : null;
 
   // Thông tin phục vụ giao diện hoá đơn
   const billPaid =
