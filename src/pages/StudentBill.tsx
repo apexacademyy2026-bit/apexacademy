@@ -14,7 +14,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatVND, fmtDate, vietQRUrl } from "@/lib/format";
 import { toast } from "sonner";
 import { useEnrollments, useClasses } from "@/hooks/useData";
-import { toPng } from "html-to-image";
+import { toBlob } from "html-to-image";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { resolveStudentColor } from "@/lib/studentColor";
 
@@ -35,6 +35,68 @@ const writeStored = (key: string, val: string | null) => {
   } catch {
     /* bỏ qua nếu trình duyệt chặn lưu trữ */
   }
+};
+
+/* ---------- Hỗ trợ lưu hoá đơn thành ảnh ---------- */
+
+// Ảnh trong suốt 1x1, dùng thay mã QR khi không tải được để việc lưu ảnh không bị lỗi
+const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
+// Dịch vụ proxy ảnh công khai có bật CORS (wsrv.nl), chỉ dùng khi tải trực tiếp từ VietQR bị trình duyệt chặn.
+// Khi dùng, đường dẫn mã QR (gồm số tài khoản, tên chủ tài khoản, số tiền, nội dung) được gửi qua dịch vụ này.
+// Muốn tắt hẳn thì đặt thành chuỗi rỗng: const QR_IMAGE_PROXY = "";
+const QR_IMAGE_PROXY = "https://wsrv.nl/?url=";
+
+// Tải một ảnh về dạng data URL (cần máy chủ ảnh cho phép CORS)
+const fetchImageAsDataUrl = async (url: string): Promise<string> => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`máy chủ trả về lỗi ${res.status}`);
+  const blob = await res.blob();
+  if (!blob.type.startsWith("image/")) throw new Error(`không phải ảnh (${blob.type || "rỗng"})`);
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error("không đọc được ảnh"));
+    reader.readAsDataURL(blob);
+  });
+};
+
+// Lấy mã QR dạng data URL: thử tải trực tiếp trước, không được thì qua proxy.
+// Thêm tham số _cb để tránh dùng lại bản ảnh đã được thẻ <img> cache (bản đó không có header CORS).
+const embedQrImage = async (url: string): Promise<string> => {
+  const reasons: string[] = [];
+  const reasonOf = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    return /failed to fetch|load failed|networkerror/i.test(msg) ? "bị trình duyệt chặn (CORS) hoặc mất mạng" : msg;
+  };
+  try {
+    return await fetchImageAsDataUrl(`${url}${url.includes("?") ? "&" : "?"}_cb=${Date.now()}`);
+  } catch (e) {
+    reasons.push(`tải trực tiếp ${reasonOf(e)}`);
+  }
+  if (QR_IMAGE_PROXY) {
+    try {
+      return await fetchImageAsDataUrl(QR_IMAGE_PROXY + encodeURIComponent(url));
+    } catch (e) {
+      reasons.push(`qua proxy ${reasonOf(e)}`);
+    }
+  }
+  throw new Error(reasons.join("; "));
+};
+
+// Tên file không chứa ký tự cấm và không quá dài (nhãn nhiều kỳ có thể rất dài)
+const safeFileName = (name: string) =>
+  name.replace(/\s*,\s*/g, "_").replace(/[\\/:*?"<>|]+/g, "").trim().slice(0, 80) || "bill";
+
+// html-to-image có thể từ chối bằng một Event (ảnh không tải được) thay vì Error, nên cần đọc riêng
+const describeError = (err: unknown): string => {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof Event !== "undefined" && err instanceof Event) {
+    const target = err.target as (HTMLImageElement | null);
+    const src = target?.src ? `, nguồn: ${target.src.slice(0, 40)}...` : "";
+    return `không dựng được ảnh từ hóa đơn (${err.type}${src})`;
+  }
+  return typeof err === "string" && err ? err : "lỗi không xác định";
 };
 
 /* ---------- Thành phần nhỏ dùng trong hoá đơn ---------- */
@@ -514,21 +576,115 @@ export default function StudentBill() {
 
   const saveAsImage = () =>
     withViewMode(async () => {
-      if (!billRef.current) return;
+      const node = billRef.current;
+      if (!node) return;
+
+      const loadingId = toast.loading("Đang tạo ảnh hóa đơn...");
+      const qrImg = node.querySelector<HTMLImageElement>('img[alt="VietQR"]');
+      const originalQrSrc = qrImg?.src || "";
+      let qrEmbedded = true;
+      let qrReason = "";
+
       try {
-        const dataUrl = await toPng(billRef.current, {
+        // 1) Nhúng sẵn mã QR dạng dữ liệu để lúc chụp không phải tải lại ảnh từ VietQR
+        //    (ảnh từ máy chủ khác không cho phép đọc nếu thiếu CORS, nên phải lấy trước)
+        if (qrImg && originalQrSrc && !originalQrSrc.startsWith("data:")) {
+          try {
+            qrImg.src = await embedQrImage(originalQrSrc);
+            await qrImg.decode();
+          } catch (err) {
+            qrEmbedded = false;
+            qrReason = describeError(err);
+            qrImg.src = originalQrSrc;
+            console.warn("[saveAsImage] không nhúng được mã QR:", err);
+          }
+        }
+
+        // 2) Đợi font chữ tải xong để ảnh không bị đổi font
+        await (document as any).fonts?.ready;
+
+        const options = {
           cacheBust: true,
           backgroundColor: "#ffffff",
           pixelRatio: 2,
+          // Không có mã QR thì thay bằng ảnh trong suốt, tránh làm cả ảnh bị lỗi
+          imagePlaceholder: qrEmbedded ? undefined : TRANSPARENT_PIXEL,
           // Bỏ các phần chỉ dành cho màn hình (nút, ô nhập...) khỏi ảnh
-          filter: (node) => !(node instanceof HTMLElement && node.classList?.contains("no-print")),
-        });
+          filter: (n: HTMLElement) => !(n instanceof HTMLElement && n.classList?.contains("no-print")),
+        };
+
+        // 3) Safari / iOS thường chụp thiếu ảnh hoặc font ở lần đầu, nên chụp nháp một lần trước
+        const ua = navigator.userAgent;
+        const isApple =
+          /iPad|iPhone|iPod/.test(ua) ||
+          (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua)) ||
+          (ua.includes("Macintosh") && "ontouchend" in document);
+        if (isApple) await toBlob(node, options).catch(() => null);
+
+        // Thử lần lượt từ đầy đủ đến tối giản. Lỗi "không dựng được ảnh" thường do việc nhúng
+        // font Google hoặc ảnh quá nặng, nên các lần sau bỏ nhúng font và giảm độ phân giải.
+        const attempts: { name: string; opts: Record<string, any> }[] = [
+          { name: "đầy đủ", opts: options },
+          { name: "không nhúng font", opts: { ...options, skipFonts: true, fontEmbedCSS: "" } },
+          { name: "tối giản", opts: { ...options, skipFonts: true, fontEmbedCSS: "", cacheBust: false, pixelRatio: 1 } },
+        ];
+        let blob: Blob | null = null;
+        let usedMethod = "";
+        let lastErr: unknown = null;
+        for (const attempt of attempts) {
+          try {
+            const b = await toBlob(node, attempt.opts);
+            if (b) {
+              blob = b;
+              usedMethod = attempt.name;
+              break;
+            }
+            lastErr = new Error(`không tạo được ảnh (cách "${attempt.name}" trả về rỗng)`);
+          } catch (err) {
+            lastErr = err;
+            console.warn(`[saveAsImage] cách "${attempt.name}" bị lỗi:`, err);
+          }
+        }
+        if (!blob) throw lastErr ?? new Error("không tạo được ảnh");
+
+        const fileName = `${safeFileName(displayBill?.cycle_label || "bill")}.png`;
+
+        // 4) Trên điện thoại: mở bảng chia sẻ để lưu vào Ảnh / gửi Zalo. Nơi khác: tải file về.
+        const nav = navigator as any;
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(ua);
+        const file = new File([blob], fileName, { type: "image/png" });
+        if (isMobile && nav.canShare?.({ files: [file] })) {
+          try {
+            await nav.share({ files: [file], title: fileName });
+            return;
+          } catch (err: any) {
+            if (err?.name === "AbortError") return; // người dùng tự đóng bảng chia sẻ
+            // Không chia sẻ được thì chuyển sang tải file xuống
+          }
+        }
+
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        link.download = `${displayBill?.cycle_label || "bill"}.png`;
-        link.href = dataUrl;
+        link.download = fileName;
+        link.href = url;
+        document.body.appendChild(link);
         link.click();
-      } catch (e: any) {
-        toast.error(e.message || "Error");
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+        if (!qrEmbedded) toast.warning("Đã lưu ảnh nhưng thiếu mã QR", { description: qrReason || "Không tải được mã QR từ VietQR." });
+        else if (usedMethod !== "đầy đủ") toast.success("Đã lưu ảnh hóa đơn (dùng font mặc định vì không nhúng được font)");
+        else toast.success("Đã lưu ảnh hóa đơn");
+      } catch (err: any) {
+        console.error("[saveAsImage]", err);
+        toast.error("Không tạo được ảnh hóa đơn", {
+          description: describeError(err),
+          action: { label: "In / lưu PDF", onClick: () => { void handlePrint(); } },
+        });
+      } finally {
+        // Trả mã QR về nguồn ban đầu và tắt thông báo đang tạo ảnh
+        if (qrImg && originalQrSrc && qrImg.src !== originalQrSrc) qrImg.src = originalQrSrc;
+        toast.dismiss(loadingId);
       }
     });
 
