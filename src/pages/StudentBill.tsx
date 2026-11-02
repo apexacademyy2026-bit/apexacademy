@@ -1758,7 +1758,7 @@ export default function StudentBill() {
                             <img
                               src={qrUrl}
                               alt="VietQR"
-                              className="h-60 w-60 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
+                              className="h-80 w-80 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
                             />
                             <div className="mt-2 text-xs text-slate-500">Quét bằng app ngân hàng</div>
                           </div>
