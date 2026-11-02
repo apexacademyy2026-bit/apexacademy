@@ -9,6 +9,7 @@ import {
   LogOut,
   Plus,
   BookOpen,
+  BookMarked,
   FileText,
   Globe,
   UserPlus,
@@ -78,6 +79,7 @@ export function AppSidebar() {
   const teacherNavItems: NavItem[] = [
     { title: lang === "vi" ? "Tổng quan" : "Dashboard", icon: LayoutDashboard, to: "/teacher" },
     { title: lang === "vi" ? "Học sinh" : "Students", icon: Users, to: "/students" },
+    { title: lang === "vi" ? "Nhật ký học tập" : "Learning log", icon: BookMarked, to: "/nhat-ky-hoc-tap" },
     { title: lang === "vi" ? "Lớp học" : "Classes", icon: GraduationCap, to: "/classes" },
     { title: lang === "vi" ? "Lịch dạy" : "Schedule", icon: CalendarDays, to: "/schedule" },
     { title: lang === "vi" ? "Trang lớp học" : "Public page", icon: Globe, to: "/lop-hoc" },

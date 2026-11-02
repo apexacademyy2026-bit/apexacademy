@@ -13,6 +13,7 @@ import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import StudentDetail from "./pages/StudentDetail";
 import StudentBill from "./pages/StudentBill";
+import LearningLog from "./pages/Learninglog";
 import Classes from "./pages/Classes";
 import ClassDetail from "./pages/ClassDetail";
 import Schedule from "./pages/Schedule";
@@ -63,6 +64,7 @@ const App = () => (
               <Route path="/students" element={<Students />} />
               <Route path="/students/:id" element={<StudentDetail />} />
               <Route path="/students/:id/bill" element={<StudentBill />} />
+              <Route path="/nhat-ky-hoc-tap" element={<LearningLog />} />
               <Route path="/classes" element={<Classes />} />
               <Route path="/classes/:id" element={<ClassDetail />} />
               <Route path="/classes/:classId/members/:userId" element={<ClassMemberDetail />} />

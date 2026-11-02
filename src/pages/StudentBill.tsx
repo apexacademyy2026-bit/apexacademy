@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Printer, Check, X, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar, Pencil } from "lucide-react";
+import { ArrowLeft, Printer, Check, X, Plus, Eye, EyeOff, Image as ImageIcon, Sparkles, Receipt, Calendar, Pencil, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -17,6 +17,16 @@ import { useEnrollments, useClasses } from "@/hooks/useData";
 import { toBlob } from "html-to-image";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { resolveStudentColor } from "@/lib/studentColor";
+import { LOG, logVal, hasTest, weekdayLabel, dayMonth, timeRange, monthLabel, sessionSort } from "@/lib/Learninglog";
+import {
+  EMPTY_TEST,
+  cleanTests,
+  isBlankTest,
+  parseTests,
+  serializeTests,
+  withSpare,
+  type TestItem,
+} from "@/lib/Learningtests";
 
 // Tên và số điện thoại giáo viên sửa trên hoá đơn được nhớ trong trình duyệt (dùng chung cho mọi học sinh)
 const TEACHER_NAME_KEY = "bill_teacher_name";
@@ -46,6 +56,11 @@ const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAE
 // Khi dùng, đường dẫn mã QR (gồm số tài khoản, tên chủ tài khoản, số tiền, nội dung) được gửi qua dịch vụ này.
 // Muốn tắt hẳn thì đặt thành chuỗi rỗng: const QR_IMAGE_PROXY = "";
 const QR_IMAGE_PROXY = "https://wsrv.nl/?url=";
+
+// Bề rộng (px) của ảnh hóa đơn khi lưu. Tăng nếu muốn ảnh rộng hơn, giảm nếu muốn ảnh hẹp lại.
+const BILL_IMAGE_WIDTH = 1200;
+// Giới hạn số điểm ảnh của ảnh khi lưu (Safari / iOS chỉ dựng được tối đa khoảng 16,7 triệu điểm)
+const MAX_IMAGE_PIXELS = 14000000;
 
 // Tải một ảnh về dạng data URL (cần máy chủ ảnh cho phép CORS)
 const fetchImageAsDataUrl = async (url: string): Promise<string> => {
@@ -99,7 +114,101 @@ const describeError = (err: unknown): string => {
   return typeof err === "string" && err ? err : "lỗi không xác định";
 };
 
+/* ---------- Nhật ký học tập: màu hoá đơn, ô sửa tay ---------- */
+
+const THEME_KEY = "bill_theme"; // màu hoá đơn đã chọn (dùng chung cho mọi học sinh)
+const ORIENT_KEY = "bill_orientation"; // hướng giấy khi in
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const s = readStored(key);
+    return s ? (JSON.parse(s) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// Các ô sửa riêng trên hoá đơn (lưu trong trình duyệt, không đổi dữ liệu buổi học của hệ thống)
+type RowOv = Partial<Record<"stt" | "time" | "weekday" | "date", string>>;
+// Nhãn tháng ở đầu phiếu sửa tay (nhớ riêng theo từng tháng mặc định)
+type TitleOv = { months?: Record<string, string> };
+
+// Ô nhập khi bấm "Sửa hóa đơn"
+const CELL_INPUT = "no-print border-slate-300 bg-white px-1.5 text-xs focus-visible:ring-1 focus-visible:ring-green-500";
+// Ô nhập trên dải tiêu đề màu
+const TITLE_INPUT =
+  "no-print h-9 border-white/40 bg-white/15 text-center text-sm font-bold text-white placeholder:text-white/60 focus-visible:ring-1 focus-visible:ring-white";
+
+/* Màu hoá đơn: chỉ cần một màu gốc, các sắc độ còn lại (dải tiêu đề, hàng tiêu đề bảng, viền, nền nhạt) tự suy ra */
+
+const DEFAULT_THEME = "#6a9b4e";
+const THEME_PRESETS = [
+  { name: "Xanh lá", color: "#6a9b4e" },
+  { name: "Xanh ngọc", color: "#2a9d8f" },
+  { name: "Xanh dương", color: "#3b82c4" },
+  { name: "Tím", color: "#7c5cc4" },
+  { name: "Hồng", color: "#d1558a" },
+  { name: "Cam", color: "#e08a3c" },
+  { name: "Đỏ đô", color: "#b6454a" },
+  { name: "Xám", color: "#64748b" },
+];
+
+const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return [0, 0, l * 100];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, s * 100, l * 100];
+};
+
+// Đọc màu dạng #rgb, #rrggbb, rgb(...) hoặc hsl(...); không đọc được thì trả về null
+const toHsl = (c: string): [number, number, number] | null => {
+  const s = (c || "").trim();
+  let m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s);
+  if (m) {
+    const hex = m[1].length === 3 ? m[1].split("").map((x) => x + x).join("") : m[1];
+    return rgbToHsl(parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16));
+  }
+  m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(s);
+  if (m) return rgbToHsl(Number(m[1]), Number(m[2]), Number(m[3]));
+  m = /^hsla?\(\s*([\d.]+)(?:deg)?[\s,]+([\d.]+)%[\s,]+([\d.]+)%/i.exec(s);
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+  return null;
+};
+
+const buildTheme = (color: string) => {
+  const [h, s] = toHsl(color) ?? (toHsl(DEFAULT_THEME) as [number, number, number]);
+  const hue = Math.round(h);
+  const sat = Math.round(Math.min(Math.max(s, 12), 60));
+  return {
+    banner: `linear-gradient(90deg, hsl(${hue} ${sat}% 26%) 0%, hsl(${hue} ${sat}% 38%) 65%, hsl(${hue} ${sat}% 47%) 100%)`,
+    head: `hsl(${hue} ${Math.round(sat * 0.6)}% 27%)`, // hàng tiêu đề bảng
+    dark: `hsl(${hue} ${sat}% 22%)`, // chữ tổng tiền, đường kẻ tổng cộng
+    soft: `hsl(${hue} ${Math.min(sat, 40)}% 96.5%)`, // nền xen kẽ, nền phiếu chuyển khoản
+    line: `hsl(${hue} ${Math.min(sat, 30)}% 88%)`, // viền
+  };
+};
+type Theme = ReturnType<typeof buildTheme>;
+
 /* ---------- Thành phần nhỏ dùng trong hoá đơn ---------- */
+
+// Điểm kiểm tra: hiện nguyên chữ người dùng gõ (8,5 / 17/20...), màu theo màu hoá đơn
+function ScoreBadge({ score, theme }: { score: string; theme: Theme }) {
+  return (
+    <span
+      className="inline-flex min-w-[44px] items-center justify-center rounded-lg border px-2.5 py-1 text-xs font-bold tabular-nums"
+      style={{ borderColor: theme.head, background: "#ffffff", color: theme.dark }}
+    >
+      {score}
+    </span>
+  );
+}
 
 function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
   return (
@@ -132,7 +241,20 @@ export default function StudentBill() {
   const [showAtt, setShowAtt] = useState(true);
   const [editing, setEditing] = useState(false);
   const [feeDraft, setFeeDraft] = useState<Record<string, string>>({});
-  const [homeworkDraft, setHomeworkDraft] = useState<Record<string, string>>({});
+  // Nội dung đang gõ dở trong các ô của nhật ký, khoá dạng "<id buổi>:<tên cột>"
+  const [logDraft, setLogDraft] = useState<Record<string, string>>({});
+  // Danh sách bài kiểm tra đang sửa dở của từng buổi, khoá là id buổi
+  const [testDraft, setTestDraft] = useState<Record<string, TestItem[]>>({});
+  // Dòng bài kiểm tra vừa thêm cần được focus ("<id buổi>:<vị trí>")
+  const testFocus = useRef<string | null>(null);
+  // Các ô sửa riêng cho hoá đơn của học sinh này (theo id buổi học) và nhãn tháng sửa tay
+  const [rowOv, setRowOv] = useState<Record<string, RowOv>>({});
+  const [titleOv, setTitleOv] = useState<TitleOv>({});
+  // Màu hoá đơn: mã màu hoặc "accent" (dùng màu riêng của học sinh); hướng giấy khi in
+  const [themeSel, setThemeSel] = useState<string>(() => readStored(THEME_KEY) || DEFAULT_THEME);
+  const [orientation, setOrientation] = useState<"landscape" | "portrait">(() =>
+    readStored(ORIENT_KEY) === "portrait" ? "portrait" : "landscape"
+  );
   const [footnote, setFootnote] = useState<string>("");
   // null = chưa sửa, dùng thông tin trong hồ sơ
   const [teacherNameOv, setTeacherNameOv] = useState<string | null>(() => readStored(TEACHER_NAME_KEY));
@@ -194,6 +316,13 @@ export default function StudentBill() {
     localStorage.setItem(`bill_footnote_${student.id}`, footnote);
   }, [footnote, student?.id]);
 
+  // Nạp các ô và nhãn tháng đã sửa riêng của học sinh này
+  useEffect(() => {
+    if (!student?.id) return;
+    setRowOv(readJson<Record<string, RowOv>>(`bill_rows_${student.id}`, {}));
+    setTitleOv(readJson<TitleOv>(`bill_title_${student.id}`, {}));
+  }, [student?.id]);
+
   const myClasses = useMemo(() => {
     if (!student) return [];
     const cids = (enrollments.data || []).filter((e: any) => e.student_id === student.id).map((e: any) => e.class_id);
@@ -204,10 +333,7 @@ export default function StudentBill() {
     if (myClasses[0] && !addForm.class_id) setAddForm((f) => ({ ...f, class_id: myClasses[0].id }));
   }, [myClasses, addForm.class_id]);
 
-  const sortedAttendance = useMemo(
-    () => [...(attendance || [])].sort((a: any, b: any) => (a?.schedule_events?.event_date || "").localeCompare(b?.schedule_events?.event_date || "")),
-    [attendance]
-  );
+  const sortedAttendance = useMemo(() => [...(attendance || [])].sort(sessionSort), [attendance]);
 
   const availableAttendance = useMemo(() => {
     if (mode !== "by_session") return sortedAttendance;
@@ -386,6 +512,29 @@ export default function StudentBill() {
     ? vietQRUrl(profile?.bank_code, profile?.bank_account_number, profile?.bank_account_name, billTotal, qrContent)
     : null;
 
+  // Nhãn tháng ở đầu phiếu: "THÁNG m/yyyy" (sửa được khi bấm "Sửa hóa đơn")
+  const billAttendances: any[] = displayBill?.attendances || [];
+  const monthText =
+    monthLabel(billAttendances.map((a: any) => a?.schedule_events?.event_date).filter(Boolean)) ||
+    monthLabel([displayBill?.period_start || new Date().toISOString().slice(0, 10)]);
+  const titleMonth = titleOv.months?.[monthText] ?? monthText;
+
+  // Màu hoá đơn: màu đã chọn, hoặc "accent" = màu riêng của từng học sinh
+  const theme = buildTheme(themeSel === "accent" ? String(accent) : themeSel);
+
+  // Các cột của bảng nhật ký. Ngoài lúc sửa, cột "Kiểm tra" và "Ghi chú" chỉ hiện khi có buổi nào có dữ liệu.
+  const showTestCol = editing || billAttendances.some(hasTest);
+  const showNoteCol = editing || billAttendances.some((a: any) => !!logVal(a, LOG.note));
+  const logCols = [
+    { key: "stt", label: "STT", w: editing ? 15 : 12 },
+    { key: "date", label: "NGÀY", w: editing ? 12 : 11 },
+    { key: "content", label: "NỘI DUNG", w: editing ? 22 : 30 },
+    { key: "homework", label: "BTVN", w: editing ? 20 : 24 },
+    ...(showTestCol ? [{ key: "test", label: "KIỂM TRA", w: editing ? 20 : 14 }] : []),
+    ...(showNoteCol ? [{ key: "note", label: "GHI CHÚ", w: editing ? 15 : 16 }] : []),
+  ];
+  const logColsTotal = logCols.reduce((s, c) => s + c.w, 0);
+
   // Thông tin phục vụ giao diện hoá đơn
   const billPaid =
     mode === "by_session"
@@ -518,10 +667,11 @@ export default function StudentBill() {
     toast.success(t?.save || "Saved");
   };
 
-  // Làm mới dữ liệu điểm danh của hóa đơn và của trang lịch sử điểm danh
+  // Làm mới dữ liệu điểm danh của hóa đơn, của trang lịch sử điểm danh và của trang Nhật ký học tập
   const refreshAttendance = () => {
     qc.invalidateQueries({ queryKey: ["student-bill-attendance", id] });
     qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+    qc.invalidateQueries({ queryKey: ["learning-log", id] });
   };
 
   const updateFee = async (a: any, val: string) => {
@@ -530,11 +680,145 @@ export default function StudentBill() {
     refreshAttendance();
   };
 
-  const updateHomeworkNote = async (a: any, val: string) => {
-    await supabase.from("attendance").update({ homework_note: val }).eq("id", a.id);
+  // Lưu một ô của nhật ký học tập (nội dung, BTVN, ghi chú) vào bảng attendance
+  const saveColumn = async (a: any, col: string, raw: string) => {
+    const next = raw.trim();
+    const current = a[col] == null ? "" : String(a[col]).trim();
+    if (next === current) return; // không đổi thì khỏi lưu
+    const { error } = await supabase
+      .from("attendance")
+      .update({ [col]: next === "" ? null : next } as any)
+      .eq("id", a.id);
+    if (error) { toast.error(error.message); return; }
     refreshAttendance();
   };
 
+  const colDraft = (a: any, col: string) => logDraft[`${a.id}:${col}`] ?? (a[col] == null ? "" : String(a[col]));
+
+  // Ô nhập cho dữ liệu của buổi học: gõ xong (rời ô) thì lưu vào hệ thống, trang Nhật ký học tập cũng thấy ngay
+  const logInput = (
+    a: any,
+    col: string,
+    opts: { multiline?: boolean; placeholder?: string; className?: string }
+  ) => {
+    const common = {
+      value: colDraft(a, col),
+      placeholder: opts.placeholder,
+      onChange: (e: any) => setLogDraft((d) => ({ ...d, [`${a.id}:${col}`]: e.target.value })),
+      onBlur: (e: any) => saveColumn(a, col, e.target.value),
+    };
+    return opts.multiline ? (
+      <Textarea rows={3} className={`${CELL_INPUT} ${opts.className ?? ""}`} {...common} />
+    ) : (
+      <Input type="text" className={`h-7 ${CELL_INPUT} ${opts.className ?? ""}`} {...common} />
+    );
+  };
+
+  /* ---------- Bài kiểm tra: nhiều bài mỗi buổi ---------- */
+  // Lưu chung 2 cột tên/điểm với trang Nhật ký học tập (cách đọc/ghi nằm trong lib/learningTests),
+  // nên nhập ở trang nào thì trang kia cũng thấy.
+
+  // Danh sách đã lưu của một buổi
+  const storedTests = (a: any): TestItem[] => parseTests(a[LOG.testName], a[LOG.testScore]);
+  // Danh sách đang hiển thị khi sửa: bản nháp nếu có, không thì dữ liệu đã lưu (luôn có ít nhất 1 dòng)
+  const testsOf = (a: any): TestItem[] => withSpare(testDraft[a.id] ?? storedTests(a));
+
+  const editTest = (a: any, idx: number, field: keyof TestItem, value: string) =>
+    setTestDraft((d) => ({
+      ...d,
+      [a.id]: withSpare(d[a.id] ?? storedTests(a)).map((tt, i) => (i === idx ? { ...tt, [field]: value } : tt)),
+    }));
+
+  const addTest = (a: any) => {
+    testFocus.current = `${a.id}:${testsOf(a).length}`;
+    setTestDraft((d) => ({ ...d, [a.id]: [...withSpare(d[a.id] ?? storedTests(a)), { ...EMPTY_TEST }] }));
+  };
+
+  // Lưu cả danh sách bài kiểm tra của buổi. Dòng trống không được lưu.
+  const saveTests = async (a: any, items: TestItem[]) => {
+    const { filled, name, score } = serializeTests(items);
+
+    // Bỏ bản nháp khi nó đã khớp với dữ liệu vừa lưu và không còn dòng trống đang mở.
+    // Nếu trong lúc lưu người dùng gõ thêm thì giữ lại bản nháp, không làm mất chữ.
+    const settle = () =>
+      setTestDraft((d) => {
+        const cur = d[a.id];
+        if (!cur || cur.some(isBlankTest) || JSON.stringify(cleanTests(cur)) !== JSON.stringify(filled)) return d;
+        const n = { ...d };
+        delete n[a.id];
+        return n;
+      });
+
+    const stored = (col: string) => (a[col] == null ? "" : String(a[col]).trim());
+    if (name === stored(LOG.testName) && score === stored(LOG.testScore)) {
+      settle();
+      return; // không đổi thì khỏi lưu
+    }
+    const { error } = await supabase
+      .from("attendance")
+      .update({ [LOG.testName]: name || null, [LOG.testScore]: score || null } as any)
+      .eq("id", a.id);
+    if (error) { toast.error(error.message); return; } // giữ nguyên bản nháp để không mất chữ
+    qc.invalidateQueries({ queryKey: ["student-attendance-all", id] });
+    qc.invalidateQueries({ queryKey: ["learning-log", id] });
+    await qc.invalidateQueries({ queryKey: ["student-bill-attendance", id] });
+    settle();
+  };
+
+  const removeTest = (a: any, idx: number) => {
+    const next = testsOf(a).filter((_, i) => i !== idx);
+    setTestDraft((d) => ({ ...d, [a.id]: next }));
+    saveTests(a, next);
+  };
+
+  // Các ô sửa riêng cho hoá đơn (buổi, giờ, thứ, ngày; không đổi dữ liệu buổi học), nhớ trong trình duyệt theo từng học sinh
+  const setOv = (a: any, field: keyof RowOv, val: string) => {
+    const next = { ...rowOv, [a.id]: { ...(rowOv[a.id] || {}), [field]: val } };
+    setRowOv(next);
+    writeStored(`bill_rows_${student?.id}`, JSON.stringify(next));
+  };
+
+  const localInput = (
+    a: any,
+    field: keyof RowOv,
+    def: string,
+    opts: { placeholder?: string; className?: string }
+  ) => {
+    const value = rowOv[a.id]?.[field] ?? def;
+    return (
+      <Input
+        type="text"
+        className={`h-7 ${CELL_INPUT} ${opts.className ?? ""}`}
+        value={value}
+        placeholder={opts.placeholder}
+        onChange={(e) => setOv(a, field, e.target.value)}
+      />
+    );
+  };
+
+  const updateTitle = (patch: Partial<TitleOv>) => {
+    const next = { ...titleOv, ...patch };
+    setTitleOv(next);
+    writeStored(`bill_title_${student?.id}`, JSON.stringify(next));
+  };
+
+  const chooseTheme = (color: string) => {
+    setThemeSel(color);
+    writeStored(THEME_KEY, color);
+  };
+
+  const chooseOrientation = (o: "landscape" | "portrait") => {
+    setOrientation(o);
+    writeStored(ORIENT_KEY, o);
+  };
+
+  const resetEdits = () => {
+    if (!window.confirm("Khôi phục nhãn tháng và các ô đã sửa riêng trên hóa đơn (buổi, giờ, thứ, ngày) về nội dung gốc?\n(Nội dung buổi học, BTVN, kiểm tra và ghi chú đã lưu vào hệ thống không bị ảnh hưởng.)")) return;
+    setRowOv({});
+    setTitleOv({});
+    writeStored(`bill_rows_${student?.id}`, null);
+    writeStored(`bill_title_${student?.id}`, null);
+  };
   const addAttendance = async () => {
     if (!user || !student || !addForm.class_id) return;
     const { data: ev, error: e1 } = await supabase
@@ -584,6 +868,7 @@ export default function StudentBill() {
       const originalQrSrc = qrImg?.src || "";
       let qrEmbedded = true;
       let qrReason = "";
+      let exportStage: HTMLElement | null = null; // bản sao ngoài màn hình dùng để chụp
 
       try {
         // 1) Nhúng sẵn mã QR dạng dữ liệu để lúc chụp không phải tải lại ảnh từ VietQR
@@ -603,10 +888,38 @@ export default function StudentBill() {
         // 2) Đợi font chữ tải xong để ảnh không bị đổi font
         await (document as any).fonts?.ready;
 
+        // 2b) Chụp từ một bản sao của hóa đơn đặt ngoài màn hình, rộng cố định (BILL_IMAGE_WIDTH).
+        //     Nhờ vậy ảnh luôn đủ rộng, không phụ thuộc cửa sổ đang xem rộng hay hẹp (trên điện thoại
+        //     hóa đơn hay bị ép hẹp nên các cột chật, chữ xuống dòng nhiều và ảnh dài ngoằng).
+        const stage = document.createElement("div");
+        stage.setAttribute("aria-hidden", "true");
+        stage.style.cssText = `position:fixed;left:-10000px;top:0;width:${BILL_IMAGE_WIDTH}px;pointer-events:none;`;
+        const clone = node.cloneNode(true) as HTMLElement;
+        Object.assign(clone.style, {
+          width: `${BILL_IMAGE_WIDTH}px`,
+          minWidth: `${BILL_IMAGE_WIDTH}px`,
+          maxWidth: "none",
+          margin: "0",
+          // Font của hóa đơn được đặt ở khối bao ngoài, nên phải chép sang bản sao
+          fontFamily: getComputedStyle(node).fontFamily,
+        });
+        stage.appendChild(clone);
+        document.body.appendChild(stage);
+        exportStage = stage;
+        // Đợi trình duyệt dàn lại bố cục ở khổ mới rồi mới đo chiều cao
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        const cloneQr = clone.querySelector<HTMLImageElement>('img[alt="VietQR"]');
+        if (cloneQr) await cloneQr.decode().catch(() => undefined);
+        // Hóa đơn quá dài thì Safari / iOS không dựng nổi ảnh, nên hạ độ phân giải cho vừa giới hạn
+        const pixelRatio = Math.min(
+          2,
+          Math.sqrt(MAX_IMAGE_PIXELS / (clone.offsetWidth * clone.offsetHeight || 1))
+        );
+
         const options = {
           cacheBust: true,
           backgroundColor: "#ffffff",
-          pixelRatio: 2,
+          pixelRatio,
           // Không có mã QR thì thay bằng ảnh trong suốt, tránh làm cả ảnh bị lỗi
           imagePlaceholder: qrEmbedded ? undefined : TRANSPARENT_PIXEL,
           // Bỏ các phần chỉ dành cho màn hình (nút, ô nhập...) khỏi ảnh
@@ -619,7 +932,7 @@ export default function StudentBill() {
           /iPad|iPhone|iPod/.test(ua) ||
           (/Safari/.test(ua) && !/Chrome|Chromium|Android/.test(ua)) ||
           (ua.includes("Macintosh") && "ontouchend" in document);
-        if (isApple) await toBlob(node, options).catch(() => null);
+        if (isApple) await toBlob(clone, options).catch(() => null);
 
         // Thử lần lượt từ đầy đủ đến tối giản. Lỗi "không dựng được ảnh" thường do việc nhúng
         // font Google hoặc ảnh quá nặng, nên các lần sau bỏ nhúng font và giảm độ phân giải.
@@ -633,7 +946,7 @@ export default function StudentBill() {
         let lastErr: unknown = null;
         for (const attempt of attempts) {
           try {
-            const b = await toBlob(node, attempt.opts);
+            const b = await toBlob(clone, attempt.opts);
             if (b) {
               blob = b;
               usedMethod = attempt.name;
@@ -682,6 +995,7 @@ export default function StudentBill() {
           action: { label: "In / lưu PDF", onClick: () => { void handlePrint(); } },
         });
       } finally {
+        exportStage?.remove(); // gỡ bản sao ngoài màn hình
         // Trả mã QR về nguồn ban đầu và tắt thông báo đang tạo ảnh
         if (qrImg && originalQrSrc && qrImg.src !== originalQrSrc) qrImg.src = originalQrSrc;
         toast.dismiss(loadingId);
@@ -691,7 +1005,7 @@ export default function StudentBill() {
   if (!student) return <div className="p-8 text-center text-muted-foreground flex items-center justify-center min-h-[400px]">Đang tải dữ liệu học sinh...</div>;
 
   return (
-    <div className="container mx-auto p-4 md:p-6 max-w-7xl space-y-6">
+    <div className="container mx-auto p-4 md:p-6 max-w-[1560px] space-y-6">
       
       {/* CSS RIÊNG PHỤC VỤ IN ẤN */}
       <style>{`
@@ -702,12 +1016,31 @@ export default function StudentBill() {
           .printable-bill-card, .printable-bill-card * {
             visibility: visible !important;
           }
+          .bill-scroll {
+            overflow: visible !important;
+          }
+          /* Hoá đơn dài nhiều buổi sẽ tự sang trang: không cắt phần tràn, lặp lại hàng tiêu đề, không xé đôi một hàng */
+          .bill-table-wrap {
+            overflow: visible !important;
+            border-radius: 0 !important;
+          }
+          .bill-table-wrap thead {
+            display: table-header-group;
+          }
+          .bill-table-wrap tr, .bill-slip {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
           .printable-bill-card {
+            overflow: visible !important;
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
+            min-width: 0 !important;
             max-width: 100% !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
             margin: 0 !important;
             border: none !important;
             border-radius: 0 !important;
@@ -723,8 +1056,8 @@ export default function StudentBill() {
             print-color-adjust: exact !important;
           }
           @page {
-            size: A4 portrait;
-            margin: 10mm;
+            size: A4 ${orientation};
+            margin: 8mm;
           }
         }
       `}</style>
@@ -789,10 +1122,10 @@ export default function StudentBill() {
       </div>
 
       {/* Main Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
 
         {/* LEFT COLUMN: Controls & Cycle Selector */}
-        <div className="lg:col-span-5 xl:col-span-4 space-y-4 no-print font-['Be_Vietnam_Pro',sans-serif]">
+        <div className="xl:col-span-3 space-y-4 no-print font-['Be_Vietnam_Pro',sans-serif]">
           <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2">
@@ -978,14 +1311,34 @@ export default function StudentBill() {
         </div>
 
         {/* RIGHT COLUMN: Hoá đơn */}
-        <div className="lg:col-span-7 xl:col-span-8 flex justify-center font-['Be_Vietnam_Pro',sans-serif]">
+        <div className="xl:col-span-9 min-w-0 font-['Be_Vietnam_Pro',sans-serif]">
           {displayBill && (
-            <div className="w-full max-w-2xl space-y-4">
+            <div className="w-full min-w-0 space-y-4">
 
               {/* Thanh công cụ (không in, không vào ảnh) */}
               <div className="no-print flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-semibold text-slate-500">Xem trước hóa đơn</div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div
+                    className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1"
+                    role="group"
+                    aria-label="Hướng giấy khi in"
+                  >
+                    <span className="px-2 text-xs font-semibold text-slate-500">Giấy in</span>
+                    {(["landscape", "portrait"] as const).map((o) => (
+                      <button
+                        key={o}
+                        type="button"
+                        aria-pressed={orientation === o}
+                        onClick={() => chooseOrientation(o)}
+                        className={`h-7 rounded-lg px-3 text-xs font-semibold transition-colors ${
+                          orientation === o ? "bg-[#0B1B3A] text-white" : "text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        {o === "landscape" ? "Ngang" : "Dọc"}
+                      </button>
+                    ))}
+                  </div>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1011,19 +1364,95 @@ export default function StudentBill() {
                 </div>
               </div>
 
-              {/* ===== HOÁ ĐƠN ===== */}
-              <div
-                ref={billRef}
-                className="printable-bill-card relative w-full overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-900 shadow-xl"
-              >
-                {/* Dải màu của học sinh */}
-                <div className="h-2 w-full" style={{ background: accent }} />
+              {/* Chọn màu hoá đơn (chỉ hiện khi đang sửa) */}
+              {editing && (
+                <div className="no-print flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <Palette className="h-4 w-4 text-slate-500" />
+                    <span className="text-sm font-semibold text-slate-700">Màu hóa đơn</span>
+                    {THEME_PRESETS.map((p) => (
+                      <button
+                        key={p.color}
+                        type="button"
+                        title={p.name}
+                        aria-label={p.name}
+                        aria-pressed={themeSel.toLowerCase() === p.color}
+                        onClick={() => chooseTheme(p.color)}
+                        className={`h-7 w-7 rounded-full ring-2 ring-offset-2 transition-shadow ${
+                          themeSel.toLowerCase() === p.color ? "ring-slate-900" : "ring-transparent hover:ring-slate-300"
+                        }`}
+                        style={{ background: p.color }}
+                      />
+                    ))}
+                    <button
+                      type="button"
+                      title="Dùng màu riêng của học sinh"
+                      aria-pressed={themeSel === "accent"}
+                      onClick={() => chooseTheme("accent")}
+                      className={`flex h-7 items-center gap-1.5 rounded-full pl-1 pr-2.5 text-xs font-semibold text-slate-700 ring-2 ring-offset-2 transition-shadow ${
+                        themeSel === "accent" ? "ring-slate-900" : "ring-transparent hover:ring-slate-300"
+                      }`}
+                    >
+                      <span className="h-5 w-5 rounded-full" style={{ background: accent }} />
+                      Màu học sinh
+                    </button>
+                    <label
+                      title="Chọn màu khác"
+                      className="flex h-7 cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <input
+                        type="color"
+                        aria-label="Chọn màu khác"
+                        className="h-5 w-5 cursor-pointer rounded border-0 bg-transparent p-0"
+                        value={/^#[0-9a-f]{6}$/i.test(themeSel) ? themeSel : DEFAULT_THEME}
+                        onChange={(e) => chooseTheme(e.target.value)}
+                      />
+                      Màu khác
+                    </label>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 rounded-xl border-slate-200 text-xs font-semibold text-slate-700"
+                    onClick={resetEdits}
+                  >
+                    Khôi phục các ô đã sửa
+                  </Button>
+                </div>
+              )}
 
-                {/* Đầu hoá đơn */}
-                <div className="px-8 pb-6 pt-7">
-                  <div className="flex items-start justify-between gap-4">
+              {/* ===== PHIẾU NHẬT KÝ HỌC TẬP + HOÁ ĐƠN ===== */}
+              <div className="bill-scroll -mx-1 overflow-x-auto px-1 pb-4">
+                <div
+                  ref={billRef}
+                  className="printable-bill-card relative w-full min-w-[880px] overflow-hidden rounded-3xl border bg-white text-slate-900 shadow-xl"
+                  style={{ borderColor: theme.line }}
+                >
+                  {/* Tiêu đề: THÁNG (xoá trắng ô khi sửa thì dải tiêu đề ẩn đi) */}
+                  {(titleMonth || editing) && (
+                    <div className="px-6 py-4 text-center text-white" style={{ background: theme.banner }}>
+                      {editing ? (
+                        <Input
+                          type="text"
+                          aria-label="Tháng"
+                          className={`${TITLE_INPUT} mx-auto w-56`}
+                          value={titleMonth}
+                          placeholder="THÁNG"
+                          onChange={(e) => updateTitle({ months: { ...(titleOv.months || {}), [monthText]: e.target.value } })}
+                        />
+                      ) : (
+                        <h2 className="text-xl font-extrabold leading-snug tracking-wide">{titleMonth}</h2>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Giáo viên, mã hoá đơn, trạng thái */}
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4" style={{ borderColor: theme.line }}>
                     <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#0B1B3A] text-base font-extrabold text-white">
+                      <div
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-extrabold text-white"
+                        style={{ background: theme.head }}
+                      >
                         {teacherInitial}
                       </div>
                       {editing ? (
@@ -1063,47 +1492,224 @@ export default function StudentBill() {
                         </div>
                       )}
                     </div>
-                    <div className="max-w-[240px] shrink-0 text-right">
-                      <div className="text-xs text-slate-400">{(t as any)?.billNo || "Mã hóa đơn"}</div>
-                      <div className="mt-0.5 break-all font-mono text-[13px] font-bold text-slate-900">{billNum}</div>
-                      <div className="mt-1.5 text-xs text-slate-500">Ngày lập {issueDate}</div>
-                    </div>
-                  </div>
 
-                  <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-                    <h2 className="text-[28px] font-extrabold leading-none tracking-tight text-[#0B1B3A]">
-                      {(t as any)?.invoice || "Hóa đơn thanh toán"}
-                    </h2>
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
-                        billPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${billPaid ? "bg-emerald-500" : "bg-amber-500"}`} />
-                      {billPaid ? "Đã thanh toán" : "Chưa thanh toán"}
-                    </span>
-                  </div>
-
-                  {/* Học sinh và kỳ học phí */}
-                  <div className="mt-6 grid gap-5 border-y border-slate-200 py-5 sm:grid-cols-2 sm:gap-0 sm:divide-x sm:divide-slate-200">
-                    <div className="flex items-center gap-3 sm:pr-6">
-                      <div
-                        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-lg font-extrabold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
-                        style={{ background: accent }}
+                    <div className="flex shrink-0 items-center gap-6">
+                      <div className="text-right">
+                        <div className="text-[11px] font-medium text-slate-400">{(t as any)?.billNo || "Mã hóa đơn"}</div>
+                        <div className="mt-0.5 break-all font-mono text-[13px] font-bold text-slate-900">{billNum}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[11px] font-medium text-slate-400">Ngày lập</div>
+                        <div className="mt-0.5 text-[13px] font-semibold text-slate-700">{issueDate}</div>
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                          billPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        }`}
                       >
-                        {(student.name || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium text-slate-400">{(t as any)?.billedTo || "Học sinh"}</div>
-                        <div className="truncate text-base font-bold text-slate-900">{student.name}</div>
-                        <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
-                          {student.grade && <span>Lớp {student.grade}</span>}
-                          {(student as any)?.phone && <span>{(student as any).phone}</span>}
-                        </div>
+                        <span className={`h-1.5 w-1.5 rounded-full ${billPaid ? "bg-emerald-500" : "bg-amber-500"}`} />
+                        {billPaid ? "Đã thanh toán" : "Chưa thanh toán"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Bảng nhật ký học tập: buổi, ngày, nội dung, BTVN, bài kiểm tra, ghi chú */}
+                  {displayBill.attendances?.length > 0 && showAtt && (
+                    <div className="px-5 pt-5">
+                      <div className="bill-table-wrap overflow-hidden rounded-2xl border bg-white" style={{ borderColor: theme.line }}>
+                        <table className="w-full table-fixed border-collapse text-left text-[13px] text-slate-800">
+                          <colgroup>
+                            {logCols.map((c) => (
+                              <col key={c.key} style={{ width: `${((c.w / logColsTotal) * 100).toFixed(2)}%` }} />
+                            ))}
+                          </colgroup>
+                          <thead>
+                            <tr className="text-white" style={{ background: theme.head }}>
+                              {logCols.map((c) => (
+                                <th key={c.key} className="px-3 py-3.5 text-center text-[11px] font-bold tracking-wider">
+                                  {c.label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {displayBill.attendances.map((a: any, i: number) => {
+                              const ev = a.schedule_events;
+                              const ov: RowOv = rowOv[a.id] || {};
+                              const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
+                              const feeDraftVal = feeDraft[a.id] ?? (a.fee_override == null ? "" : String(a.fee_override));
+                              const sttText = ov.stt ?? `Buổi ${i + 1}`;
+                              const timeText = ov.time ?? timeRange(ev);
+                              const weekdayText = ov.weekday ?? weekdayLabel(ev?.event_date);
+                              const dateText = ov.date ?? dayMonth(ev?.event_date);
+                              const contentText = logVal(a, LOG.content);
+                              const homeworkText = logVal(a, LOG.homework);
+                              const tests = storedTests(a); // các bài kiểm tra đã lưu (hiển thị)
+                              const editTests = editing ? testsOf(a) : []; // danh sách đang sửa
+                              const noteText = logVal(a, LOG.note);
+                              return (
+                                <tr
+                                  key={a.id}
+                                  className="break-inside-avoid border-b align-top last:border-0"
+                                  style={{ borderColor: theme.line, background: i % 2 === 1 ? theme.soft : undefined }}
+                                >
+                                  {/* STT: buổi thứ mấy, giờ học, học phí */}
+                                  <td className="px-3 py-4 text-center print:py-2">
+                                    {editing ? (
+                                      <div className="space-y-1">
+                                        {localInput(a, "stt", `Buổi ${i + 1}`, { placeholder: "Buổi", className: "h-7 text-center font-semibold" })}
+                                        {localInput(a, "time", timeRange(ev), { placeholder: "Giờ học", className: "h-7 text-center" })}
+                                        <Input
+                                          type="number"
+                                          aria-label="Học phí"
+                                          className={`h-7 ${CELL_INPUT} text-center`}
+                                          value={feeDraftVal}
+                                          placeholder={String(student.fee_per_session || 0)}
+                                          onChange={(e) => setFeeDraft((d) => ({ ...d, [a.id]: e.target.value }))}
+                                          onBlur={(e) => updateFee(a, e.target.value)}
+                                        />
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div className="text-[13px] font-semibold text-slate-800">{sttText}</div>
+                                        {timeText && <div className="mt-0.5 text-[11px] tabular-nums text-slate-400">{timeText}</div>}
+                                        <div className="mt-0.5 text-[11px] font-medium tabular-nums text-slate-500">{formatVND(fee)}</div>
+                                      </>
+                                    )}
+                                  </td>
+
+                                  {/* NGÀY: thứ + ngày/tháng */}
+                                  <td className="px-3 py-4 text-center print:py-2">
+                                    {editing ? (
+                                      <div className="space-y-1">
+                                        {localInput(a, "weekday", weekdayLabel(ev?.event_date), { placeholder: "Thứ", className: "h-7 text-center font-semibold" })}
+                                        {localInput(a, "date", dayMonth(ev?.event_date), { placeholder: "dd/mm", className: "h-7 text-center" })}
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <div className="font-semibold text-slate-800">{weekdayText}</div>
+                                        <div className="mt-0.5 text-[11px] tabular-nums text-slate-400">{dateText}</div>
+                                      </>
+                                    )}
+                                  </td>
+
+                                  {/* NỘI DUNG buổi học */}
+                                  <td className="px-3 py-4 print:py-2">
+                                    {editing ? (
+                                      logInput(a, LOG.content, { multiline: true, placeholder: "Nội dung buổi học...", className: "text-left" })
+                                    ) : contentText ? (
+                                      <div className="whitespace-pre-line leading-relaxed">{contentText}</div>
+                                    ) : (
+                                      <span className="text-slate-300">—</span>
+                                    )}
+                                  </td>
+
+                                  {/* BTVN: bài tập về nhà, dạng văn bản */}
+                                  <td className="px-3 py-4 print:py-2">
+                                    {editing ? (
+                                      logInput(a, LOG.homework, { multiline: true, placeholder: "Bài tập về nhà...", className: "text-left" })
+                                    ) : homeworkText ? (
+                                      <div className="whitespace-pre-line font-semibold leading-relaxed text-slate-900">{homeworkText}</div>
+                                    ) : (
+                                      <span className="text-slate-300">—</span>
+                                    )}
+                                  </td>
+
+                                  {/* KIỂM TRA: một buổi có thể có nhiều bài, mỗi bài gồm tên + điểm */}
+                                  {showTestCol && (
+                                    <td className="px-2 py-4 text-center print:py-2">
+                                      {editing ? (
+                                        <div className="space-y-1.5">
+                                          {editTests.map((tt, k) => (
+                                            <div key={k} className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                                              <Input
+                                                type="text"
+                                                aria-label={`Tên bài kiểm tra ${k + 1}`}
+                                                className={`h-7 ${CELL_INPUT} text-center`}
+                                                value={tt.name}
+                                                placeholder="Tên bài kiểm tra"
+                                                onChange={(e) => editTest(a, k, "name", e.target.value)}
+                                                onBlur={() => saveTests(a, editTests)}
+                                                ref={(el) => {
+                                                  // Dòng vừa bấm "Thêm bài" thì đưa con trỏ vào ngay
+                                                  if (el && testFocus.current === `${a.id}:${k}`) {
+                                                    testFocus.current = null;
+                                                    el.focus();
+                                                  }
+                                                }}
+                                              />
+                                              <div className="flex gap-1">
+                                                <Input
+                                                  type="text"
+                                                  inputMode="decimal"
+                                                  aria-label={`Điểm kiểm tra ${k + 1}`}
+                                                  className={`h-7 min-w-0 flex-1 ${CELL_INPUT} text-center font-semibold`}
+                                                  value={tt.score}
+                                                  placeholder="Điểm"
+                                                  onChange={(e) => editTest(a, k, "score", e.target.value)}
+                                                  onBlur={() => saveTests(a, editTests)}
+                                                />
+                                                <button
+                                                  type="button"
+                                                  aria-label={`Xóa bài kiểm tra ${k + 1}`}
+                                                  onClick={() => removeTest(a, k)}
+                                                  className={`no-print grid h-7 w-7 shrink-0 place-items-center rounded-md border border-slate-300 bg-white text-slate-400 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 ${
+                                                    editTests.length > 1 || !isBlankTest(tt) ? "" : "invisible"
+                                                  }`}
+                                                >
+                                                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                          <button
+                                            type="button"
+                                            disabled={isBlankTest(editTests[editTests.length - 1])}
+                                            onClick={() => addTest(a)}
+                                            className="no-print flex h-7 w-full items-center justify-center gap-1 rounded-md border border-dashed border-slate-300 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                                          >
+                                            <Plus className="h-3 w-3" aria-hidden="true" /> Thêm bài
+                                          </button>
+                                        </div>
+                                      ) : tests.length > 0 ? (
+                                        <div className="flex flex-col items-center gap-3">
+                                          {tests.map((tt, k) => (
+                                            <div key={k} className="flex flex-col items-center gap-1.5">
+                                              {tt.name && <div className="font-semibold leading-snug text-slate-800">{tt.name}</div>}
+                                              {tt.score && <ScoreBadge score={tt.score} theme={theme} />}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-300">—</span>
+                                      )}
+                                    </td>
+                                  )}
+
+                                  {/* GHI CHÚ */}
+                                  {showNoteCol && (
+                                    <td className="px-2 py-4 text-center text-slate-500 print:py-2">
+                                      {editing ? (
+                                        logInput(a, LOG.note, { multiline: true, placeholder: "Ghi chú...", className: "text-left" })
+                                      ) : noteText ? (
+                                        <div className="whitespace-pre-line">{noteText}</div>
+                                      ) : (
+                                        "-"
+                                      )}
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
+                  )}
 
-                    <div className="grid grid-cols-2 gap-4 sm:pl-6">
+                  {/* Kỳ thanh toán và tổng cộng */}
+                  <div className="flex items-end justify-between gap-8 px-6 pb-6 pt-5 print:pb-3 print:pt-3">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                       <Field
                         label={mode === "monthly" ? (t?.period || "Kỳ thanh toán") : ((t as any)?.billedSessions || "Số buổi tính phí")}
                       >
@@ -1119,150 +1725,84 @@ export default function StudentBill() {
                         {formatVND(Number(mode === "monthly" ? student.fee_per_month : student.fee_per_session))}
                       </Field>
                     </div>
-                  </div>
-                </div>
 
-                {/* Chi tiết các buổi học */}
-                {displayBill.attendances?.length > 0 && showAtt && (
-                  <div className="px-8">
-                    <div className="mb-2 text-sm font-bold text-slate-900">
-                      {(t as any)?.sessionDetails || "Chi tiết các buổi học"}
-                    </div>
-                    <table className="w-full border-collapse text-left text-[13px]">
-                      <thead>
-                        <tr className="border-b-2 text-xs font-semibold text-slate-500" style={{ borderColor: accent }}>
-                          <th className="w-12 py-2.5 pr-3 text-center">STT</th>
-                          <th className="w-28 py-2.5 pr-3">{t?.date || "Ngày học"}</th>
-                          <th className="py-2.5 pr-3">{t?.homework || "Nội dung / ghi chú"}</th>
-                          <th className="w-32 py-2.5 text-right">{t?.feePerOne || "Học phí"}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayBill.attendances.map((a: any, i: number) => {
-                          const fee = Number(a.fee_override ?? student.fee_per_session ?? 0);
-                          const feeDraftVal = feeDraft[a.id] ?? (a.fee_override == null ? "" : String(a.fee_override));
-                          const hwDraftVal = homeworkDraft[a.id] ?? (a.homework_note || "");
-                          return (
-                            <tr key={a.id} className="break-inside-avoid border-b border-slate-100 last:border-0">
-                              <td className="py-3 pr-3 text-center align-middle font-medium tabular-nums text-slate-400">{i + 1}</td>
-                              <td className="whitespace-nowrap py-3 pr-3 align-middle font-semibold tabular-nums text-slate-800">
-                                {fmtDate(a.schedule_events?.event_date)}
-                              </td>
-                              <td className="py-3 pr-3 align-middle text-slate-600">
-                                {editing ? (
-                                  <Input
-                                    type="text"
-                                    className="no-print h-8 border-slate-200 bg-white text-xs focus-visible:ring-1 focus-visible:ring-blue-400"
-                                    value={hwDraftVal}
-                                    placeholder="Thêm ghi chú..."
-                                    onChange={(e) => setHomeworkDraft((d) => ({ ...d, [a.id]: e.target.value }))}
-                                    onBlur={(e) => updateHomeworkNote(a, e.target.value)}
-                                  />
-                                ) : (
-                                  a.homework_note || <span className="text-slate-300">—</span>
-                                )}
-                              </td>
-                              <td className="py-3 text-right align-middle font-bold tabular-nums text-slate-900">
-                                {editing ? (
-                                  <Input
-                                    type="number"
-                                    className="no-print ml-auto h-8 w-28 border-slate-200 bg-white text-right text-xs focus-visible:ring-1 focus-visible:ring-blue-400"
-                                    value={feeDraftVal}
-                                    placeholder={String(student.fee_per_session || 0)}
-                                    onChange={(e) => setFeeDraft((d) => ({ ...d, [a.id]: e.target.value }))}
-                                    onBlur={(e) => updateFee(a, e.target.value)}
-                                  />
-                                ) : (
-                                  formatVND(fee)
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Tổng cộng */}
-                <div className="px-8 pb-7 pt-5">
-                  <div className="ml-auto w-full sm:w-80">
-                    <div className="flex items-center justify-between py-1.5 text-sm text-slate-500">
-                      <span>Số buổi tính phí</span>
-                      <span className="font-semibold tabular-nums text-slate-800">{sessionsCount} buổi</span>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-4 border-t-2 border-[#0B1B3A] pt-3">
-                      <span className="text-sm font-bold text-slate-900">Tổng cộng</span>
-                      <span className="text-[34px] font-extrabold leading-none tracking-tight tabular-nums text-[#0B1B3A]">
-                        {formatVND(billTotal)}
-                      </span>
+                    <div className="w-80 shrink-0">
+                      <div className="flex items-center justify-between py-1.5 text-sm text-slate-500">
+                        <span>Số buổi tính phí</span>
+                        <span className="font-semibold tabular-nums text-slate-800">{sessionsCount} buổi</span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-4 border-t-2 pt-3" style={{ borderColor: theme.head }}>
+                        <span className="text-sm font-bold text-slate-900">Tổng cộng</span>
+                        <span className="text-[32px] font-extrabold leading-none tracking-tight tabular-nums" style={{ color: theme.dark }}>
+                          {formatVND(billTotal)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   {footnote && (
-                    <p className="mt-6 whitespace-pre-line text-center text-sm italic text-slate-500">{footnote}</p>
+                    <p className="whitespace-pre-line px-6 pb-6 text-center text-sm italic text-slate-500 print:pb-3">{footnote}</p>
                   )}
-                </div>
 
-                {/* Phiếu thanh toán: cắt rời theo đường đứt nét */}
-                {qrUrl ? (
-                  <div>
-                    <div className="relative">
-                      <div className="absolute -left-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-background" />
-                      <div className="absolute -right-3 -top-3 h-6 w-6 rounded-full border border-slate-200 bg-background" />
-                      <div className="mx-6 border-t-2 border-dashed border-slate-300" />
-                    </div>
-                    <div className="bg-slate-50 px-8 pb-8 pt-7">
-                      <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
-                        <div className="shrink-0 text-center">
-                          <img
-                            src={qrUrl}
-                            alt="VietQR"
-                            className="h-40 w-40 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
-                          />
-                          <div className="mt-2 text-xs text-slate-500">Quét bằng app ngân hàng</div>
-                        </div>
-                        <div className="w-full min-w-0 flex-1">
-                          <div className="text-base font-bold text-slate-900">
-                            {(t as any)?.scanToPayShort || "Thanh toán qua chuyển khoản"}
+                  {/* Phiếu thanh toán: cắt rời theo đường đứt nét */}
+                  {qrUrl ? (
+                    <div className="bill-slip">
+                      <div className="relative">
+                        <div className="absolute -left-3 -top-3 h-6 w-6 rounded-full border bg-background" style={{ borderColor: theme.line }} />
+                        <div className="absolute -right-3 -top-3 h-6 w-6 rounded-full border bg-background" style={{ borderColor: theme.line }} />
+                        <div className="mx-6 border-t-2 border-dashed border-slate-300" />
+                      </div>
+                      <div className="px-8 pb-8 pt-7 print:pb-4 print:pt-4" style={{ background: theme.soft }}>
+                        <div className="flex flex-row items-start gap-8">
+                          <div className="shrink-0 text-center">
+                            <img
+                              src={qrUrl}
+                              alt="VietQR"
+                              className="h-40 w-40 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
+                            />
+                            <div className="mt-2 text-xs text-slate-500">Quét bằng app ngân hàng</div>
                           </div>
-                          <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                            {(t as any)?.scanQrInstr || "Mở ứng dụng ngân hàng, quét mã QR và giữ nguyên nội dung chuyển khoản."}
-                          </p>
-                          <dl className="mt-3">
-                            {profile?.bank_code && <BankRow label="Ngân hàng">{profile.bank_code}</BankRow>}
-                            {profile?.bank_account_name && <BankRow label="Chủ tài khoản">{profile.bank_account_name}</BankRow>}
-                            {profile?.bank_account_number && (
-                              <BankRow label="Số tài khoản">
-                                <span className="font-mono tabular-nums">{profile.bank_account_number}</span>
+                          <div className="w-full min-w-0 flex-1">
+                            <div className="text-base font-bold text-slate-900">
+                              {(t as any)?.scanToPayShort || "Thanh toán qua chuyển khoản"}
+                            </div>
+                            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                              {(t as any)?.scanQrInstr || "Mở ứng dụng ngân hàng, quét mã QR và giữ nguyên nội dung chuyển khoản."}
+                            </p>
+                            <dl className="mt-3">
+                              {profile?.bank_code && <BankRow label="Ngân hàng">{profile.bank_code}</BankRow>}
+                              {profile?.bank_account_name && <BankRow label="Chủ tài khoản">{profile.bank_account_name}</BankRow>}
+                              {profile?.bank_account_number && (
+                                <BankRow label="Số tài khoản">
+                                  <span className="font-mono tabular-nums">{profile.bank_account_number}</span>
+                                </BankRow>
+                              )}
+                              <BankRow label="Số tiền">
+                                <span className="tabular-nums">{formatVND(billTotal)}</span>
                               </BankRow>
-                            )}
-                            <BankRow label="Số tiền">
-                              <span className="tabular-nums">{formatVND(billTotal)}</span>
-                            </BankRow>
-                            <BankRow label="Nội dung">
-                              <span
-                                className="inline-block rounded-md px-2 py-0.5 font-mono text-[13px] font-bold text-[#0B1B3A]"
-                                style={{ background: "#FFB54733" }}
-                              >
-                                {billNum}
-                              </span>
-                            </BankRow>
-                          </dl>
+                              <BankRow label="Nội dung">
+                                <span
+                                  className="inline-block rounded-md px-2 py-0.5 font-mono text-[13px] font-bold"
+                                  style={{ background: "#FFB54733", color: theme.dark }}
+                                >
+                                  {billNum}
+                                </span>
+                              </BankRow>
+                            </dl>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="no-print border-t border-dashed border-slate-300 bg-slate-50 px-8 py-4 text-center text-xs text-slate-500">
-                    {t?.vietQR || "VietQR"}:{" "}
-                    <Link to="/settings" className="font-medium text-blue-600 underline">
-                      {t?.settings || "Thiết lập"}
-                    </Link>
-                  </div>
-                )}
+                  ) : (
+                    <div className="no-print border-t border-dashed border-slate-300 px-8 py-4 text-center text-xs text-slate-500" style={{ background: theme.soft }}>
+                      {t?.vietQR || "VietQR"}:{" "}
+                      <Link to="/settings" className="font-medium text-blue-600 underline">
+                        {t?.settings || "Thiết lập"}
+                      </Link>
+                    </div>
+                  )}
+                </div>
               </div>
-
               {/* Phần dưới hoá đơn (không in, không vào ảnh) */}
               <div className="no-print space-y-3">
                 <div className="flex justify-end">
