@@ -27,7 +27,7 @@ import StudentDialog from "@/components/StudentDialog";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { resolveStudentColor } from "@/lib/studentColor";
+import ColorPickerButton, { colorOf, useColorDraft } from "@/components/Colorpickerbutton";
 
 /* Design tokens: navy #0B1B3A · hổ phách #FFB547 · nền trung tính slate */
 const PILL = "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold";
@@ -47,6 +47,8 @@ export default function Students() {
   const confirm = useConfirm();
   const enrollmentsQuery = useEnrollments();
   const classesQuery = useClasses();
+  // Màu đang kéo dở của từng học sinh (xem trước ngay, chưa lưu)
+  const colors = useColorDraft();
 
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -89,7 +91,7 @@ export default function Students() {
         displayGrade: st.grade || "—",
         displayParentName: rawParentName !== "" ? rawParentName : null,
         displayParentPhone: rawParentPhone ? rawParentPhone : null,
-        accent: resolveStudentColor(st.color, st.id ?? cleaned),
+        accent: colorOf(st.color, st.id ?? cleaned),
         studentClasses: classesList.filter((c: any) => cids.includes(c.id)),
         billingDay,
       };
@@ -138,13 +140,36 @@ export default function Students() {
     qc.invalidateQueries({ queryKey: ["students-list"] });
   };
 
+  // Màu hiển thị của học sinh: màu đang kéo dở nếu có, không thì màu đã lưu
+  const accentOf = (st: any): string => colors.draft[st.id] ?? st.accent;
+
+  // Lưu màu tự chọn của học sinh (mã #rrggbb) vào cột color
+  const commitColor = async (st: any, hex: string) => {
+    const { error } = await supabase.from("students").update({ color: hex } as any).eq("id", st.id);
+    if (error) toast.error(error.message);
+    else {
+      qc.invalidateQueries({ queryKey: ["student", st.id] });
+      await qc.invalidateQueries({ queryKey: ["students-list"] });
+    }
+    colors.clear(st.id); // bỏ màu xem trước: lưu được thì dữ liệu mới đã có màu này, lỗi thì quay về màu cũ
+  };
+
+  const colorPicker = (st: any) => (
+    <ColorPickerButton
+      value={accentOf(st)}
+      label="Chọn màu học sinh"
+      onPreview={(hex) => colors.set(st.id, hex)}
+      onCommit={(hex) => commitColor(st, hex)}
+    />
+  );
+
   const Avatar = ({ st, size }: { st: any; size: string }) => (
     <div
       className={cn(
         "grid shrink-0 place-items-center rounded-2xl font-extrabold text-white ring-2 ring-offset-2 ring-offset-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]",
         size
       )}
-      style={{ background: st.accent, ["--tw-ring-color" as any]: st.accent }}
+      style={{ background: accentOf(st), ["--tw-ring-color" as any]: accentOf(st) }}
     >
       {st.initial}
     </div>
@@ -261,7 +286,7 @@ export default function Students() {
           {filteredStudents.map((st: any) => (
             <div key={st.id} className="group relative">
               <Card className="relative h-full space-y-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 pt-6 shadow-xs transition-all group-hover:border-slate-300 group-hover:shadow-lg group-hover:shadow-slate-900/5">
-                <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: st.accent }} />
+                <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: accentOf(st) }} />
                 <Link
                   to={`/students/${st.id}`}
                   aria-label={`Xem hồ sơ ${st.displayName}`}
@@ -277,6 +302,7 @@ export default function Students() {
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-0.5 lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                    {colorPicker(st)}
                     <Button variant="ghost" size="icon" aria-label="Sửa" onClick={(e) => openEdit(e, st)} className={ICON_BTN}>
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -369,6 +395,7 @@ export default function Students() {
                     </td>
                     <td className="px-6 py-3.5">
                       <div className="flex items-center justify-end gap-0.5">
+                        {colorPicker(st)}
                         <Button asChild variant="ghost" size="icon" aria-label="Xem hồ sơ" className={ICON_BTN}>
                           <Link to={`/students/${st.id}`}><FileText className="h-4 w-4" /></Link>
                         </Button>

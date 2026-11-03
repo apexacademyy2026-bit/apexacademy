@@ -28,7 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { cn } from "@/lib/utils";
-import { resolveStudentColor } from "@/lib/studentColor";
+import ColorPickerButton, { colorOf, useColorDraft } from "@/components/Colorpickerbutton";
 
 /* Design tokens: navy #0B1B3A · hổ phách #FFB547 · nền trung tính slate (giống trang Học sinh) */
 const FIELD = "h-11 rounded-xl border-slate-200 bg-white text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20 focus-visible:border-[#0B1B3A]";
@@ -42,6 +42,8 @@ export default function Classes() {
   const schedules = useClassSchedules();
   const qc = useQueryClient();
   const confirm = useConfirm();
+  // Màu đang kéo dở của từng lớp (xem trước ngay, chưa lưu)
+  const colors = useColorDraft();
 
   const [view, setView] = useState<"grid" | "list">("grid");
   const [open, setOpen] = useState(false);
@@ -98,6 +100,25 @@ export default function Classes() {
       toast.success(t.delete);
     }
   };
+
+  // Lưu màu tự chọn của lớp (mã #rrggbb) vào cột color
+  const commitColor = async (c: any, hex: string) => {
+    const { error } = await supabase.from("classes").update({ color: hex } as any).eq("id", c.id);
+    if (error) toast.error(error.message);
+    else await qc.invalidateQueries({ queryKey: qk.classes });
+    colors.clear(c.id); // bỏ màu xem trước: lưu được thì dữ liệu mới đã có màu này, lỗi thì quay về màu cũ
+  };
+
+  const classColor = (c: any) => colors.draft[c.id] ?? colorOf(c.color, c.id);
+
+  const colorPicker = (c: any) => (
+    <ColorPickerButton
+      value={classColor(c)}
+      label="Chọn màu lớp"
+      onPreview={(hex) => colors.set(c.id, hex)}
+      onCommit={(hex) => commitColor(c, hex)}
+    />
+  );
 
   const openCreate = () => {
     setEditing(null);
@@ -260,7 +281,7 @@ export default function Classes() {
       ) : view === "grid" ? (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
           {visible.map((c: any) => {
-            const color = resolveStudentColor(c.color, c.id);
+            const color = classColor(c);
             const cs = slots(c.id);
             return (
               <div key={c.id} className="group relative">
@@ -288,7 +309,10 @@ export default function Classes() {
                         </p>
                       </div>
                     </div>
-                    {rowMenu(c)}
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      {colorPicker(c)}
+                      {rowMenu(c)}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
@@ -340,7 +364,7 @@ export default function Classes() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visible.map((c: any) => {
-                  const color = resolveStudentColor(c.color, c.id);
+                  const color = classColor(c);
                   return (
                     <tr key={c.id} className="transition-colors hover:bg-slate-50/70">
                       <td className="px-6 py-3.5">
@@ -368,6 +392,7 @@ export default function Classes() {
                       </td>
                       <td className="px-6 py-3.5">
                         <div className="flex items-center justify-end gap-0.5">
+                          {colorPicker(c)}
                           <Button
                             size="icon"
                             variant="ghost"

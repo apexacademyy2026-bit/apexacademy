@@ -17,7 +17,7 @@ import { useEnrollments, useClasses } from "@/hooks/useData";
 import { toBlob } from "html-to-image";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { resolveStudentColor } from "@/lib/studentColor";
-import { LOG, logVal, hasTest, weekdayLabel, dayMonth, timeRange, monthLabel, sessionSort } from "@/lib/Learninglog";
+import { LOG, logVal, hasTest, weekdayLabel, dayMonth, timeRange, sessionSort } from "@/lib/Learninglog";
 import {
   EMPTY_TEST,
   cleanTests,
@@ -130,14 +130,9 @@ function readJson<T>(key: string, fallback: T): T {
 
 // Các ô sửa riêng trên hoá đơn (lưu trong trình duyệt, không đổi dữ liệu buổi học của hệ thống)
 type RowOv = Partial<Record<"stt" | "time" | "weekday" | "date", string>>;
-// Nhãn tháng ở đầu phiếu sửa tay (nhớ riêng theo từng tháng mặc định)
-type TitleOv = { months?: Record<string, string> };
 
 // Ô nhập khi bấm "Sửa hóa đơn"
 const CELL_INPUT = "no-print border-slate-300 bg-white px-1.5 text-xs focus-visible:ring-1 focus-visible:ring-green-500";
-// Ô nhập trên dải tiêu đề màu
-const TITLE_INPUT =
-  "no-print h-9 border-white/40 bg-white/15 text-center text-sm font-bold text-white placeholder:text-white/60 focus-visible:ring-1 focus-visible:ring-white";
 
 /* Màu hoá đơn: chỉ cần một màu gốc, các sắc độ còn lại (dải tiêu đề, hàng tiêu đề bảng, viền, nền nhạt) tự suy ra */
 
@@ -202,7 +197,7 @@ type Theme = ReturnType<typeof buildTheme>;
 function ScoreBadge({ score, theme }: { score: string; theme: Theme }) {
   return (
     <span
-      className="inline-flex min-w-[44px] items-center justify-center rounded-lg border px-2.5 py-1 text-xs font-bold tabular-nums"
+      className="inline-flex min-w-[64px] items-center justify-center rounded-lg border px-3.5 py-1 text-lg font-bold tabular-nums"
       style={{ borderColor: theme.head, background: "#ffffff", color: theme.dark }}
     >
       {score}
@@ -213,8 +208,8 @@ function ScoreBadge({ score, theme }: { score: string; theme: Theme }) {
 function Field({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <div className="text-xs font-medium text-slate-400">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-800">{children}</div>
+      <div className="text-sm font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-base font-semibold text-slate-800">{children}</div>
     </div>
   );
 }
@@ -222,8 +217,8 @@ function Field({ label, children, className = "" }: { label: string; children: R
 function BankRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-slate-200/80 py-2 last:border-0">
-      <dt className="shrink-0 text-xs text-slate-500">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-sm font-semibold text-slate-900">{children}</dd>
+      <dt className="shrink-0 text-sm text-slate-500">{label}</dt>
+      <dd className="min-w-0 break-words text-right text-base font-semibold text-slate-900">{children}</dd>
     </div>
   );
 }
@@ -247,9 +242,8 @@ export default function StudentBill() {
   const [testDraft, setTestDraft] = useState<Record<string, TestItem[]>>({});
   // Dòng bài kiểm tra vừa thêm cần được focus ("<id buổi>:<vị trí>")
   const testFocus = useRef<string | null>(null);
-  // Các ô sửa riêng cho hoá đơn của học sinh này (theo id buổi học) và nhãn tháng sửa tay
+  // Các ô sửa riêng cho hoá đơn của học sinh này (theo id buổi học)
   const [rowOv, setRowOv] = useState<Record<string, RowOv>>({});
-  const [titleOv, setTitleOv] = useState<TitleOv>({});
   // Màu hoá đơn: mã màu hoặc "accent" (dùng màu riêng của học sinh); hướng giấy khi in
   const [themeSel, setThemeSel] = useState<string>(() => readStored(THEME_KEY) || DEFAULT_THEME);
   const [orientation, setOrientation] = useState<"landscape" | "portrait">(() =>
@@ -316,11 +310,10 @@ export default function StudentBill() {
     localStorage.setItem(`bill_footnote_${student.id}`, footnote);
   }, [footnote, student?.id]);
 
-  // Nạp các ô và nhãn tháng đã sửa riêng của học sinh này
+  // Nạp các ô đã sửa riêng của học sinh này
   useEffect(() => {
     if (!student?.id) return;
     setRowOv(readJson<Record<string, RowOv>>(`bill_rows_${student.id}`, {}));
-    setTitleOv(readJson<TitleOv>(`bill_title_${student.id}`, {}));
   }, [student?.id]);
 
   const myClasses = useMemo(() => {
@@ -512,26 +505,23 @@ export default function StudentBill() {
     ? vietQRUrl(profile?.bank_code, profile?.bank_account_number, profile?.bank_account_name, billTotal, qrContent)
     : null;
 
-  // Nhãn tháng ở đầu phiếu: "THÁNG m/yyyy" (sửa được khi bấm "Sửa hóa đơn")
   const billAttendances: any[] = displayBill?.attendances || [];
-  const monthText =
-    monthLabel(billAttendances.map((a: any) => a?.schedule_events?.event_date).filter(Boolean)) ||
-    monthLabel([displayBill?.period_start || new Date().toISOString().slice(0, 10)]);
-  const titleMonth = titleOv.months?.[monthText] ?? monthText;
 
   // Màu hoá đơn: màu đã chọn, hoặc "accent" = màu riêng của từng học sinh
   const theme = buildTheme(themeSel === "accent" ? String(accent) : themeSel);
 
   // Các cột của bảng nhật ký. Ngoài lúc sửa, cột "Kiểm tra" và "Ghi chú" chỉ hiện khi có buổi nào có dữ liệu.
   const showTestCol = editing || billAttendances.some(hasTest);
+  const hasContent = billAttendances.some((a: any) => !!logVal(a, LOG.content));
   const showNoteCol = editing || billAttendances.some((a: any) => !!logVal(a, LOG.note));
   const logCols = [
-    { key: "stt", label: "STT", w: editing ? 15 : 12 },
-    { key: "date", label: "NGÀY", w: editing ? 12 : 11 },
-    { key: "content", label: "NỘI DUNG", w: editing ? 22 : 30 },
-    { key: "homework", label: "BTVN", w: editing ? 20 : 24 },
-    ...(showTestCol ? [{ key: "test", label: "KIỂM TRA", w: editing ? 20 : 14 }] : []),
-    ...(showNoteCol ? [{ key: "note", label: "GHI CHÚ", w: editing ? 15 : 16 }] : []),
+    { key: "stt", label: "STT", w: editing ? 16 : 17 },
+    { key: "date", label: "NGÀY", w: editing ? 13 : 14 },
+    // Không buổi nào có nội dung (và không đang sửa) thì thu cột lại cho gọn
+    { key: "content", label: "NỘI DUNG", w: editing ? 22 : hasContent ? 27 : 10 },
+    { key: "homework", label: "BTVN", w: editing ? 20 : 22 },
+    ...(showTestCol ? [{ key: "test", label: "KIỂM TRA", w: editing ? 20 : 15 }] : []),
+    ...(showNoteCol ? [{ key: "note", label: "GHI CHÚ", w: editing ? 15 : 14 }] : []),
   ];
   const logColsTotal = logCols.reduce((s, c) => s + c.w, 0);
 
@@ -796,12 +786,6 @@ export default function StudentBill() {
     );
   };
 
-  const updateTitle = (patch: Partial<TitleOv>) => {
-    const next = { ...titleOv, ...patch };
-    setTitleOv(next);
-    writeStored(`bill_title_${student?.id}`, JSON.stringify(next));
-  };
-
   const chooseTheme = (color: string) => {
     setThemeSel(color);
     writeStored(THEME_KEY, color);
@@ -813,11 +797,9 @@ export default function StudentBill() {
   };
 
   const resetEdits = () => {
-    if (!window.confirm("Khôi phục nhãn tháng và các ô đã sửa riêng trên hóa đơn (buổi, giờ, thứ, ngày) về nội dung gốc?\n(Nội dung buổi học, BTVN, kiểm tra và ghi chú đã lưu vào hệ thống không bị ảnh hưởng.)")) return;
+    if (!window.confirm("Khôi phục các ô đã sửa riêng trên hóa đơn (buổi, giờ, thứ, ngày) về nội dung gốc?\n(Nội dung buổi học, BTVN, kiểm tra và ghi chú đã lưu vào hệ thống không bị ảnh hưởng.)")) return;
     setRowOv({});
-    setTitleOv({});
     writeStored(`bill_rows_${student?.id}`, null);
-    writeStored(`bill_title_${student?.id}`, null);
   };
   const addAttendance = async () => {
     if (!user || !student || !addForm.class_id) return;
@@ -1428,30 +1410,18 @@ export default function StudentBill() {
                   className="printable-bill-card relative w-full min-w-[880px] overflow-hidden rounded-3xl border bg-white text-slate-900 shadow-xl"
                   style={{ borderColor: theme.line }}
                 >
-                  {/* Tiêu đề: THÁNG (xoá trắng ô khi sửa thì dải tiêu đề ẩn đi) */}
-                  {(titleMonth || editing) && (
-                    <div className="px-6 py-4 text-center text-white" style={{ background: theme.banner }}>
-                      {editing ? (
-                        <Input
-                          type="text"
-                          aria-label="Tháng"
-                          className={`${TITLE_INPUT} mx-auto w-56`}
-                          value={titleMonth}
-                          placeholder="THÁNG"
-                          onChange={(e) => updateTitle({ months: { ...(titleOv.months || {}), [monthText]: e.target.value } })}
-                        />
-                      ) : (
-                        <h2 className="text-xl font-extrabold leading-snug tracking-wide">{titleMonth}</h2>
-                      )}
-                    </div>
-                  )}
+                  {/* Dải màu mảnh trên cùng */}
+                  <div className="h-2 w-full" style={{ background: theme.banner }} />
 
-                  {/* Giáo viên, mã hoá đơn, trạng thái */}
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4" style={{ borderColor: theme.line }}>
-                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                  {/* Đầu hoá đơn: giáo viên bên trái, thông tin hoá đơn bên phải */}
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-x-8 gap-y-5 border-b px-8 py-6"
+                    style={{ borderColor: theme.line, background: `linear-gradient(180deg, ${theme.soft} 0%, #ffffff 100%)` }}
+                  >
+                    <div className="flex min-w-[240px] flex-1 items-center gap-4">
                       <div
-                        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-extrabold text-white"
-                        style={{ background: theme.head }}
+                        className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl text-2xl font-extrabold text-white shadow-md"
+                        style={{ background: theme.banner }}
                       >
                         {teacherInitial}
                       </div>
@@ -1487,29 +1457,40 @@ export default function StudentBill() {
                         </div>
                       ) : (
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-slate-900">{teacherName}</div>
-                          <div className="truncate text-xs text-slate-500">{teacherPhone || "Giáo viên"}</div>
+                          <div className="text-sm font-bold tracking-[0.18em]" style={{ color: theme.head }}>
+                            HÓA ĐƠN HỌC PHÍ
+                          </div>
+                          <div className="mt-1 truncate text-2xl font-extrabold leading-tight text-slate-900">{teacherName}</div>
+                          <div className="mt-0.5 truncate text-base text-slate-500">{teacherPhone || "Giáo viên"}</div>
                         </div>
                       )}
                     </div>
 
-                    <div className="flex shrink-0 items-center gap-6">
-                      <div className="text-right">
-                        <div className="text-[11px] font-medium text-slate-400">{(t as any)?.billNo || "Mã hóa đơn"}</div>
-                        <div className="mt-0.5 break-all font-mono text-[13px] font-bold text-slate-900">{billNum}</div>
+                    {/* Mã hoá đơn | Ngày lập | Trạng thái, gom trong một khung */}
+                    <div
+                      className="flex shrink-0 items-stretch rounded-2xl border bg-white shadow-sm"
+                      style={{ borderColor: theme.line }}
+                    >
+                      <div className="px-4 py-3">
+                        <div className="text-sm font-medium text-slate-500">{(t as any)?.billNo || "Mã hóa đơn"}</div>
+                        <div className="mt-0.5 break-all font-mono text-base font-bold text-slate-900">{billNum}</div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-[11px] font-medium text-slate-400">Ngày lập</div>
-                        <div className="mt-0.5 text-[13px] font-semibold text-slate-700">{issueDate}</div>
+                      <div className="w-px self-stretch" style={{ background: theme.line }} />
+                      <div className="px-4 py-3">
+                        <div className="text-sm font-medium text-slate-500">Ngày lập</div>
+                        <div className="mt-0.5 text-base font-semibold text-slate-800">{issueDate}</div>
                       </div>
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
-                          billPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${billPaid ? "bg-emerald-500" : "bg-amber-500"}`} />
-                        {billPaid ? "Đã thanh toán" : "Chưa thanh toán"}
-                      </span>
+                      <div className="w-px self-stretch" style={{ background: theme.line }} />
+                      <div className="flex items-center px-3">
+                        <span
+                          className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-bold ${
+                            billPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          <span className={`h-2 w-2 rounded-full ${billPaid ? "bg-emerald-500" : "bg-amber-500"}`} />
+                          {billPaid ? "Đã thanh toán" : "Chưa thanh toán"}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -1517,7 +1498,7 @@ export default function StudentBill() {
                   {displayBill.attendances?.length > 0 && showAtt && (
                     <div className="px-5 pt-5">
                       <div className="bill-table-wrap overflow-hidden rounded-2xl border bg-white" style={{ borderColor: theme.line }}>
-                        <table className="w-full table-fixed border-collapse text-left text-[13px] text-slate-800">
+                        <table className="w-full table-fixed border-collapse text-left text-lg text-slate-800">
                           <colgroup>
                             {logCols.map((c) => (
                               <col key={c.key} style={{ width: `${((c.w / logColsTotal) * 100).toFixed(2)}%` }} />
@@ -1526,7 +1507,7 @@ export default function StudentBill() {
                           <thead>
                             <tr className="text-white" style={{ background: theme.head }}>
                               {logCols.map((c) => (
-                                <th key={c.key} className="px-3 py-3.5 text-center text-[11px] font-bold tracking-wider">
+                                <th key={c.key} className="px-2 py-4 text-center text-base font-bold tracking-wider">
                                   {c.label}
                                 </th>
                               ))}
@@ -1571,9 +1552,9 @@ export default function StudentBill() {
                                       </div>
                                     ) : (
                                       <>
-                                        <div className="text-[13px] font-semibold text-slate-800">{sttText}</div>
-                                        {timeText && <div className="mt-0.5 text-[11px] tabular-nums text-slate-400">{timeText}</div>}
-                                        <div className="mt-0.5 text-[11px] font-medium tabular-nums text-slate-500">{formatVND(fee)}</div>
+                                        <div className="text-xl font-semibold text-slate-800">{sttText}</div>
+                                        {timeText && <div className="mt-0.5 text-base tabular-nums text-slate-500">{timeText}</div>}
+                                        <div className="mt-0.5 text-base font-medium tabular-nums text-slate-600">{formatVND(fee)}</div>
                                       </>
                                     )}
                                   </td>
@@ -1587,8 +1568,8 @@ export default function StudentBill() {
                                       </div>
                                     ) : (
                                       <>
-                                        <div className="font-semibold text-slate-800">{weekdayText}</div>
-                                        <div className="mt-0.5 text-[11px] tabular-nums text-slate-400">{dateText}</div>
+                                        <div className="text-xl font-semibold text-slate-800">{weekdayText}</div>
+                                        <div className="mt-0.5 text-base tabular-nums text-slate-500">{dateText}</div>
                                       </>
                                     )}
                                   </td>
@@ -1708,14 +1689,14 @@ export default function StudentBill() {
                   )}
 
                   {/* Kỳ thanh toán và tổng cộng */}
-                  <div className="flex items-end justify-between gap-8 px-6 pb-6 pt-5 print:pb-3 print:pt-3">
+                  <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 px-6 pb-6 pt-5 print:pb-3 print:pt-3">
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                       <Field
                         label={mode === "monthly" ? (t?.period || "Kỳ thanh toán") : ((t as any)?.billedSessions || "Số buổi tính phí")}
                       >
                         {mode === "monthly"
                           ? (displayBill.period_start
-                              ? <span className="text-[13px]">{fmtDate(displayBill.period_start)} – {fmtDate(displayBill.period_end)}</span>
+                              ? <span className="text-base">{fmtDate(displayBill.period_start)} – {fmtDate(displayBill.period_end)}</span>
                               : displayBill.description)
                           : `${displayBill.attendances?.length || 0} ${((t as any)?.sessionsCountUnit || "buổi")}`}
                       </Field>
@@ -1726,14 +1707,14 @@ export default function StudentBill() {
                       </Field>
                     </div>
 
-                    <div className="w-80 shrink-0">
-                      <div className="flex items-center justify-between py-1.5 text-sm text-slate-500">
+                    <div className="w-96 max-w-full shrink-0">
+                      <div className="flex items-center justify-between py-1.5 text-base text-slate-500">
                         <span>Số buổi tính phí</span>
                         <span className="font-semibold tabular-nums text-slate-800">{sessionsCount} buổi</span>
                       </div>
                       <div className="flex items-baseline justify-between gap-4 border-t-2 pt-3" style={{ borderColor: theme.head }}>
-                        <span className="text-sm font-bold text-slate-900">Tổng cộng</span>
-                        <span className="text-[32px] font-extrabold leading-none tracking-tight tabular-nums" style={{ color: theme.dark }}>
+                        <span className="text-lg font-bold text-slate-900">Tổng cộng</span>
+                        <span className="text-[38px] font-extrabold leading-none tracking-tight tabular-nums" style={{ color: theme.dark }}>
                           {formatVND(billTotal)}
                         </span>
                       </div>
@@ -1741,7 +1722,7 @@ export default function StudentBill() {
                   </div>
 
                   {footnote && (
-                    <p className="whitespace-pre-line px-6 pb-6 text-center text-sm italic text-slate-500 print:pb-3">{footnote}</p>
+                    <p className="whitespace-pre-line px-6 pb-6 text-center text-base italic text-slate-500 print:pb-3">{footnote}</p>
                   )}
 
                   {/* Phiếu thanh toán: cắt rời theo đường đứt nét */}
@@ -1760,13 +1741,13 @@ export default function StudentBill() {
                               alt="VietQR"
                               className="h-80 w-80 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
                             />
-                            <div className="mt-2 text-xs text-slate-500">Quét bằng app ngân hàng</div>
+                            <div className="mt-2 text-sm text-slate-500">Quét bằng app ngân hàng</div>
                           </div>
                           <div className="w-full min-w-0 flex-1">
-                            <div className="text-base font-bold text-slate-900">
+                            <div className="text-xl font-bold text-slate-900">
                               {(t as any)?.scanToPayShort || "Thanh toán qua chuyển khoản"}
                             </div>
-                            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                            <p className="mt-1 text-sm leading-relaxed text-slate-500">
                               {(t as any)?.scanQrInstr || "Mở ứng dụng ngân hàng, quét mã QR và giữ nguyên nội dung chuyển khoản."}
                             </p>
                             <dl className="mt-3">
@@ -1782,7 +1763,7 @@ export default function StudentBill() {
                               </BankRow>
                               <BankRow label="Nội dung">
                                 <span
-                                  className="inline-block rounded-md px-2 py-0.5 font-mono text-[13px] font-bold"
+                                  className="inline-block rounded-md px-2 py-0.5 font-mono text-base font-bold"
                                   style={{ background: "#FFB54733", color: theme.dark }}
                                 >
                                   {billNum}
