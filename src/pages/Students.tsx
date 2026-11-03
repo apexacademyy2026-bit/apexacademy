@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import {
   Plus,
@@ -29,10 +30,39 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import ColorPickerButton, { colorOf, useColorDraft } from "@/components/Colorpickerbutton";
 
-/* Design tokens: navy #0B1B3A · hổ phách #FFB547 · nền trung tính slate */
-const PILL = "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold";
-const FIELD = "h-11 rounded-xl border-slate-200 bg-white text-sm shadow-xs focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20 focus-visible:border-[#0B1B3A]";
-const ICON_BTN = "relative z-20 h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900";
+/* Design tokens: mực navy #0B1B3A · nền trắng · viền zinc mảnh · chữ xám trung tính.
+   Giao diện giữ trung tính để màu của từng học sinh (do người dùng chọn) nổi bật: vạch màu trên thẻ, avatar đặc, nền thẻ phủ sắc rất nhạt. */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+const CARD = "rounded-2xl border border-zinc-200 bg-white";
+const PILL = "inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700";
+const FIELD =
+  "h-10 rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/10";
+const ICON_BTN = "relative z-20 h-8 w-8 rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900";
+const PRIMARY = "h-10 shrink-0 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white shadow-none hover:bg-[#13285a]";
+const SEG = "inline-flex shrink-0 gap-0.5 rounded-full bg-zinc-100 p-1";
+const segBtn = (active: boolean) =>
+  cn(
+    "h-8 shrink-0 whitespace-nowrap rounded-full px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+    active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+  );
+
+// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
+const inkOn = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 170 ? "#0B1B3A" : "#ffffff";
+};
+// Ô màu đặc, có quầng sáng cùng màu để nổi bật
+const solid = (c: string): CSSProperties => ({
+  background: c,
+  color: inkOn(c),
+  boxShadow: `0 8px 18px -8px ${c}`,
+});
+// Phủ một lớp màu rất nhạt lên nền trắng, và chữ đậm cùng tông
+const wash = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, white)`;
+const deep = (c: string) => `color-mix(in srgb, ${c} 62%, black)`;
 
 const cleanName = (val: any) => {
   if (!val || typeof val !== "string") return "";
@@ -163,27 +193,20 @@ export default function Students() {
     />
   );
 
-  const Avatar = ({ st, size }: { st: any; size: string }) => (
-    <div
-      className={cn(
-        "grid shrink-0 place-items-center rounded-2xl font-extrabold text-white ring-2 ring-offset-2 ring-offset-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]",
-        size
-      )}
-      style={{ background: accentOf(st), ["--tw-ring-color" as any]: accentOf(st) }}
-    >
+  // Dùng hàm render thay vì component lồng nhau để tránh bị mount lại mỗi lần render
+  const renderAvatar = (st: any, size: string) => (
+    <div className={cn("grid shrink-0 place-items-center rounded-full font-semibold", size)} style={solid(accentOf(st))}>
       {st.initial}
     </div>
   );
 
   const gradePill = (st: any) => (
-    <span className={cn(PILL, "bg-indigo-50 text-indigo-700")}>
-      <GraduationCap className="h-3.5 w-3.5" /> Lớp {st.displayGrade}
+    <span className={PILL} style={{ background: wash(accentOf(st), 18), color: deep(accentOf(st)) }}>
+      <GraduationCap className="h-3.5 w-3.5 opacity-60" /> Lớp {st.displayGrade}
     </span>
   );
   const paymentPill = (st: any) => (
-    <span className={cn(PILL, st.payment_mode === "monthly" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>
-      {st.payment_mode === "monthly" ? "Theo tháng" : "Theo buổi"}
-    </span>
+    <span className={PILL} style={{ background: wash(accentOf(st), 18), color: deep(accentOf(st)) }}>{st.payment_mode === "monthly" ? "Theo tháng" : "Theo buổi"}</span>
   );
   const classChips = (st: any, max = 3) => {
     const shown = st.studentClasses.slice(0, max);
@@ -191,50 +214,43 @@ export default function Students() {
     return (
       <div className="flex flex-wrap gap-1.5">
         {shown.map((c: any) => (
-          <span key={c.id} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{c.name}</span>
+          <span key={c.id} className="rounded-md border border-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-600">{c.name}</span>
         ))}
-        {rest > 0 && <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">+{rest}</span>}
+        {rest > 0 && <span className="rounded-md border border-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-400">+{rest}</span>}
       </div>
     );
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-12 font-['Be_Vietnam_Pro',sans-serif]">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+    <div className={cn("mx-auto max-w-7xl space-y-5 pb-12", FONT)}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* HERO */}
-      <div className="relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-8 sm:px-10 sm:py-10">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[#FFB547]" />
-        <div className="pointer-events-none absolute -bottom-28 right-40 hidden h-60 w-60 rounded-full border-[36px] border-white/[0.07] sm:block" />
-        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-lg space-y-2">
-            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{t.students || "Danh sách học sinh"}</h1>
-            <p className="text-sm leading-relaxed text-white/70">
-              Quản lý thông tin, lớp học và học phí của {students.length} học sinh.
-            </p>
-          </div>
-          <Button
-            onClick={openCreate}
-            className="h-11 shrink-0 gap-2 self-start rounded-xl bg-white px-5 text-sm font-bold text-[#0B1B3A] shadow-lg hover:bg-slate-100 sm:self-auto"
-          >
-            <Plus className="h-4 w-4" strokeWidth={2.5} /> {t.addStudent || "Thêm học sinh"}
-          </Button>
+      {/* TIÊU ĐỀ */}
+      <section className={cn(CARD, "flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6")}>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">{t.students || "Danh sách học sinh"}</h1>
+          <p className="text-sm text-zinc-500">
+            Quản lý thông tin, lớp học và học phí của <span className="font-medium tabular-nums text-zinc-700">{students.length}</span> học sinh.
+          </p>
         </div>
-      </div>
+        <Button onClick={openCreate} className={cn(PRIMARY, "self-start sm:self-auto")}>
+          <Plus className="h-4 w-4 text-[#FFB547]" strokeWidth={2.5} /> {t.addStudent || "Thêm học sinh"}
+        </Button>
+      </section>
 
       {/* TOOLBAR */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative w-full sm:max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
           <Input placeholder="Tìm theo tên học sinh, SĐT..." value={search} onChange={(e) => setSearch(e.target.value)} className={cn(FIELD, "pl-10")} />
         </div>
 
         <div className="flex flex-1 items-center gap-3">
           <div className="flex-1 sm:max-w-[13rem]">
             <Select value={sortBy} onValueChange={(val: any) => setSortBy(val)}>
-              <SelectTrigger className={cn(FIELD, "font-medium text-slate-700")}>
+              <SelectTrigger className={cn(FIELD, "font-medium text-zinc-700")}>
                 <div className="flex items-center gap-2 truncate">
-                  <ArrowUpDown className="h-4 w-4 shrink-0 text-slate-400" />
+                  <ArrowUpDown className="h-4 w-4 shrink-0 text-zinc-400" />
                   <SelectValue placeholder="Sắp xếp" />
                 </div>
               </SelectTrigger>
@@ -248,17 +264,15 @@ export default function Students() {
             </Select>
           </div>
 
-          <div className="ml-auto flex shrink-0 gap-1 rounded-xl bg-slate-100 p-1">
+          <div className={cn(SEG, "ml-auto")}>
             {([["grid", Grid2X2, "Lưới"], ["list", ListIcon, "Bảng"]] as const).map(([mode, Icon, label]) => (
               <button
                 key={mode}
                 type="button"
                 aria-pressed={viewMode === mode}
+                aria-label={label}
                 onClick={() => setViewMode(mode)}
-                className={cn(
-                  "flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
-                  viewMode === mode ? "bg-white text-[#0B1B3A] shadow-sm" : "text-slate-500 hover:text-slate-900"
-                )}
+                className={cn(segBtn(viewMode === mode), "flex items-center gap-1.5")}
               >
                 <Icon className="h-4 w-4" /> <span className="hidden sm:inline">{label}</span>
               </button>
@@ -269,23 +283,26 @@ export default function Students() {
 
       {/* NỘI DUNG */}
       {filteredStudents.length === 0 ? (
-        <div className="space-y-4 rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-slate-400">
-            <Users className="h-6 w-6" />
+        <div className="space-y-4 rounded-2xl border border-dashed border-zinc-300 bg-white p-12 text-center">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-zinc-100 text-zinc-400">
+            <Users className="h-5 w-5" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900">{search ? "Không có học sinh nào khớp" : "Chưa có học sinh nào"}</h3>
-            <p className="text-sm text-slate-500">{search ? "Thử đổi từ khóa hoặc xóa ô tìm kiếm." : "Thêm học sinh đầu tiên để bắt đầu."}</p>
+            <h3 className="text-base font-semibold text-zinc-900">{search ? "Không có học sinh nào khớp" : "Chưa có học sinh nào"}</h3>
+            <p className="text-sm text-zinc-500">{search ? "Thử đổi từ khóa hoặc xóa ô tìm kiếm." : "Thêm học sinh đầu tiên để bắt đầu."}</p>
           </div>
-          <Button onClick={search ? () => setSearch("") : openCreate} className="h-10 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white hover:bg-[#13285a]">
+          <Button onClick={search ? () => setSearch("") : openCreate} className={PRIMARY}>
             {search ? "Xóa tìm kiếm" : t.addStudent || "Thêm học sinh"}
           </Button>
         </div>
       ) : viewMode === "grid" ? (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredStudents.map((st: any) => (
             <div key={st.id} className="group relative">
-              <Card className="relative h-full space-y-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 pt-6 shadow-xs transition-all group-hover:border-slate-300 group-hover:shadow-lg group-hover:shadow-slate-900/5">
+              <Card
+                className="relative h-full gap-0 space-y-5 overflow-hidden rounded-2xl border bg-white p-5 pt-6 shadow-none transition-shadow group-hover:shadow-[0_14px_34px_-18px_rgb(0_0_0/0.35)]"
+                style={{ background: wash(accentOf(st), 6), borderColor: wash(accentOf(st), 38) }}
+              >
                 <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: accentOf(st) }} />
                 <Link
                   to={`/students/${st.id}`}
@@ -294,11 +311,11 @@ export default function Students() {
                 />
 
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3.5">
-                    <Avatar st={st} size="h-12 w-12 text-lg" />
+                  <div className="flex min-w-0 items-center gap-3">
+                    {renderAvatar(st, "h-12 w-12 text-lg")}
                     <div className="min-w-0">
-                      <h3 className="truncate text-base font-bold text-slate-900">{st.displayName}</h3>
-                      <p className="truncate text-xs text-slate-500">{st.displayPhone}</p>
+                      <h3 className="truncate text-[15px] font-semibold text-zinc-900">{st.displayName}</h3>
+                      <p className="mt-0.5 truncate text-xs tabular-nums text-zinc-500">{st.displayPhone}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 gap-0.5 lg:opacity-0 lg:transition-opacity lg:group-hover:opacity-100 lg:focus-within:opacity-100">
@@ -317,83 +334,81 @@ export default function Students() {
                   {paymentPill(st)}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-zinc-100 pt-4">
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 text-xs text-slate-500"><Users className="h-3.5 w-3.5" /> Phụ huynh</p>
-                    <p className={cn("mt-0.5 truncate text-sm font-semibold", st.displayParentName ? "text-slate-900" : "font-normal text-slate-400")}>
+                    <dt className="flex items-center gap-1.5 text-xs text-zinc-500"><Users className="h-3.5 w-3.5" /> Phụ huynh</dt>
+                    <dd className={cn("mt-1 truncate text-sm", st.displayParentName ? "font-medium text-zinc-900" : "text-zinc-400")}>
                       {st.displayParentName ?? "Chưa có"}
-                    </p>
+                    </dd>
                   </div>
                   <div className="min-w-0">
-                    <p className="flex items-center gap-1.5 text-xs text-slate-500"><Phone className="h-3.5 w-3.5" /> SĐT phụ huynh</p>
-                    <p className={cn("mt-0.5 truncate text-sm font-semibold", st.displayParentPhone ? "text-slate-900" : "font-normal text-slate-400")}>
+                    <dt className="flex items-center gap-1.5 text-xs text-zinc-500"><Phone className="h-3.5 w-3.5" /> SĐT phụ huynh</dt>
+                    <dd className={cn("mt-1 truncate text-sm tabular-nums", st.displayParentPhone ? "font-medium text-zinc-900" : "text-zinc-400")}>
                       {st.displayParentPhone ?? "Chưa có"}
-                    </p>
+                    </dd>
                   </div>
 
                   {/* Ngày đóng học phí */}
-                  <div className="col-span-2 flex items-center justify-between gap-3 border-t border-slate-200/80 pt-3">
-                    <p className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+                  <div className="col-span-2 flex items-center justify-between gap-3">
+                    <dt className="flex shrink-0 items-center gap-1.5 text-xs text-zinc-500">
                       <CalendarClock className="h-3.5 w-3.5" /> Ngày đóng học phí
-                    </p>
-                    {st.billingDay ? (
-                      <p className="shrink-0 whitespace-nowrap text-sm font-semibold text-slate-900">Ngày {st.billingDay}</p>
-                    ) : (
-                      <p className="text-sm text-slate-400">Chưa đặt</p>
-                    )}
+                    </dt>
+                    <dd className={cn("whitespace-nowrap text-sm", st.billingDay ? "font-medium text-zinc-900" : "text-zinc-400")}>
+                      {st.billingDay ? `Ngày ${st.billingDay}` : "Chưa đặt"}
+                    </dd>
                   </div>
-                </div>
+                </dl>
 
-                <div className="flex items-end justify-between gap-3">
-                  {st.studentClasses.length === 0 ? <span className="text-xs text-slate-400">Chưa tham gia lớp nào</span> : classChips(st)}
-                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:text-slate-700" />
+                <div className="flex items-end justify-between gap-3 border-t border-zinc-100 pt-4">
+                  {st.studentClasses.length === 0 ? <span className="text-xs text-zinc-400">Chưa tham gia lớp nào</span> : classChips(st)}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-300 transition-all group-hover:translate-x-0.5 group-hover:text-zinc-700" />
                 </div>
               </Card>
             </div>
           ))}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <div className={cn(CARD, "overflow-hidden")}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[64rem] text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
+              <thead className="border-b border-zinc-100 bg-zinc-50/70 text-xs font-medium text-zinc-500">
                 <tr>
-                  <th className="px-6 py-3.5">Học sinh</th>
-                  <th className="px-4 py-3.5">Khối lớp</th>
-                  <th className="px-4 py-3.5">Phụ huynh & SĐT</th>
-                  <th className="px-4 py-3.5">Lớp tham gia</th>
-                  <th className="px-4 py-3.5">Hình thức</th>
-                  <th className="px-4 py-3.5">Ngày đóng học phí</th>
-                  <th className="px-6 py-3.5 text-right">Thao tác</th>
+                  <th className="px-6 py-3">Học sinh</th>
+                  <th className="px-4 py-3">Khối lớp</th>
+                  <th className="px-4 py-3">Phụ huynh & SĐT</th>
+                  <th className="px-4 py-3">Lớp tham gia</th>
+                  <th className="px-4 py-3">Hình thức</th>
+                  <th className="px-4 py-3">Ngày đóng học phí</th>
+                  <th className="px-6 py-3 text-right">Thao tác</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-zinc-100">
                 {filteredStudents.map((st: any) => (
-                  <tr key={st.id} className="transition-colors hover:bg-slate-50/70">
-                    <td className="px-6 py-3.5">
+                  <tr key={st.id} className="transition-colors hover:bg-zinc-50/70">
+                    <td className="px-6 py-3">
                       <Link to={`/students/${st.id}`} className="group flex items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]">
-                        <Avatar st={st} size="h-10 w-10 text-base" />
+                        {renderAvatar(st, "h-9 w-9 text-sm")}
                         <div className="min-w-0">
-                          <p className="truncate font-semibold text-slate-900 group-hover:text-[#0B1B3A]">{st.displayName}</p>
-                          <p className="text-xs text-slate-500">{st.displayPhone}</p>
+                          <p className="truncate font-semibold text-zinc-900">{st.displayName}</p>
+                          <p className="text-xs tabular-nums text-zinc-500">{st.displayPhone}</p>
                         </div>
                       </Link>
                     </td>
-                    <td className="px-4 py-3.5">{gradePill(st)}</td>
-                    <td className="px-4 py-3.5">
-                      <p className={cn("font-semibold", st.displayParentName ? "text-slate-900" : "font-normal text-slate-400")}>{st.displayParentName ?? "Chưa có"}</p>
-                      <p className="text-xs text-slate-500">{st.displayParentPhone ?? "—"}</p>
+                    <td className="px-4 py-3">{gradePill(st)}</td>
+                    <td className="px-4 py-3">
+                      <p className={cn(st.displayParentName ? "font-medium text-zinc-900" : "text-zinc-400")}>{st.displayParentName ?? "Chưa có"}</p>
+                      <p className="text-xs tabular-nums text-zinc-500">{st.displayParentPhone ?? "—"}</p>
                     </td>
-                    <td className="px-4 py-3.5">{st.studentClasses.length === 0 ? <span className="text-slate-300">—</span> : classChips(st, 4)}</td>
-                    <td className="px-4 py-3.5">{paymentPill(st)}</td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-4 py-3">{st.studentClasses.length === 0 ? <span className="text-zinc-300">—</span> : classChips(st, 4)}</td>
+                    <td className="px-4 py-3">{paymentPill(st)}</td>
+                    <td className="px-4 py-3">
                       {st.billingDay ? (
-                        <p className="font-semibold text-slate-900">Ngày {st.billingDay}</p>
+                        <p className="font-medium text-zinc-900">Ngày {st.billingDay}</p>
                       ) : (
-                        <span className="text-slate-400">Chưa đặt</span>
+                        <span className="text-zinc-400">Chưa đặt</span>
                       )}
                     </td>
-                    <td className="px-6 py-3.5">
+                    <td className="px-6 py-3">
                       <div className="flex items-center justify-end gap-0.5">
                         {colorPicker(st)}
                         <Button asChild variant="ghost" size="icon" aria-label="Xem hồ sơ" className={ICON_BTN}>

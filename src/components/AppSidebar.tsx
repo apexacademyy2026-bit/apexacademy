@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -22,7 +23,6 @@ import {
   SidebarHeader,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -33,6 +33,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { resolveStudentColor } from "@/lib/studentColor";
 import { useNewRegistrationCount } from "@/pages/Registrations";
+
+/* Design tokens: mực navy #0B1B3A · nhấn hổ phách #FFB547 (chỉ ở logo và nút chính) · nền kính mờ trong suốt, lấy màu từ nền của website */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+
+// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
+const inkOn = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 170 ? "#0B1B3A" : "#ffffff";
+};
+// Ô màu đặc, có quầng sáng cùng màu để nổi bật
+const solid = (c: string): CSSProperties => ({
+  background: c,
+  color: inkOn(c),
+  boxShadow: `0 8px 18px -8px ${c}`,
+});
 
 type NavItem = {
   title: string;
@@ -108,13 +126,13 @@ export function AppSidebar() {
   const brandName = user?.user_metadata?.brand_name || "Apex Academy";
 
   return (
-    <Sidebar variant="sidebar" collapsible="icon" className="border-r border-slate-200 bg-white font-['Be_Vietnam_Pro',sans-serif]">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+    <Sidebar variant="sidebar" collapsible="icon" className={`border-r border-black/5 ${FONT} [&_[data-sidebar=sidebar]]:bg-white/70 [&_[data-sidebar=sidebar]]:backdrop-blur-2xl [&_[data-sidebar=sidebar]]:backdrop-saturate-150`}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
 
       {/* 1. HEADER LOGO - pt-safe để chừa khoảng trống cho Tai thỏ / Dynamic Island */}
-      <SidebarHeader className="border-b border-slate-100 p-4 pt-safe">
+      <SidebarHeader className="p-4 pt-safe">
         <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#0B1B3A] text-[#FFB547]">
+          <div className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#0B1B3A] text-[#FFB547]">
             {showAvatar ? (
               <img
                 src={avatarUrl!}
@@ -123,12 +141,12 @@ export function AppSidebar() {
                 onError={() => setAvatarFailed(true)}
               />
             ) : (
-              <BookOpen className="h-5 w-5" />
+              <BookOpen className="h-[18px] w-[18px]" />
             )}
           </div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <h2 className="truncate text-sm font-extrabold tracking-tight text-slate-900">{brandName}</h2>
-            <p className="text-xs font-medium text-slate-500">
+            <h2 className="truncate text-sm font-semibold tracking-tight text-zinc-900">{brandName}</h2>
+            <p className="text-xs text-zinc-600">
               {role === "teacher" ? (lang === "vi" ? "Giáo viên" : "Teacher") : lang === "vi" ? "Học sinh" : "Student"}
             </p>
           </div>
@@ -136,26 +154,23 @@ export function AppSidebar() {
       </SidebarHeader>
 
       {/* 2. CONTENT MENU */}
-      <SidebarContent className="p-3">
+      <SidebarContent className="px-3 pb-3 pt-1">
         {/* Nút hành động nhanh - CHỈ HIỂN THỊ VỚI GIÁO VIÊN */}
         {role === "teacher" && (
-          <div className="mb-2 group-data-[collapsible=icon]:hidden">
+          <div className="mb-3 group-data-[collapsible=icon]:hidden">
             <Button
               onClick={() => navigate("/schedule")}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#FFB547] text-sm font-bold text-[#0B1B3A] hover:bg-[#ffc266]"
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#0B1B3A] text-sm font-semibold text-white shadow-none hover:bg-[#13285a]"
             >
-              <Plus className="h-4 w-4" strokeWidth={2.5} />
+              <Plus className="h-4 w-4 text-[#FFB547]" strokeWidth={2.5} />
               <span>{lang === "vi" ? "Tạo ca học mới" : "New session"}</span>
             </Button>
           </div>
         )}
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="mb-1 px-2 text-xs font-semibold text-slate-400">
-            {lang === "vi" ? "Menu chính" : "Main menu"}
-          </SidebarGroupLabel>
+        <SidebarGroup className="p-0">
           <SidebarGroupContent>
-            <SidebarMenu className="space-y-1">
+            <SidebarMenu className="space-y-0.5">
               {navItems.map((item) => {
                 const isActive =
                   location.pathname === item.to ||
@@ -170,13 +185,13 @@ export function AppSidebar() {
                       tooltip={badge > 0 ? `${item.title} (${badge})` : item.title}
                       className={
                         isActive
-                          ? "h-10 rounded-xl bg-[#0B1B3A] font-semibold text-white hover:bg-[#13285a] hover:text-white data-[active=true]:bg-[#0B1B3A] data-[active=true]:text-white"
-                          : "h-10 rounded-xl font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                          ? "h-10 rounded-xl bg-white/90 font-semibold text-zinc-900 shadow-sm ring-1 ring-black/5 hover:bg-white/90 hover:text-zinc-900 data-[active=true]:bg-white/90 data-[active=true]:text-zinc-900"
+                          : "h-10 rounded-xl font-medium text-zinc-700 hover:bg-white/55 hover:text-zinc-900"
                       }
                     >
                       <Link to={item.to} className="flex items-center gap-3 px-3">
                         <span className="relative shrink-0">
-                          <item.icon className={`h-4 w-4 ${isActive ? "text-[#FFB547]" : "text-slate-400"}`} />
+                          <item.icon className={`h-4 w-4 ${isActive ? "text-zinc-900" : "text-zinc-500"}`} />
                           {/* Thanh menu thu gọn: chỉ có chấm đỏ trên biểu tượng */}
                           {badge > 0 && (
                             <span
@@ -190,7 +205,7 @@ export function AppSidebar() {
                         {badge > 0 && (
                           <>
                             <span
-                              className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-xs font-bold tabular-nums leading-none text-white group-data-[collapsible=icon]:hidden"
+                              className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-xs font-semibold tabular-nums leading-none text-white group-data-[collapsible=icon]:hidden"
                               aria-hidden
                             >
                               {badge > 99 ? "99+" : badge}
@@ -211,11 +226,11 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* 3. FOOTER USER & LOGOUT - pb-safe để tránh thanh gạch dưới đáy iPhone */}
-      <SidebarFooter className="space-y-2 border-t border-slate-100 p-3 pb-safe">
-        <div className="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2.5 group-data-[collapsible=icon]:hidden">
+      <SidebarFooter className="gap-1 border-t border-black/5 p-3 pb-safe">
+        <div className="flex items-center gap-2.5 rounded-xl bg-white/55 p-2 group-data-[collapsible=icon]:hidden">
           <div
-            className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-xl text-xs font-extrabold text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]"
-            style={showAvatar ? undefined : { background: resolveStudentColor(null, user?.id ?? displayName) }}
+            className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full text-xs font-semibold"
+            style={showAvatar ? undefined : solid(resolveStudentColor(null, user?.id ?? displayName))}
           >
             {showAvatar ? (
               <img
@@ -229,15 +244,15 @@ export function AppSidebar() {
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <h4 className="truncate text-sm font-bold text-slate-900">{displayName}</h4>
-            <p className="truncate text-xs text-slate-500">{user?.email}</p>
+            <h4 className="truncate text-sm font-semibold text-zinc-900">{displayName}</h4>
+            <p className="truncate text-xs text-zinc-500">{user?.email}</p>
           </div>
         </div>
 
         <button
           type="button"
           onClick={handleLogout}
-          className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 transition-colors hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-white/55 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 group-data-[collapsible=icon]:justify-center"
         >
           <LogOut className="h-4 w-4 shrink-0" />
           <span className="group-data-[collapsible=icon]:hidden">{lang === "vi" ? "Đăng xuất" : "Log out"}</span>

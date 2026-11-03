@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -15,6 +15,8 @@ import {
   UserCheck,
   ChevronRight,
   ChevronDown,
+  ArrowUpRight,
+  Clock,
 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import { useStudents, useClasses, usePayments, useEvents, useEnrollments, useClassSchedules } from "@/hooks/useData";
@@ -26,12 +28,13 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { resolveStudentColor } from "@/lib/studentColor";
 import { getBillingPeriod, getPastBillingPeriods, toISODate } from "@/lib/Billingperiod";
+import { BackgroundPicker } from "@/components/DashboardBackground";
 
 // Nhóm các buổi học trong popup chi tiết học phí
 // (buổi đã qua mà vắng / chưa điểm danh không hiện và không tính tiền)
 const SESSION_GROUPS = [
   { k: "attended", vi: "Đã học", en: "Attended", dot: "bg-emerald-500", pill: "bg-emerald-50 text-emerald-700" },
-  { k: "upcoming", vi: "Chưa học", en: "Upcoming", dot: "bg-amber-500", pill: "bg-amber-50 text-amber-700" },
+  { k: "upcoming", vi: "Chưa học", en: "Upcoming", dot: "bg-zinc-300", pill: "bg-zinc-100 text-zinc-600" },
 ] as const;
 const shortDate = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
@@ -135,6 +138,58 @@ const isSessionCollected = (studentPayments: any[], sess: SessionItem, rec: any)
       sess.date <= String(p.period_end).slice(0, 10)
     );
   });
+
+/* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG ----------------
+   Bảng màu: mực navy #0B1B3A · nền trắng · viền zinc mảnh · nhấn hổ phách #FFB547 (chỉ trên nền navy).
+   Đỏ chỉ dành cho khoản chưa thu từ kỳ trước, xanh lục chỉ dành cho trạng thái đã thu / có mặt.
+   Thẻ dùng nền trắng đặc nên vẫn đọc tốt dù hình nền toàn ứng dụng là gì. */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+const CARD = "rounded-2xl border border-zinc-200 bg-white";
+const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm font-medium text-zinc-700";
+const CHIP_BTN = `${CHIP} transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30`;
+const SEG = "flex w-fit max-w-full flex-wrap gap-0.5 rounded-full bg-zinc-100 p-1";
+const modalShell = `flex max-h-[92vh] flex-col gap-0 overflow-hidden rounded-3xl border border-zinc-200 bg-white p-0 shadow-xl sm:max-w-2xl ${FONT}`;
+
+// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
+const inkOn = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 170 ? "#0B1B3A" : "#ffffff";
+};
+// Ô màu đặc, có quầng sáng cùng màu để nổi bật
+const solid = (c: string): CSSProperties => ({
+  background: c,
+  color: inkOn(c),
+  boxShadow: `0 8px 18px -8px ${c}`,
+});
+
+// Đầu popup: ô icon trung tính + tiêu đề + tổng tiền lớn
+function ModalHead({
+  icon: Icon,
+  title,
+  total,
+  children,
+}: {
+  icon: any;
+  title: string;
+  total: string;
+  children?: ReactNode;
+}) {
+  return (
+    <DialogHeader className="shrink-0 space-y-4 border-b border-zinc-100 px-6 py-5 text-left">
+      <div className="flex items-center gap-3">
+        <div className="grid h-9 w-9 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
+          <Icon className="h-4 w-4" />
+        </div>
+        <DialogTitle className="text-base font-semibold text-zinc-900">{title}</DialogTitle>
+      </div>
+      <div className="text-3xl font-semibold tabular-nums tracking-tight text-zinc-900">{total}</div>
+      {children}
+    </DialogHeader>
+  );
+}
 
 export default function Dashboard() {
   const { t, profile, lang, user } = useApp();
@@ -866,71 +921,128 @@ export default function Dashboard() {
       ? lang === "vi" ? "Năm nay" : "This year"
       : lang === "vi" ? "Tuỳ chỉnh" : "Custom";
 
-  /* ---------------- GIAO DIỆN (đồng bộ với trang Học sinh) ---------------- */
+  /* ---------------- GIAO DIỆN (tối giản: thẻ trắng viền mảnh, một thẻ navy làm điểm nhấn) ---------------- */
   const vi = lang === "vi";
 
-  // Màu riêng của từng học sinh, dùng chung bảng màu với trang Học sinh
+  // Màu riêng của từng học sinh, dùng chung bảng màu với trang Học sinh (chỉ hiện ở avatar nhỏ)
   const studentColorMap = useMemo(
     () => new Map<string, string>(students.map((s: any) => [String(s.id), resolveStudentColor(s.color, s.id)])),
     [students],
   );
   const colorOf = (id: any) => studentColorMap.get(String(id)) || resolveStudentColor(null, String(id));
-  const bubble = "grid place-items-center font-extrabold text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.25)]";
+  const avatarBase = "grid shrink-0 place-items-center font-semibold";
+
+  // Một dòng buổi học trong popup (status chỉ dùng cho các kỳ trước)
+  const renderSessionRow = (sess: SessionItem, student: any, status?: string) => (
+    <div key={sess.key} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-100 bg-white px-3 py-2 text-xs">
+      <span className="shrink-0 font-semibold text-zinc-900">
+        {t.daysLong[new Date(`${sess.date}T00:00:00`).getDay()]} {shortDate(sess.date)}
+      </span>
+      <span className="shrink-0 tabular-nums text-zinc-500">
+        {sess.start} – {sess.end}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-right text-zinc-500">
+        {status ? `${status}, ` : ""}
+        {sess.className}
+      </span>
+      {isBySessionStudent(student) && (
+        <span className="shrink-0 font-semibold tabular-nums text-zinc-900">
+          {formatVND(Number((classes.data || []).find((c: any) => String(c.id) === sess.classId)?.fee_per_session || 0))}
+        </span>
+      )}
+    </div>
+  );
+
+  const greeting =
+    today.getHours() < 11
+      ? vi ? "Chào buổi sáng" : "Good morning"
+      : today.getHours() < 14
+      ? vi ? "Chào buổi trưa" : "Good midday"
+      : today.getHours() < 18
+      ? vi ? "Chào buổi chiều" : "Good afternoon"
+      : vi ? "Chào buổi tối" : "Good evening";
 
   const stats: {
     key: string;
     label: string;
     value: string | number;
     icon: any;
-    tone: string;
     to?: string;
     onClick?: () => void;
-    highlight?: boolean;
   }[] = [
-    { key: "students", to: "/students", label: vi ? "Học sinh hoạt động" : "Active students", value: activeStudents, icon: Users, tone: "bg-indigo-50 text-indigo-600" },
-    { key: "classes", to: "/classes", label: vi ? "Lớp có hoạt động" : "Active classes", value: activeClasses, icon: GraduationCap, tone: "bg-emerald-50 text-emerald-600" },
-    { key: "tuition", onClick: () => setShowCollectedModal(true), label: vi ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition", value: formatVND(totalUpcomingFee), icon: Wallet, tone: "bg-amber-50 text-amber-600" },
-    { key: "payments", to: "/students", label: vi ? "Số lần thanh toán" : "Payments count", value: paymentsCount, icon: CalendarClock, tone: "bg-rose-50 text-rose-600" },
-    { key: "avg", onClick: () => setShowSalaryModal(true), label: vi ? "Lương mặc định" : "Default salary", value: formatVND(defaultSalary), icon: TrendingUp, tone: "bg-violet-50 text-violet-600" },
-    { key: "pending", onClick: () => setShowExpectedModal(true), label: vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period", value: formatVND(expectedTotal), icon: Hourglass, tone: "bg-[#FFB547] text-[#0B1B3A]", highlight: true },
+    { key: "students", to: "/students", label: vi ? "Học sinh hoạt động" : "Active students", value: activeStudents, icon: Users },
+    { key: "classes", to: "/classes", label: vi ? "Lớp có hoạt động" : "Active classes", value: activeClasses, icon: GraduationCap },
+    { key: "tuition", onClick: () => setShowCollectedModal(true), label: vi ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition", value: formatVND(totalUpcomingFee), icon: Wallet },
+    { key: "payments", to: "/students", label: vi ? "Số lần thanh toán" : "Payments count", value: paymentsCount, icon: CalendarClock },
+    { key: "avg", onClick: () => setShowSalaryModal(true), label: vi ? "Lương mặc định" : "Default salary", value: formatVND(defaultSalary), icon: TrendingUp },
+    { key: "pending", onClick: () => setShowExpectedModal(true), label: vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period", value: formatVND(expectedTotal), icon: Hourglass },
   ];
+  const statOf = (key: string) => stats.find((s) => s.key === key)!;
 
-  const renderStat = (s: (typeof stats)[number]) => {
+  const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
+
+  // Thẻ số liệu thường: nhãn + icon xám, số lớn, mũi tên chuyển sang đậm khi rê chuột
+  const renderStat = (s: (typeof stats)[number], big = false) => {
     const card = (
-      <Card
+      <div
         className={cn(
-          "flex h-full items-center justify-between gap-3 rounded-2xl border p-5 transition-all",
-          s.highlight
-            ? "border-transparent bg-[#0B1B3A] text-white shadow-md hover:shadow-xl hover:shadow-[#0B1B3A]/20"
-            : "border-slate-200 bg-white shadow-xs hover:border-slate-300 hover:shadow-lg hover:shadow-slate-900/5"
+          CARD,
+          "group flex h-full flex-col justify-between gap-6 p-5 transition-colors hover:border-zinc-400/60",
+          big && "sm:p-6",
         )}
       >
-        <div className="min-w-0 space-y-1">
-          <span className={cn("text-sm font-medium", s.highlight ? "text-white/70" : "text-slate-500")}>{s.label}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium text-zinc-500">{s.label}</span>
+          <s.icon className="h-4 w-4 shrink-0 text-zinc-400" />
+        </div>
+        <div className="flex items-end justify-between gap-3">
           {loading ? (
-            <Skeleton className={cn("h-8 w-24", s.highlight && "bg-white/20")} />
+            <Skeleton className="h-9 w-28" />
           ) : (
-            <h3 className="truncate text-2xl font-extrabold tracking-tight">{s.value}</h3>
+            <h3 className={cn("truncate font-semibold tabular-nums tracking-tight text-zinc-900", big ? "text-3xl" : "text-2xl")}>{s.value}</h3>
           )}
-          <span className={cn("inline-flex items-center gap-0.5 pt-0.5 text-xs font-semibold", s.highlight ? "text-[#FFB547]" : "text-slate-500")}>
-            {t.details} <ChevronRight className="h-3.5 w-3.5" />
-          </span>
+          <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-900" />
         </div>
-        <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl", s.tone)}>
-          <s.icon className="h-5 w-5" />
-        </div>
-      </Card>
+      </div>
     );
     return s.to ? (
-      <Link key={s.key} to={s.to} className="block h-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]">
+      <Link key={s.key} to={s.to} className={cn("block h-full rounded-2xl", focusRing)}>
         {card}
       </Link>
     ) : (
-      <button key={s.key} type="button" onClick={s.onClick} className="block h-full w-full rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]">
+      <button key={s.key} type="button" onClick={s.onClick} className={cn("block h-full w-full rounded-2xl text-left", focusRing)}>
         {card}
       </button>
     );
   };
+
+  // Thẻ nổi bật duy nhất của trang (học phí dự kiến trong kỳ): nền navy đặc, nhấn hổ phách
+  const renderFeatured = (s: (typeof stats)[number]) => (
+    <button
+      key={s.key}
+      type="button"
+      onClick={s.onClick}
+      className={cn(
+        "group flex h-full min-h-[11rem] w-full flex-col justify-between gap-8 rounded-2xl bg-[#0B1B3A] p-6 text-left text-white transition-colors hover:bg-[#10244b]",
+        focusRing,
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-white/65">{s.label}</span>
+        <s.icon className="h-4 w-4 shrink-0 text-[#FFB547]" />
+      </div>
+      <div className="space-y-3">
+        {loading ? (
+          <Skeleton className="h-10 w-36 bg-white/20" />
+        ) : (
+          <h3 className="truncate text-4xl font-semibold tabular-nums tracking-tight">{s.value}</h3>
+        )}
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-white/65 transition-colors group-hover:text-white">
+          {vi ? "Xem chi tiết" : "View details"} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </div>
+    </button>
+  );
 
   const presets: { k: PresetKey; vi: string; en: string }[] = [
     { k: "thisMonth", vi: "Tháng này", en: "This month" },
@@ -940,145 +1052,171 @@ export default function Dashboard() {
   ];
   const segBtn = (active: boolean) =>
     cn(
-      "h-9 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
-      active ? "bg-white text-[#0B1B3A] shadow-sm" : "text-slate-500 hover:text-slate-900"
+      "h-8 rounded-full px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+      active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
     );
-  const datePill = "flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-xs focus-within:border-[#0B1B3A] focus-within:ring-2 focus-within:ring-[#0B1B3A]/20";
+  const datePill = "flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm focus-within:border-[#0B1B3A] focus-within:ring-2 focus-within:ring-[#0B1B3A]/10";
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-12 font-['Be_Vietnam_Pro',sans-serif]">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+    <div className={cn("mx-auto max-w-7xl pb-12", FONT)}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* HERO */}
-      <div className="relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-8 sm:px-10 sm:py-10">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-[#FFB547]" />
-        <div className="pointer-events-none absolute -bottom-28 right-40 hidden h-60 w-60 rounded-full border-[36px] border-white/[0.07] sm:block" />
-        <div className="relative max-w-lg space-y-2">
-          <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">{t.dashboard}</h1>
-          <p className="text-sm leading-relaxed text-white/70">
-            {vi ? "Số liệu của" : "Overview for"} {(profile as any)?.brand_name || profile?.display_name || brandName}, {periodLabel.toLowerCase()}.
-          </p>
-        </div>
-      </div>
-
-      {/* ĐIỂM DANH NHANH */}
-      <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#0B1B3A] text-white">
-              <UserCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-slate-900">{vi ? "Điểm danh nhanh hôm nay" : "Today's quick attendance"}</h3>
-                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                  {new Date().toLocaleDateString(vi ? "vi-VN" : "en-US")}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">
-                {vi ? "Chọn học sinh có mặt cho tất cả ca học hôm nay" : "Mark present students for all shifts today"}
-              </p>
-            </div>
+      {/* Hình nền nằm ở AppLayout (toàn ứng dụng), các thẻ ở đây là nền trắng đặc nên luôn đọc rõ */}
+      <div className="space-y-4">
+        {/* LỜI CHÀO */}
+        <section className={cn(CARD, "flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7")}>
+          <div className="space-y-1.5">
+            <p className="text-sm text-zinc-500">
+              {vi ? `Số liệu ${periodLabel.toLowerCase()}` : `Overview for ${periodLabel.toLowerCase()}`}
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+              {greeting}, {(profile as any)?.brand_name || profile?.display_name || brandName}
+            </h1>
           </div>
-          {todayShiftGroups.length > 0 && (
-            <Button
-              onClick={handleSaveAllAttendance}
-              disabled={savingAttendance}
-              className="h-10 shrink-0 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a]"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu điểm danh" : "Save attendance"}
-            </Button>
-          )}
-        </div>
-
-        {todayShiftGroups.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 py-6 text-sm text-slate-500">
-            <CalendarCheck2 className="h-4 w-4" />
-            {vi ? "Hôm nay không có ca học nào." : "No scheduled classes for today."}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={CHIP}>
+              <CalendarCheck2 className="h-4 w-4 text-zinc-400" />
+              {new Date().toLocaleDateString(vi ? "vi-VN" : "en-US")}
+            </span>
+            <span className={CHIP}>
+              <Clock className="h-4 w-4 text-zinc-400" />
+              {vi ? `${todayShiftGroups.length} ca học hôm nay` : `${todayShiftGroups.length} classes today`}
+            </span>
+            <BackgroundPicker vi={vi} className={CHIP_BTN} />
           </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {todayShiftGroups.map((group) => {
-              const evId = group.event.id;
-              const shiftMap = attendanceMap[evId] || {};
-              return (
-                <div key={evId} className="flex flex-col justify-between gap-3 py-3.5 first:pt-0 last:pb-0 lg:flex-row lg:items-center">
-                  <div className="flex shrink-0 items-center gap-2.5">
-                    <Link to={`/classes/${group.event.class_id}`} className="text-sm font-bold text-slate-900 hover:text-[#0B1B3A] hover:underline">
-                      {group.className}
-                    </Link>
-                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{group.timeLabel}</span>
-                    <span className="text-xs text-slate-400">{group.students.length} HS</span>
-                  </div>
+        </section>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {group.students.length === 0 ? (
-                      <span className="text-xs text-slate-400">Không có học sinh</span>
-                    ) : (
-                      group.students.map((student: any) => {
-                        const isPresent = !!shiftMap[String(student.id)];
-                        const color = colorOf(student.id);
-                        return (
-                          <button
-                            key={student.id}
-                            type="button"
-                            aria-pressed={isPresent}
-                            onClick={() => toggleStudentAttendance(evId, student.id)}
-                            className={cn(
-                              "inline-flex select-none items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40",
-                              isPresent ? "text-white [text-shadow:0_1px_1px_rgb(0_0_0/0.2)]" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                            )}
-                            style={isPresent ? { background: color, borderColor: color } : undefined}
-                          >
-                            <span
-                              className={cn("h-6 w-6 rounded-full text-xs", bubble, isPresent && "bg-white/25")}
-                              style={isPresent ? undefined : { background: color }}
-                            >
-                              {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
-                            </span>
-                            {student.name}
-                            {isPresent && <CheckCircle2 className="h-3.5 w-3.5" />}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
+        {/* HÔM NAY: ĐIỂM DANH NHANH + HỌC PHÍ DỰ KIẾN */}
+        <div className="grid gap-4 lg:grid-cols-12">
+          <section className={cn(CARD, "space-y-5 p-5 sm:p-6 lg:col-span-8")}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
+                  <UserCheck className="h-5 w-5" />
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+                <div>
+                  <h3 className="text-base font-semibold text-zinc-900">{vi ? "Điểm danh nhanh hôm nay" : "Today's quick attendance"}</h3>
+                  <p className="text-xs text-zinc-500">
+                    {vi ? "Chạm vào tên học sinh có mặt, rồi lưu một lần cho tất cả ca" : "Tap the students who are present, then save once for all shifts"}
+                  </p>
+                </div>
+              </div>
+              {todayShiftGroups.length > 0 && (
+                <Button
+                  onClick={handleSaveAllAttendance}
+                  disabled={savingAttendance}
+                  className="h-10 shrink-0 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white shadow-none hover:bg-[#13285a]"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-[#FFB547]" />
+                  {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu điểm danh" : "Save attendance"}
+                </Button>
+              )}
+            </div>
 
-      {/* BỘ LỌC THỜI GIAN */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
-          {presets.map((p) => (
-            <button key={p.k} type="button" aria-pressed={preset === p.k} onClick={() => applyPreset(p.k)} className={segBtn(preset === p.k)}>
-              {vi ? p.vi : p.en}
-            </button>
-          ))}
+            {todayShiftGroups.length === 0 ? (
+              <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 py-8 text-sm text-zinc-500">
+                <CalendarCheck2 className="h-4 w-4" />
+                {vi ? "Hôm nay không có ca học nào." : "No scheduled classes for today."}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {todayShiftGroups.map((group) => {
+                  const evId = group.event.id;
+                  const shiftMap = attendanceMap[evId] || {};
+                  const presentCount = group.students.filter((s: any) => !!shiftMap[String(s.id)]).length;
+                  return (
+                    <div key={evId} className="rounded-xl border border-zinc-200 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <Link to={`/classes/${group.event.class_id}`} className="text-sm font-semibold text-zinc-900 hover:underline">
+                            {group.className}
+                          </Link>
+                          <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium tabular-nums text-zinc-600">{group.timeLabel}</span>
+                        </div>
+                        <span className="text-xs font-medium tabular-nums text-zinc-500">
+                          {presentCount}/{group.students.length} {vi ? "có mặt" : "present"}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {group.students.length === 0 ? (
+                          <span className="text-xs text-zinc-500">Không có học sinh</span>
+                        ) : (
+                          group.students.map((student: any) => {
+                            const isPresent = !!shiftMap[String(student.id)];
+                            const color = colorOf(student.id);
+                            return (
+                              <button
+                                key={student.id}
+                                type="button"
+                                aria-pressed={isPresent}
+                                onClick={() => toggleStudentAttendance(evId, student.id)}
+                                className={cn(
+                                  "inline-flex select-none items-center gap-2 rounded-full border py-1 pl-1 pr-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40",
+                                  isPresent
+                                    ? "border-transparent"
+                                    : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                                )}
+                                style={isPresent ? { ...solid(color), borderColor: color } : undefined}
+                              >
+                                <span
+                                  className={cn(avatarBase, "h-7 w-7 rounded-full text-xs", isPresent && "bg-white/25")}
+                                  style={isPresent ? { color: inkOn(color) } : solid(color)}
+                                >
+                                  {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+                                </span>
+                                {student.name}
+                                {isPresent && <CheckCircle2 className="h-3.5 w-3.5" />}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <div className="lg:col-span-4">{renderFeatured(statOf("pending"))}</div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className={datePill}>
-            <span className="text-slate-500">{vi ? "Từ" : "From"}</span>
-            <input type="date" value={fromDate} onChange={(e) => onCustomChange("from", e.target.value)} className="bg-transparent font-medium text-slate-900 focus:outline-none" />
-          </label>
-          <label className={datePill}>
-            <span className="text-slate-500">{vi ? "Đến" : "To"}</span>
-            <input type="date" value={toDate} onChange={(e) => onCustomChange("to", e.target.value)} className="bg-transparent font-medium text-slate-900 focus:outline-none" />
-          </label>
-          {preset === "custom" && (
-            <Button variant="ghost" onClick={() => applyPreset("thisMonth")} className="h-10 rounded-xl px-3 text-sm font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700">
-              {vi ? "Đặt lại" : "Reset"}
-            </Button>
-          )}
+
+        {/* BỘ LỌC THỜI GIAN */}
+        <div className={cn(CARD, "flex flex-col gap-3 p-2.5 lg:flex-row lg:items-center lg:justify-between")}>
+          <div className={SEG}>
+            {presets.map((p) => (
+              <button key={p.k} type="button" aria-pressed={preset === p.k} onClick={() => applyPreset(p.k)} className={segBtn(preset === p.k)}>
+                {vi ? p.vi : p.en}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={datePill}>
+              <span className="text-zinc-500">{vi ? "Từ" : "From"}</span>
+              <input type="date" value={fromDate} onChange={(e) => onCustomChange("from", e.target.value)} className="bg-transparent font-medium text-zinc-900 focus:outline-none" />
+            </label>
+            <label className={datePill}>
+              <span className="text-zinc-500">{vi ? "Đến" : "To"}</span>
+              <input type="date" value={toDate} onChange={(e) => onCustomChange("to", e.target.value)} className="bg-transparent font-medium text-zinc-900 focus:outline-none" />
+            </label>
+            {preset === "custom" && (
+              <Button variant="ghost" onClick={() => applyPreset("thisMonth")} className="h-9 rounded-full px-4 text-sm font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700">
+                {vi ? "Đặt lại" : "Reset"}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* SỐ LIỆU THEO KỲ ĐANG LỌC */}
+        <div className="grid gap-4 md:grid-cols-6 lg:grid-cols-12">
+          <div className="md:col-span-3 lg:col-span-6">{renderStat(statOf("tuition"), true)}</div>
+          <div className="md:col-span-3 lg:col-span-6">{renderStat(statOf("avg"), true)}</div>
+          <div className="md:col-span-2 lg:col-span-4">{renderStat(statOf("students"))}</div>
+          <div className="md:col-span-2 lg:col-span-4">{renderStat(statOf("classes"))}</div>
+          <div className="md:col-span-2 lg:col-span-4">{renderStat(statOf("payments"))}</div>
         </div>
       </div>
-
-      {/* SỐ LIỆU */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">{stats.map(renderStat)}</div>
 
       {/* POPUP CHI TIẾT HỌC PHÍ KỲ SẮP TỚI */}
       <Dialog
@@ -1088,28 +1226,23 @@ export default function Dashboard() {
           if (!open) setBillingFilter("all");
         }}
       >
-        <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
-          <div className="h-1.5 shrink-0 bg-[#FFB547]" />
-          <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-6 py-5 text-left">
-            <DialogTitle className="text-lg font-extrabold text-slate-900">
-              {vi ? "Chi tiết học phí kỳ sắp tới" : "Upcoming tuition details"}
-            </DialogTitle>
-            <p className="text-sm text-slate-500">
-              {vi ? "Tổng cộng" : "Total"} <span className="font-bold text-slate-900">{formatVND(totalUpcomingFee)}</span>
-              {totalOverdueFee > 0 && (
-                <span className="text-rose-600">
-                  {vi ? ` · gồm ${formatVND(totalOverdueFee)} chưa thu từ các kỳ trước` : ` · includes ${formatVND(totalOverdueFee)} unpaid from previous periods`}
-                </span>
-              )}
-            </p>
-          </DialogHeader>
+        <DialogContent className={modalShell}>
+          <ModalHead
+            icon={Wallet}
+            title={vi ? "Chi tiết học phí kỳ sắp tới" : "Upcoming tuition details"}
+            total={formatVND(totalUpcomingFee)}
+          >
+            {totalOverdueFee > 0 && (
+              <span className="inline-flex w-fit max-w-full rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-600">
+                {vi ? `Gồm ${formatVND(totalOverdueFee)} chưa thu từ các kỳ trước` : `Includes ${formatVND(totalOverdueFee)} unpaid from previous periods`}
+              </span>
+            )}
+          </ModalHead>
 
           {/* BỘ LỌC THEO NGÀY THU HỌC PHÍ */}
           {billingGroups.length > 1 && (
-            <div className="shrink-0 space-y-3 border-b border-slate-100 bg-slate-50/60 px-6 py-4">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                {vi ? "Lọc theo ngày thu học phí" : "Filter by billing day"}
-              </div>
+            <div className="shrink-0 space-y-3 border-b border-zinc-100 bg-zinc-50/60 px-6 py-4">
+              <div className="text-sm font-semibold text-zinc-900">{vi ? "Lọc theo ngày thu học phí" : "Filter by billing day"}</div>
               <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
                 {[
                   { key: "all", label: vi ? "Tất cả" : "All", count: students.length, fee: totalUpcomingFee },
@@ -1128,19 +1261,19 @@ export default function Dashboard() {
                       aria-pressed={active}
                       onClick={() => setBillingFilter(c.key)}
                       className={cn(
-                        "rounded-xl border px-3 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                        "rounded-xl border px-3.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
                         active
                           ? "border-[#0B1B3A] bg-[#0B1B3A] text-white"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
                       )}
                     >
-                      <div className="whitespace-nowrap text-xs font-bold">
+                      <div className="whitespace-nowrap text-xs font-semibold">
                         {c.label}
-                        <span className={cn("font-semibold", active ? "text-white/60" : "text-slate-400")}>
+                        <span className={cn("font-medium", active ? "text-white/60" : "text-zinc-400")}>
                           {` · ${c.count} ${vi ? "HS" : "students"}`}
                         </span>
                       </div>
-                      <div className={cn("whitespace-nowrap text-xs font-extrabold", active ? "text-[#FFB547]" : "text-emerald-600")}>
+                      <div className={cn("whitespace-nowrap text-xs font-semibold tabular-nums", active ? "text-[#FFB547]" : "text-zinc-900")}>
                         {formatVND(c.fee)}
                       </div>
                     </button>
@@ -1151,7 +1284,7 @@ export default function Dashboard() {
               {activeGroup && (
                 <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0B1B3A] px-4 py-3 text-white">
                   <div className="min-w-0 space-y-0.5">
-                    <div className="text-xs font-semibold text-white/80">
+                    <div className="text-xs font-medium text-white/80">
                       {activeGroup.dueDate
                         ? vi
                           ? `Tổng nhận được đến ngày ${shortDate(activeGroup.dueDate)}`
@@ -1165,14 +1298,14 @@ export default function Dashboard() {
                       {` · ${vi ? "kỳ" : "period"} ${shortDate(activeGroup.start)} – ${shortDate(activeGroup.end)}`}
                     </div>
                     {activeGroup.overdueFee > 0 && (
-                      <div className="text-xs font-semibold text-rose-300">
+                      <div className="text-xs font-medium text-rose-300">
                         {vi
                           ? `Gồm ${formatVND(activeGroup.overdueFee)} chưa thu từ các kỳ trước`
                           : `Includes ${formatVND(activeGroup.overdueFee)} unpaid from previous periods`}
                       </div>
                     )}
                   </div>
-                  <div className="shrink-0 text-xl font-extrabold text-[#FFB547]">+{formatVND(activeGroup.fee)}</div>
+                  <div className="shrink-0 text-xl font-semibold tabular-nums text-[#FFB547]">+{formatVND(activeGroup.fee)}</div>
                 </div>
               )}
             </div>
@@ -1186,25 +1319,25 @@ export default function Dashboard() {
                 const open = expandedStudent === String(student.id);
                 const groups = open ? studentSessionGroups(student) : null;
                 return (
-                  <div key={student.id} className="rounded-xl border border-slate-200">
+                  <div key={student.id} className="rounded-xl border border-zinc-200 bg-white">
                     <button
                       type="button"
                       aria-expanded={open}
                       onClick={() => setExpandedStudent(open ? null : String(student.id))}
-                      className="flex w-full items-center justify-between gap-3 rounded-xl p-3 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                      className="flex w-full items-center justify-between gap-3 rounded-xl p-3 text-left transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className={cn("h-10 w-10 shrink-0 rounded-xl text-sm", bubble)} style={{ background: colorOf(student.id) }}>
+                        <div className={cn(avatarBase, "h-10 w-10 rounded-full text-sm")} style={solid(colorOf(student.id))}>
                           {student.name ? student.name.slice(0, 2).toUpperCase() : "HS"}
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-slate-900">{student.name}</div>
-                          <div className="truncate text-xs text-slate-500">
+                          <div className="truncate text-sm font-semibold text-zinc-900">{student.name}</div>
+                          <div className="truncate text-xs text-zinc-500">
                             {isBySessionStudent(student) ? (vi ? `Theo buổi, ${info?.sessions || 0} buổi` : `Per session, ${info?.sessions || 0} sessions`) : vi ? "Theo tháng" : "Monthly"}
                             {info?.hasBillingDay && ` · ${shortDate(info.start)} – ${shortDate(info.end)}`}
                           </div>
                           {info && info.overdueFee > 0 && (
-                            <div className="truncate text-xs font-semibold text-rose-600">
+                            <div className="truncate text-xs font-medium text-rose-600">
                               {vi
                                 ? `Gồm ${formatVND(info.overdueFee)} chưa thu từ các kỳ trước`
                                 : `Includes ${formatVND(info.overdueFee)} unpaid from previous periods`}
@@ -1213,51 +1346,36 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
-                        <span className="text-sm font-extrabold text-emerald-600">+{formatVND(fee)}</span>
-                        <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", open && "rotate-180")} />
+                        <span className="text-sm font-semibold tabular-nums text-zinc-900">+{formatVND(fee)}</span>
+                        <ChevronDown className={cn("h-4 w-4 text-zinc-400 transition-transform", open && "rotate-180")} />
                       </div>
                     </button>
 
                     {open && groups && (
-                      <div className="space-y-4 border-t border-slate-100 bg-slate-50/70 p-3">
+                      <div className="space-y-4 rounded-b-xl border-t border-zinc-100 bg-zinc-50/70 p-3">
                         {info && info.overdue.length > 0 && (
-                          <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50/60 p-2.5">
-                            <div className="flex items-center justify-between gap-2 text-sm font-bold text-rose-700">
+                          <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                            <div className="flex items-center justify-between gap-2 text-sm font-semibold text-rose-700">
                               <span>{vi ? "Chưa thu từ các kỳ trước" : "Unpaid from previous periods"}</span>
-                              <span>+{formatVND(info.overdueFee)}</span>
+                              <span className="tabular-nums">+{formatVND(info.overdueFee)}</span>
                             </div>
                             {info.overdue.map((per) => (
                               <div key={per.start} className="space-y-1">
-                                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+                                <div className="flex items-center justify-between gap-2 text-xs font-medium text-zinc-700">
                                   <span>
                                     {shortDate(per.start)} – {shortDate(per.end)} · {per.sessionList.length} {vi ? "buổi" : "sessions"}
                                   </span>
-                                  <span>{formatVND(per.fee)}</span>
+                                  <span className="tabular-nums">{formatVND(per.fee)}</span>
                                 </div>
-                                {per.sessionList.map((sess) => (
-                                  <div key={sess.key} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
-                                    <span className="shrink-0 font-semibold text-slate-900">
-                                      {t.daysLong[new Date(`${sess.date}T00:00:00`).getDay()]} {shortDate(sess.date)}
-                                    </span>
-                                    <span className="shrink-0 font-mono text-slate-500">{sess.start} – {sess.end}</span>
-                                    <span className="min-w-0 flex-1 truncate text-right text-slate-600">
-                                      {sessionStatusLabel(sess, student.id)}, {sess.className}
-                                    </span>
-                                    {isBySessionStudent(student) && (
-                                      <span className="shrink-0 font-bold text-slate-900">
-                                        {formatVND(Number((classes.data || []).find((c: any) => String(c.id) === sess.classId)?.fee_per_session || 0))}
-                                      </span>
-                                    )}
-                                  </div>
-                                ))}
+                                {per.sessionList.map((sess) => renderSessionRow(sess, student, sessionStatusLabel(sess, student.id)))}
                               </div>
                             ))}
                           </div>
                         )}
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-zinc-500">
                           {vi ? "Các buổi trong kỳ hiện tại:" : "Sessions in current period:"} {shortDate(info?.start || fromDate)} – {shortDate(info?.end || toDate)}
                           {!info?.hasBillingDay && (
-                            <span className="ml-1 text-amber-600">
+                            <span className="ml-1 text-zinc-400">
                               {vi ? "(chưa đặt ngày thu, đang dùng khoảng ngày đang lọc)" : "(no billing day set, using the dashboard date range)"}
                             </span>
                           )}
@@ -1266,32 +1384,15 @@ export default function Dashboard() {
                           const list = groups[g.k];
                           return (
                             <div key={g.k} className="space-y-1.5">
-                              <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                                <span className={cn("h-2.5 w-2.5 rounded-full", g.dot)} />
+                              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+                                <span className={cn("h-2 w-2 rounded-full", g.dot)} />
                                 {vi ? g.vi : g.en}
-                                <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", g.pill)}>{list.length}</span>
+                                <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium tabular-nums", g.pill)}>{list.length}</span>
                               </div>
                               {list.length === 0 ? (
-                                <p className="pl-4 text-xs text-slate-400">{vi ? "Không có buổi nào" : "No sessions"}</p>
+                                <p className="pl-4 text-xs text-zinc-400">{vi ? "Không có buổi nào" : "No sessions"}</p>
                               ) : (
-                                <div className="space-y-1">
-                                  {list.map((sess: any) => (
-                                    <div key={sess.key} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
-                                      <span className="shrink-0 font-semibold text-slate-900">
-                                        {t.daysLong[new Date(`${sess.date}T00:00:00`).getDay()]} {shortDate(sess.date)}
-                                      </span>
-                                      <span className="shrink-0 font-mono text-slate-500">{sess.start} – {sess.end}</span>
-                                      <span className="min-w-0 flex-1 truncate text-right text-slate-600">
-                                        {sess.className}
-                                      </span>
-                                      {isBySessionStudent(student) && (
-                                        <span className="shrink-0 font-bold text-slate-900">
-                                          {formatVND(Number((classes.data || []).find((c: any) => String(c.id) === sess.classId)?.fee_per_session || 0))}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
+                                <div className="space-y-1">{list.map((sess: SessionItem) => renderSessionRow(sess, student))}</div>
                               )}
                             </div>
                           );
@@ -1302,7 +1403,7 @@ export default function Dashboard() {
                 );
               })
             ) : (
-              <div className="py-4 text-center text-sm text-slate-500">Chưa có dữ liệu học sinh</div>
+              <div className="py-4 text-center text-sm text-zinc-500">Chưa có dữ liệu học sinh</div>
             )}
           </div>
         </DialogContent>
@@ -1310,58 +1411,55 @@ export default function Dashboard() {
 
       {/* POPUP CHI TIẾT LƯƠNG MẶC ĐỊNH */}
       <Dialog open={showSalaryModal} onOpenChange={setShowSalaryModal}>
-        <DialogContent className="max-h-[90vh] gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
-          <div className="h-1.5 bg-[#FFB547]" />
-          <DialogHeader className="space-y-1 border-b border-slate-100 px-6 py-5 text-left">
-            <DialogTitle className="text-lg font-extrabold text-slate-900">
-              {vi ? "Chi tiết lương mặc định" : "Default salary details"}
-            </DialogTitle>
-            <p className="text-sm text-slate-500">
-              {vi ? "Tổng cộng" : "Total"} <span className="font-bold text-slate-900">{formatVND(defaultSalary)}</span>
-              {` · ${salaryStudentList.length} ${vi ? "học sinh" : "students"}`}
-            </p>
-            <p className="text-xs text-slate-400">
+        <DialogContent className={modalShell}>
+          <ModalHead
+            icon={TrendingUp}
+            title={vi ? "Chi tiết lương mặc định" : "Default salary details"}
+            total={formatVND(defaultSalary)}
+          >
+            <p className="text-xs leading-relaxed text-zinc-500">
+              {`${salaryStudentList.length} ${vi ? "học sinh" : "students"} · `}
               {vi
                 ? `Học phí tháng cố định của các lớp mỗi học sinh đang học × ${monthsInRange} tháng (${periodLabel.toLowerCase()}).`
                 : `Fixed monthly fee of every class each student is enrolled in × ${monthsInRange} month${monthsInRange > 1 ? "s" : ""} (${periodLabel.toLowerCase()}).`}
             </p>
-          </DialogHeader>
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto px-6 py-5">
+          </ModalHead>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
             {salaryStudentList.length > 0 ? (
               salaryStudentList.map(({ student, total, items }: any) => (
                 <Link
                   key={student.id}
                   to={`/students/${student.id}`}
                   onClick={() => setShowSalaryModal(false)}
-                  className="group flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  className="group flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className={cn("h-10 w-10 shrink-0 rounded-xl text-sm", bubble)} style={{ background: colorOf(student.id) }}>
+                    <div className={cn(avatarBase, "h-10 w-10 rounded-full text-sm")} style={solid(colorOf(student.id))}>
                       {student.name ? student.name.slice(0, 2).toUpperCase() : "HS"}
                     </div>
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-slate-900">{student.name}</div>
+                      <div className="truncate text-sm font-semibold text-zinc-900">{student.name}</div>
                       {items.length === 0 ? (
-                        <div className="text-xs text-slate-400">{vi ? "Chưa ghi danh lớp nào" : "Not enrolled in any class"}</div>
+                        <div className="text-xs text-zinc-400">{vi ? "Chưa ghi danh lớp nào" : "Not enrolled in any class"}</div>
                       ) : (
-                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-slate-500">
+                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-zinc-500">
                           {items.map((it: SalaryItem) => (
                             <span key={it.classId}>
-                              {it.className}: <span className="font-semibold text-slate-700">{formatVND(it.fee)}</span>
+                              {it.className}: <span className="font-medium tabular-nums text-zinc-700">{formatVND(it.fee)}</span>
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <span className="text-sm font-extrabold text-violet-600">{formatVND(total)}</span>
-                    <ChevronRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="text-sm font-semibold tabular-nums text-zinc-900">{formatVND(total)}</span>
+                    <ChevronRight className="h-4 w-4 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-600" />
                   </div>
                 </Link>
               ))
             ) : (
-              <div className="py-4 text-center text-sm text-slate-500">Chưa có dữ liệu học sinh</div>
+              <div className="py-4 text-center text-sm text-zinc-500">Chưa có dữ liệu học sinh</div>
             )}
           </div>
         </DialogContent>
@@ -1375,25 +1473,22 @@ export default function Dashboard() {
           if (!open) setPayFilter("unpaid");
         }}
       >
-        <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-lg">
-          <div className="h-1.5 shrink-0 bg-[#FFB547]" />
-          <DialogHeader className="shrink-0 space-y-1 border-b border-slate-100 px-6 py-5 text-left">
-            <DialogTitle className="text-lg font-extrabold text-slate-900">
-              {vi ? "Chi tiết học phí dự kiến trong kỳ" : "Upcoming in period details"}
-            </DialogTitle>
-            <p className="text-sm text-slate-500">
-              {vi ? "Tổng cộng" : "Total"} <span className="font-bold text-slate-900">{formatVND(billsListTotal)}</span>
-              {` · ${groupedUpcoming.length} ${vi ? "học sinh" : "students"}`}
-            </p>
-            <p className="text-xs text-slate-400">
+        <DialogContent className={modalShell}>
+          <ModalHead
+            icon={Hourglass}
+            title={vi ? "Chi tiết học phí dự kiến trong kỳ" : "Upcoming in period details"}
+            total={formatVND(billsListTotal)}
+          >
+            <p className="text-xs leading-relaxed text-zinc-500">
+              {`${groupedUpcoming.length} ${vi ? "học sinh" : "students"} · `}
               {vi
                 ? "Học phí tổng hợp, gộp theo từng học sinh. Con số trên thẻ là tổng các hóa đơn chưa thu, cố định và không thay đổi theo bộ lọc thời gian."
                 : "Aggregated fees, grouped by student. The card shows the total of unpaid bills, fixed and not affected by the date filter."}
             </p>
-          </DialogHeader>
+          </ModalHead>
 
-          <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 px-6 py-3">
-            <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-1">
+          <div className="shrink-0 border-b border-zinc-100 bg-zinc-50/60 px-6 py-3">
+            <div className={SEG}>
               {(["unpaid", "paid", "all"] as const).map((k) => (
                 <button key={k} type="button" aria-pressed={payFilter === k} onClick={() => setPayFilter(k)} className={segBtn(payFilter === k)}>
                   {k === "unpaid" ? (vi ? "Chưa thu" : "Unpaid") : k === "paid" ? (vi ? "Đã thu" : "Paid") : vi ? "Tất cả" : "All"}
@@ -1404,32 +1499,32 @@ export default function Dashboard() {
 
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
             {groupedUpcoming.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center text-sm text-slate-500">{t.nothingHere}</div>
+              <div className="rounded-xl border border-dashed border-zinc-300 py-10 text-center text-sm text-zinc-500">{t.nothingHere}</div>
             ) : (
               groupedUpcoming.map((item) => (
                 <Link
                   to={`/students/${item.studentId}`}
                   key={item.studentId}
                   onClick={() => setShowExpectedModal(false)}
-                  className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className={cn("h-10 w-10 shrink-0 rounded-xl text-sm", bubble)} style={{ background: colorOf(item.studentId) }}>
+                    <div className={cn(avatarBase, "h-10 w-10 rounded-full text-sm")} style={solid(colorOf(item.studentId))}>
                       {item.studentName ? item.studentName.slice(0, 2).toUpperCase() : "HS"}
                     </div>
                     <div className="min-w-0">
-                      <h4 className="truncate text-sm font-bold text-slate-900">{item.studentName}</h4>
-                      <p className="truncate text-xs text-slate-500">
+                      <h4 className="truncate text-sm font-semibold text-zinc-900">{item.studentName}</h4>
+                      <p className="truncate text-xs text-zinc-500">
                         Gộp {item.cycles.length} kỳ ({item.cycles.join(", ")})
                       </p>
                     </div>
                   </div>
                   <div className="ml-auto flex shrink-0 items-center gap-3">
-                    <span className="text-sm font-extrabold text-[#0B1B3A]">{formatVND(item.totalAmount)}</span>
+                    <span className="text-sm font-semibold tabular-nums text-zinc-900">{formatVND(item.totalAmount)}</span>
                     <span
                       className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-semibold",
-                        item.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                        "rounded-full px-2.5 py-1 text-xs font-medium",
+                        item.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-600"
                       )}
                     >
                       {item.isPaid ? (vi ? "Đã thu" : "Paid") : vi ? "Chưa thu" : "Unpaid"}

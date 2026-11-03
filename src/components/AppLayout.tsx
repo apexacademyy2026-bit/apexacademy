@@ -1,8 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { useApp } from "@/contexts/AppContext";
+import { WallpaperProvider, WallpaperBackdrop } from "@/components/DashboardBackground";
+import "./popup-theme.css"; // giao diện dùng chung cho mọi popup
 
 // 1. Quản lý danh sách các cửa sổ con trên toàn ứng dụng
 const activeChildWindows: Window[] = [];
@@ -25,7 +27,7 @@ export default function AppLayout() {
 
   // Hàm thực thi việc đóng tất cả các cửa sổ con đang còn mở
   const closeAllChildWindows = () => {
-    activeChildWindows.forEach((win, index) => {
+    activeChildWindows.forEach((win) => {
       if (win && !win.closed) {
         win.close();
       }
@@ -63,24 +65,28 @@ export default function AppLayout() {
   if (!user) return <Navigate to="/auth" replace />;
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-gradient-soft">
-        <AppSidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-<header 
-  style={{ 
-    paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
-    paddingBottom: "12px" 
-  }}
-  className="h-auto min-h-[3.5rem] flex items-center gap-2 px-4 border-b border-border bg-background/70 backdrop-blur no-print"
->
-  <SidebarTrigger />
-</header>
-          <main className="flex-1 p-4 md:p-8 overflow-x-hidden">
-            <Outlet />
-          </main>
+    <WallpaperProvider userId={user.id}>
+      <SidebarProvider>
+        {/* `isolate` giữ hình nền cố định nằm sau toàn bộ nội dung nhưng vẫn phía trên màu nền của trang */}
+        <div className="relative isolate flex min-h-screen w-full">
+          <WallpaperBackdrop />
+          <AppSidebar />
+          <div className="flex-1 flex flex-col min-w-0">
+            <header
+              style={{
+                paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
+                paddingBottom: "12px",
+              }}
+              className="h-auto min-h-[3.5rem] flex items-center gap-2 px-4 border-b border-white/40 bg-white/80 backdrop-blur-xl no-print"
+            >
+              <SidebarTrigger />
+            </header>
+            <main className="flex-1 p-4 md:p-8 overflow-x-hidden">
+              <Outlet />
+            </main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </WallpaperProvider>
   );
 }

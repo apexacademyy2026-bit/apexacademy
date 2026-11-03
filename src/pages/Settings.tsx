@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CalendarDays, Link2, Unplug, Layers, User, Wallet, KeyRound, LogOut, Trash2, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { CalendarDays, Link2, Unplug, Layers, User, Wallet, KeyRound, LogOut, Trash2, ShieldAlert, CheckCircle2, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { vietQRUrl } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { resolveStudentColor } from "@/lib/studentColor";
+import { WallpaperControls } from "@/components/DashboardBackground";
 import {
   consumeGoogleCalendarTokenFromHash,
   getStoredGoogleCalendarSelection,
@@ -32,7 +33,7 @@ const OUTLINE = "h-11 shrink-0 gap-2 rounded-xl border-slate-200 px-4 text-sm fo
 
 // Một khối cài đặt: biểu tượng + tiêu đề, nội dung, nút lưu ở chân
 const Panel = ({ icon: Icon, title, hint, right, footer, children }: { icon: LucideIcon; title: string; hint?: string; right?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) => (
-  <section className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+  <section className="flex flex-col overflow-hidden rounded-2xl border border-white/60 bg-white/90 shadow-[0_10px_40px_-12px_rgb(11_27_58/0.25)] backdrop-blur-xl">
     <header className="flex items-start gap-3.5 px-6 pb-5 pt-6">
       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#0B1B3A]/5 text-[#0B1B3A]">
         <Icon className="h-5 w-5" />
@@ -476,6 +477,17 @@ export default function Settings() {
             </div>
           </Panel>
 
+          {/* GIAO DIỆN: hình nền cho toàn bộ ứng dụng */}
+          <Panel
+            icon={Palette}
+            title={vi ? "Giao diện" : "Appearance"}
+            hint={vi ? "Chọn hình nền cho toàn bộ ứng dụng. Thay đổi được áp dụng ngay." : "Choose the wallpaper for the whole app. Changes apply instantly."}
+          >
+            <div className="py-5">
+              <WallpaperControls vi={vi} />
+            </div>
+          </Panel>
+
           {/* NGÂN HÀNG (VIETQR) */}
           {!isStudent && (
             <Panel
@@ -654,7 +666,7 @@ export default function Settings() {
 
       {/* POPUP XÓA TÀI KHOẢN */}
       <Dialog open={delOpen} onOpenChange={setDelOpen}>
-        <DialogContent className="gap-0 overflow-hidden rounded-3xl border-0 p-0 font-['Be_Vietnam_Pro',sans-serif] sm:max-w-sm">
+        <DialogContent className="max-h-[92vh] gap-0 overflow-hidden rounded-[28px] border border-white/60 bg-white/95 p-0 font-['Be_Vietnam_Pro',sans-serif] shadow-2xl backdrop-blur-2xl sm:max-w-md">
           <div className="h-1.5 bg-rose-500" />
           <DialogHeader className="space-y-2 px-6 py-5 text-left">
             <DialogTitle className="flex items-center gap-2 text-lg font-extrabold text-rose-600">

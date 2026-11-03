@@ -58,9 +58,63 @@ const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAE
 const QR_IMAGE_PROXY = "https://wsrv.nl/?url=";
 
 // Bề rộng (px) của ảnh hóa đơn khi lưu. Tăng nếu muốn ảnh rộng hơn, giảm nếu muốn ảnh hẹp lại.
+// (Cỡ chữ trong ảnh chỉnh riêng ở BILL_SCALE_IMAGE bên dưới.)
 const BILL_IMAGE_WIDTH = 1200;
 // Giới hạn số điểm ảnh của ảnh khi lưu (Safari / iOS chỉ dựng được tối đa khoảng 16,7 triệu điểm)
 const MAX_IMAGE_PIXELS = 14000000;
+
+/* ---------- Cỡ chữ của hoá đơn: nhỏ trên màn hình, to hơn khi in và khi lưu ảnh ---------- */
+
+// Mọi cỡ chữ Tailwind (text-sm, text-lg, ...) bên trong thẻ hoá đơn được nhân với hệ số --bs.
+// 1 = cỡ chữ gốc của Tailwind. Muốn chữ to / nhỏ hơn thì chỉ cần đổi 3 số dưới đây.
+const BILL_SCALE_SCREEN = 0.75; // xem trước trên màn hình
+const BILL_SCALE_IMAGE = 1.35; // ảnh lưu (nút "Lưu ảnh")
+const BILL_SCALE_PRINT = { landscape: 1.3, portrait: 1.1 } as const; // in (giấy dọc hẹp hơn nên hệ số nhỏ hơn)
+
+// Cỡ chữ gốc của Tailwind: [rem, line-height]
+const BILL_TEXT_SIZES: Record<string, [number, number]> = {
+  "text-xs": [0.75, 1.5],
+  "text-sm": [0.875, 1.5],
+  "text-base": [1, 1.5],
+  "text-lg": [1.125, 1.5],
+  "text-xl": [1.25, 1.4],
+  "text-2xl": [1.5, 1.3],
+};
+const BILL_LEADINGS: Record<string, number> = {
+  "leading-none": 1,
+  "leading-tight": 1.25,
+  "leading-snug": 1.375,
+  "leading-relaxed": 1.625,
+};
+// Các ô nhập / nút khi sửa hoá đơn (có class "no-print") giữ nguyên cỡ chữ để dễ thao tác.
+// Các class leading-* đặt sau cùng để vẫn thắng line-height mặc định của cỡ chữ.
+const BILL_FONT_CSS = [
+  ...Object.entries(BILL_TEXT_SIZES).map(
+    ([cls, [rem, lh]]) =>
+      `.printable-bill-card .${cls}:not(.no-print) { font-size: calc(${rem}rem * var(--bs)); line-height: ${lh}; }`
+  ),
+  ...Object.entries(BILL_LEADINGS).map(
+    ([cls, lh]) => `.printable-bill-card .${cls}:not(.no-print) { line-height: ${lh}; }`
+  ),
+].join("\n");
+
+// Chỉ áp dụng cho bản xem trước trên màn hình: khoảng cách gọn hơn, mã QR nhỏ hơn, giờ học và học phí gộp cùng một dòng.
+// Bản in (@media print) và ảnh lưu (bản sao có data-export) giữ nguyên bố cục rộng như thiết kế gốc.
+const BILL_ON_SCREEN = '.printable-bill-card:not([data-export="true"])';
+const BILL_SCREEN_CSS = `
+  @media screen {
+    ${BILL_ON_SCREEN} .bill-head { padding: 1rem 1.5rem; row-gap: 0.75rem; column-gap: 2rem; }
+    ${BILL_ON_SCREEN} .bill-avatar { width: 3rem; height: 3rem; border-radius: 0.875rem; }
+    ${BILL_ON_SCREEN} .bill-table-outer { padding: 1rem 1rem 0; }
+    ${BILL_ON_SCREEN} .bill-table-wrap th,
+    ${BILL_ON_SCREEN} .bill-table-wrap td { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+    ${BILL_ON_SCREEN} .bill-meta { flex-direction: row; flex-wrap: wrap; justify-content: center; column-gap: 0.625rem; }
+    ${BILL_ON_SCREEN} .bill-totals { padding: 0.875rem 1.5rem 1rem; }
+    ${BILL_ON_SCREEN} .bill-footnote { padding: 0 1.5rem 1rem; }
+    ${BILL_ON_SCREEN} .bill-slip-body { padding: 1.25rem 1.5rem 1.5rem; }
+    ${BILL_ON_SCREEN} .bill-qr { width: 12rem; height: 12rem; }
+  }
+`;
 
 // Tải một ảnh về dạng data URL (cần máy chủ ảnh cho phép CORS)
 const fetchImageAsDataUrl = async (url: string): Promise<string> => {
@@ -877,6 +931,8 @@ export default function StudentBill() {
         stage.setAttribute("aria-hidden", "true");
         stage.style.cssText = `position:fixed;left:-10000px;top:0;width:${BILL_IMAGE_WIDTH}px;pointer-events:none;`;
         const clone = node.cloneNode(true) as HTMLElement;
+        // Bản sao dùng hệ số cỡ chữ của ảnh (BILL_SCALE_IMAGE), to hơn bản xem trên màn hình
+        clone.setAttribute("data-export", "true");
         Object.assign(clone.style, {
           width: `${BILL_IMAGE_WIDTH}px`,
           minWidth: `${BILL_IMAGE_WIDTH}px`,
@@ -989,8 +1045,14 @@ export default function StudentBill() {
   return (
     <div className="container mx-auto p-4 md:p-6 max-w-[1560px] space-y-6">
       
-      {/* CSS RIÊNG PHỤC VỤ IN ẤN */}
+      {/* CSS RIÊNG: cỡ chữ hoá đơn (màn hình / ảnh) và phục vụ in ấn */}
       <style>{`
+        /* Hệ số cỡ chữ --bs: nhỏ trên màn hình; to hơn khi lưu ảnh (bản sao có data-export) và khi in (khối @media print bên dưới) */
+        .printable-bill-card { --bs: ${BILL_SCALE_SCREEN}; }
+        .printable-bill-card[data-export="true"] { --bs: ${BILL_SCALE_IMAGE}; }
+        ${BILL_FONT_CSS}
+        ${BILL_SCREEN_CSS}
+
         @media print {
           body * {
             visibility: hidden !important;
@@ -1014,6 +1076,7 @@ export default function StudentBill() {
             page-break-inside: avoid;
           }
           .printable-bill-card {
+            --bs: ${BILL_SCALE_PRINT[orientation]};
             overflow: visible !important;
             position: absolute !important;
             left: 0 !important;
@@ -1046,37 +1109,37 @@ export default function StudentBill() {
 
       {/* Navigation Bar */}
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
-      <div className="no-print relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-6 font-['Be_Vietnam_Pro',sans-serif] sm:px-8">
-        <div className="pointer-events-none absolute -right-14 -top-16 h-44 w-44 rounded-full" style={{ background: accent }} />
-        <div className="relative space-y-5">
-          <div className="flex items-center gap-4">
+      <div className="no-print relative overflow-hidden rounded-2xl bg-[#0B1B3A] px-5 py-4 font-['Be_Vietnam_Pro',sans-serif] sm:px-6">
+        <div className="pointer-events-none absolute -right-10 -top-14 h-28 w-28 rounded-full opacity-40" style={{ background: accent }} />
+        <div className="relative flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => navigate(-1)}
               aria-label="Quay lại"
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/10 text-white transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div
-              className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-xl font-extrabold text-white ring-2 ring-white/90 [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-lg font-extrabold text-white ring-2 ring-white/90 [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
               style={{ background: accent }}
             >
               {(student.name || "?").charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <h1 className="truncate text-2xl font-extrabold tracking-tight text-white">Hóa đơn học phí</h1>
+              <h1 className="truncate text-xl font-extrabold tracking-tight text-white">Hóa đơn học phí</h1>
               <p className="truncate text-sm text-white/70">{student.name}</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex gap-1 rounded-xl bg-white/10 p-1">
               <button
                 type="button"
                 aria-pressed={mode === "monthly"}
                 onClick={() => { setMode("monthly"); setSelected(null); setSelectedCycles(new Set()); }}
-                className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                className={`flex h-7 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
                   mode === "monthly" ? "bg-white text-[#0B1B3A]" : "text-white/75 hover:text-white"
                 }`}
               >
@@ -1086,17 +1149,17 @@ export default function StudentBill() {
                 type="button"
                 aria-pressed={mode === "by_session"}
                 onClick={() => { setMode("by_session"); setSelected(null); setSelectedSessionIds(new Set()); }}
-                className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
+                className={`flex h-7 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 ${
                   mode === "by_session" ? "bg-white text-[#0B1B3A]" : "text-white/75 hover:text-white"
                 }`}
               >
                 <Receipt className="h-4 w-4" /> {t?.payBySession || "Pay by session"}
               </button>
             </div>
-            <Button onClick={saveAsImage} className="h-10 gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/20">
+            <Button onClick={saveAsImage} className="h-9 gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/20">
               <ImageIcon className="h-4 w-4" /> {(t as any)?.saveAsImage || "Save as image"}
             </Button>
-            <Button onClick={handlePrint} className="h-10 gap-2 rounded-xl bg-[#FFB547] px-4 text-sm font-bold text-[#0B1B3A] hover:bg-[#ffc266]">
+            <Button onClick={handlePrint} className="h-9 gap-2 rounded-xl bg-[#FFB547] px-4 text-sm font-bold text-[#0B1B3A] hover:bg-[#ffc266]">
               <Printer className="h-4 w-4" /> {t?.printBill || "Print bill"}
             </Button>
           </div>
@@ -1104,10 +1167,10 @@ export default function StudentBill() {
       </div>
 
       {/* Main Layout */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
 
         {/* LEFT COLUMN: Controls & Cycle Selector */}
-        <div className="xl:col-span-3 space-y-4 no-print font-['Be_Vietnam_Pro',sans-serif]">
+        <div className="space-y-4 no-print font-['Be_Vietnam_Pro',sans-serif]">
           <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
               <div className="flex items-center gap-2">
@@ -1293,9 +1356,9 @@ export default function StudentBill() {
         </div>
 
         {/* RIGHT COLUMN: Hoá đơn */}
-        <div className="xl:col-span-9 min-w-0 font-['Be_Vietnam_Pro',sans-serif]">
+        <div className="min-w-0 font-['Be_Vietnam_Pro',sans-serif]">
           {displayBill && (
-            <div className="w-full min-w-0 space-y-4">
+            <div className="mx-auto w-full min-w-0 max-w-[980px] space-y-4">
 
               {/* Thanh công cụ (không in, không vào ảnh) */}
               <div className="no-print flex flex-wrap items-center justify-between gap-2">
@@ -1407,7 +1470,7 @@ export default function StudentBill() {
               <div className="bill-scroll -mx-1 overflow-x-auto px-1 pb-4">
                 <div
                   ref={billRef}
-                  className="printable-bill-card relative w-full min-w-[880px] overflow-hidden rounded-3xl border bg-white text-slate-900 shadow-xl"
+                  className="printable-bill-card relative w-full min-w-[720px] overflow-hidden rounded-3xl border bg-white text-slate-900 shadow-xl"
                   style={{ borderColor: theme.line }}
                 >
                   {/* Dải màu mảnh trên cùng */}
@@ -1415,12 +1478,12 @@ export default function StudentBill() {
 
                   {/* Đầu hoá đơn: giáo viên bên trái, thông tin hoá đơn bên phải */}
                   <div
-                    className="flex flex-wrap items-center justify-between gap-x-8 gap-y-5 border-b px-8 py-6"
+                    className="flex flex-wrap items-center justify-between bill-head gap-x-8 gap-y-5 border-b px-8 py-6"
                     style={{ borderColor: theme.line, background: `linear-gradient(180deg, ${theme.soft} 0%, #ffffff 100%)` }}
                   >
                     <div className="flex min-w-[240px] flex-1 items-center gap-4">
                       <div
-                        className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl text-2xl font-extrabold text-white shadow-md"
+                        className="bill-avatar grid h-16 w-16 shrink-0 place-items-center rounded-2xl text-2xl font-extrabold text-white shadow-md"
                         style={{ background: theme.banner }}
                       >
                         {teacherInitial}
@@ -1496,7 +1559,7 @@ export default function StudentBill() {
 
                   {/* Bảng nhật ký học tập: buổi, ngày, nội dung, BTVN, bài kiểm tra, ghi chú */}
                   {displayBill.attendances?.length > 0 && showAtt && (
-                    <div className="px-5 pt-5">
+                    <div className="bill-table-outer px-5 pt-5">
                       <div className="bill-table-wrap overflow-hidden rounded-2xl border bg-white" style={{ borderColor: theme.line }}>
                         <table className="w-full table-fixed border-collapse text-left text-lg text-slate-800">
                           <colgroup>
@@ -1553,8 +1616,10 @@ export default function StudentBill() {
                                     ) : (
                                       <>
                                         <div className="text-xl font-semibold text-slate-800">{sttText}</div>
-                                        {timeText && <div className="mt-0.5 text-base tabular-nums text-slate-500">{timeText}</div>}
-                                        <div className="mt-0.5 text-base font-medium tabular-nums text-slate-600">{formatVND(fee)}</div>
+                                        <div className="bill-meta mt-0.5 flex flex-col items-center text-base tabular-nums">
+                                          {timeText && <span className="whitespace-nowrap text-slate-500">{timeText}</span>}
+                                          <span className="whitespace-nowrap font-medium text-slate-600">{formatVND(fee)}</span>
+                                        </div>
                                       </>
                                     )}
                                   </td>
@@ -1689,7 +1754,7 @@ export default function StudentBill() {
                   )}
 
                   {/* Kỳ thanh toán và tổng cộng */}
-                  <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 px-6 pb-6 pt-5 print:pb-3 print:pt-3">
+                  <div className="flex flex-wrap items-end justify-between gap-x-8 bill-totals gap-y-4 px-6 pb-6 pt-5 print:pb-3 print:pt-3">
                     <div className="grid grid-cols-2 gap-x-8 gap-y-3">
                       <Field
                         label={mode === "monthly" ? (t?.period || "Kỳ thanh toán") : ((t as any)?.billedSessions || "Số buổi tính phí")}
@@ -1714,7 +1779,11 @@ export default function StudentBill() {
                       </div>
                       <div className="flex items-baseline justify-between gap-4 border-t-2 pt-3" style={{ borderColor: theme.head }}>
                         <span className="text-lg font-bold text-slate-900">Tổng cộng</span>
-                        <span className="text-[38px] font-extrabold leading-none tracking-tight tabular-nums" style={{ color: theme.dark }}>
+                        {/* Cỡ chữ tổng tiền (38px gốc) cũng nhân theo hệ số --bs của hoá đơn */}
+                        <span
+                          className="font-extrabold leading-none tracking-tight tabular-nums"
+                          style={{ color: theme.dark, fontSize: "calc(38px * var(--bs, 1))" }}
+                        >
                           {formatVND(billTotal)}
                         </span>
                       </div>
@@ -1722,7 +1791,7 @@ export default function StudentBill() {
                   </div>
 
                   {footnote && (
-                    <p className="whitespace-pre-line px-6 pb-6 text-center text-base italic text-slate-500 print:pb-3">{footnote}</p>
+                    <p className="bill-footnote whitespace-pre-line px-6 pb-6 text-center text-base italic text-slate-500 print:pb-3">{footnote}</p>
                   )}
 
                   {/* Phiếu thanh toán: cắt rời theo đường đứt nét */}
@@ -1733,13 +1802,13 @@ export default function StudentBill() {
                         <div className="absolute -right-3 -top-3 h-6 w-6 rounded-full border bg-background" style={{ borderColor: theme.line }} />
                         <div className="mx-6 border-t-2 border-dashed border-slate-300" />
                       </div>
-                      <div className="px-8 pb-8 pt-7 print:pb-4 print:pt-4" style={{ background: theme.soft }}>
+                      <div className="bill-slip-body px-8 pb-8 pt-7 print:pb-4 print:pt-4" style={{ background: theme.soft }}>
                         <div className="flex flex-row items-start gap-8">
                           <div className="shrink-0 text-center">
                             <img
                               src={qrUrl}
                               alt="VietQR"
-                              className="h-80 w-80 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
+                              className="bill-qr h-80 w-80 rounded-2xl border border-slate-200 bg-white p-2 object-contain"
                             />
                             <div className="mt-2 text-sm text-slate-500">Quét bằng app ngân hàng</div>
                           </div>
