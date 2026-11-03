@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BookOpen, Check, ClipboardCheck, ClipboardList, Clock, Loader2, Plus, Search, StickyNote, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -30,7 +30,30 @@ import {
   type TestItem,
 } from "@/lib/Learningtests";
 
-const FIELD = "rounded-xl border-slate-200 bg-white text-sm placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30";
+/* Design tokens: mực navy #0B1B3A · nền trắng · viền zinc mảnh.
+   Màu của học sinh đang chọn là điểm nhấn chính: vạch màu trên thẻ, avatar đặc, ô ngày đặc. */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+const CARD = "rounded-2xl border border-zinc-200 bg-white";
+const FIELD =
+  "rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/10";
+const SEG = "flex items-center gap-0.5 rounded-full bg-zinc-100 p-1";
+
+// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
+const inkOn = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 170 ? "#0B1B3A" : "#ffffff";
+};
+// Ô màu đặc, có quầng sáng cùng màu để nổi bật
+const solid = (c: string): CSSProperties => ({
+  background: c,
+  color: inkOn(c),
+  boxShadow: `0 8px 18px -8px ${c}`,
+});
+// Phủ một lớp màu rất nhạt lên nền trắng
+const wash = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, white)`;
 
 // Bỏ dấu để tìm "nguyen" ra được "Nguyễn"
 const normalize = (s: string) =>
@@ -77,8 +100,8 @@ function LogField({
 }) {
   return (
     <div className={className}>
-      <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
-        <Icon className="h-4 w-4 text-slate-400" aria-hidden="true" />
+      <div className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-zinc-700">
+        <Icon className="h-4 w-4 text-zinc-400" aria-hidden="true" />
         {label}
       </div>
       {children}
@@ -310,37 +333,38 @@ export default function LearningLog() {
   };
 
   return (
-    <div className="container mx-auto max-w-[1560px] space-y-6 p-4 font-['Be_Vietnam_Pro',sans-serif] md:p-6">
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');`}</style>
+    <div className={`container mx-auto max-w-[1560px] space-y-5 p-4 md:p-6 ${FONT}`}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
 
-      <div className="relative overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-6 sm:px-8">
-        <div className="pointer-events-none absolute -right-14 -top-16 h-44 w-44 rounded-full" style={{ background: accent }} />
-        <div className="relative flex items-center gap-4">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-white">
+      {/* TIÊU ĐỀ: vạch trên cùng mang màu của học sinh đang chọn */}
+      <section className={`${CARD} relative overflow-hidden p-5 pt-6 sm:px-6`}>
+        <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: accent }} />
+        <div className="flex items-center gap-4">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
             <BookOpen className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-2xl font-extrabold tracking-tight text-white">Nhật ký học tập</h1>
-            <p className="text-sm text-white/70">Nội dung nhập ở đây sẽ hiện trong hóa đơn gửi phụ huynh.</p>
+            <h1 className="truncate text-2xl font-semibold tracking-tight text-zinc-900">Nhật ký học tập</h1>
+            <p className="text-sm text-zinc-500">Nội dung nhập ở đây sẽ hiện trong hóa đơn gửi phụ huynh.</p>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-12">
         {/* Danh sách học sinh */}
         <aside className="xl:sticky xl:top-4 xl:col-span-3">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className={`${CARD} p-3`}>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
               <Input
                 aria-label="Tìm học sinh"
                 placeholder="Tìm học sinh"
-                className="h-10 rounded-xl border-slate-200 pl-9 text-sm"
+                className={`h-10 pl-9 ${FIELD}`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1 xl:max-h-[calc(100vh-16rem)]">
+            <div className="mt-3 max-h-72 space-y-1.5 overflow-y-auto pr-1 xl:max-h-[calc(100vh-16rem)]">
               {visibleStudents.map((s) => {
                 const active = s.id === studentId;
                 const color = String(resolveStudentColor(s.color, s.id));
@@ -351,25 +375,23 @@ export default function LearningLog() {
                     type="button"
                     aria-pressed={active}
                     onClick={() => pickStudent(s.id)}
-                    className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40 ${
-                      active ? "border-[#0B1B3A] bg-[#0B1B3A]/[0.04] ring-1 ring-[#0B1B3A]" : "border-slate-200 hover:bg-slate-50"
+                    className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40 ${
+                      active ? "border-transparent ring-1 ring-[#0B1B3A]" : "border-zinc-200 bg-white hover:bg-zinc-50"
                     }`}
+                    style={active ? { background: wash(color, 10) } : undefined}
                   >
-                    <span
-                      className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-extrabold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
-                      style={{ background: color }}
-                    >
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-base font-semibold" style={solid(color)}>
                       {(s.name || "?").charAt(0).toUpperCase()}
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{s.name}</span>
-                      <span className="block truncate text-xs text-slate-500">{classes.join(", ") || "Chưa xếp lớp"}</span>
+                      <span className="block truncate text-sm font-semibold text-zinc-900">{s.name}</span>
+                      <span className="block truncate text-xs text-zinc-500">{classes.join(", ") || "Chưa xếp lớp"}</span>
                     </span>
                   </button>
                 );
               })}
               {!studentsQ.isLoading && visibleStudents.length === 0 && (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
+                <div className="rounded-xl border border-dashed border-zinc-300 px-3 py-6 text-center text-sm text-zinc-500">
                   {students.length === 0 ? "Chưa có học sinh nào. Thêm học sinh ở trang Học sinh." : "Không tìm thấy học sinh phù hợp."}
                 </div>
               )}
@@ -381,21 +403,22 @@ export default function LearningLog() {
         <section className="min-w-0 space-y-4 xl:col-span-9">
           {student ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+              <div
+                className="relative flex flex-wrap items-center justify-between gap-3 overflow-hidden rounded-2xl border p-4 pt-5"
+                style={{ background: wash(accent, 6), borderColor: wash(accent, 38) }}
+              >
+                <div className="absolute inset-x-0 top-0 h-1.5" style={{ background: accent }} />
                 <div className="flex min-w-0 items-center gap-3">
-                  <div
-                    className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-xl font-extrabold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
-                    style={{ background: accent }}
-                  >
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-xl font-semibold" style={solid(accent)}>
                     {(student.name || "?").charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <h2 className="truncate text-lg font-bold text-slate-900">{student.name}</h2>
-                    <p className="truncate text-sm text-slate-500">{(classesOf.get(student.id) || []).join(", ") || "Chưa xếp lớp"}</p>
+                    <h2 className="truncate text-lg font-semibold text-zinc-900">{student.name}</h2>
+                    <p className="truncate text-sm text-zinc-500">{(classesOf.get(student.id) || []).join(", ") || "Chưa xếp lớp"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span aria-live="polite" className="flex min-w-[76px] items-center justify-end gap-1.5 text-xs font-medium text-slate-500">
+                  <span aria-live="polite" className="flex min-w-[76px] items-center justify-end gap-1.5 text-xs font-medium text-zinc-500">
                     {saveState === "saving" && (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Đang lưu
@@ -408,7 +431,7 @@ export default function LearningLog() {
                     )}
                   </span>
                   <Select value={activeMonth} onValueChange={setMonth} disabled={sessions.length === 0}>
-                    <SelectTrigger aria-label="Chọn tháng" className="h-10 w-48 rounded-xl border-slate-200 bg-white text-sm">
+                    <SelectTrigger aria-label="Chọn tháng" className={`h-10 w-48 ${FIELD}`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="rounded-xl">
@@ -425,17 +448,17 @@ export default function LearningLog() {
 
               {sessions.length > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-1">
-                  <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-500">
+                  <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-full bg-white/80 px-3 py-1.5 text-sm text-zinc-500">
                     <span>
-                      <b className="font-bold text-slate-800">{rows.length}</b> buổi học
+                      <b className="font-semibold tabular-nums text-zinc-900">{rows.length}</b> buổi học
                     </span>
                     <span>
-                      <b className="font-bold text-slate-800">{testCount}</b> bài kiểm tra
+                      <b className="font-semibold tabular-nums text-zinc-900">{testCount}</b> bài kiểm tra
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {paymentsQ.isError && <span className="text-xs text-rose-600">Không tải được tình trạng học phí.</span>}
-                    <div role="group" aria-label="Lọc theo học phí" className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                    {paymentsQ.isError && <span className="rounded-full bg-white px-2 py-1 text-xs text-rose-600">Không tải được tình trạng học phí.</span>}
+                    <div role="group" aria-label="Lọc theo học phí" className={SEG}>
                       {PAY_FILTERS.map((f) => {
                         const active = payFilter === f.key;
                         const count = f.key === "all" ? monthRows.length : f.key === "paid" ? paidCount : unpaidCount;
@@ -446,12 +469,12 @@ export default function LearningLog() {
                             aria-pressed={active}
                             disabled={f.key !== "all" && !payReady}
                             onClick={() => setPayFilter(f.key)}
-                            className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40 disabled:opacity-50 ${
-                              active ? "bg-[#0B1B3A] text-white" : "text-slate-600 hover:bg-slate-100"
+                            className={`flex h-8 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 disabled:opacity-50 ${
+                              active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
                             }`}
                           >
                             {f.label}
-                            <span className={`tabular-nums ${active ? "text-white/70" : "text-slate-400"}`}>
+                            <span className={`text-xs tabular-nums ${active ? "text-zinc-500" : "text-zinc-400"}`}>
                               {f.key === "all" || payReady ? count : "–"}
                             </span>
                           </button>
@@ -463,7 +486,7 @@ export default function LearningLog() {
               )}
 
               {logsQ.isLoading && (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 py-10 text-center text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-zinc-300 bg-white py-10 text-center text-sm text-zinc-500">
                   Đang tải nhật ký...
                 </div>
               )}
@@ -473,13 +496,13 @@ export default function LearningLog() {
                 </div>
               )}
               {!logsQ.isLoading && !logsQ.isError && sessions.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-10 text-center text-sm text-zinc-500">
                   Chưa có buổi học nào. Nhật ký sẽ xuất hiện ở đây sau khi bạn điểm danh học sinh có mặt.
                 </div>
               )}
 
               {!logsQ.isLoading && !logsQ.isError && sessions.length > 0 && rows.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+                <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-10 text-center text-sm text-zinc-500">
                   Không có buổi nào {payFilter === "paid" ? "đã đóng" : "chưa đóng"} học phí
                   {activeMonth === "all" ? "" : ` trong ${monthKeyLabel(activeMonth).toLowerCase()}`}.
                 </div>
@@ -493,20 +516,17 @@ export default function LearningLog() {
                 const tests = testsOf(a);
                 const lastTestBlank = isBlankTest(tests[tests.length - 1]);
                 return (
-                  <article key={a.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+                  <article key={a.id} className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: wash(accent, 38) }}>
+                    <header className="flex items-center justify-between gap-3 border-b px-5 py-3" style={{ background: wash(accent, 6), borderColor: wash(accent, 25) }}>
                       <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className="flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-xl text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.3)]"
-                          style={{ background: accent }}
-                        >
-                          <span className="text-[11px] font-semibold leading-none">{weekdayShort(ev?.event_date)}</span>
-                          <span className="text-base font-extrabold leading-none tabular-nums">{dayMonth(ev?.event_date)}</span>
+                        <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-xl" style={solid(accent)}>
+                          <span className="text-[11px] font-medium leading-none opacity-90">{weekdayShort(ev?.event_date)}</span>
+                          <span className="text-base font-semibold leading-none tabular-nums">{dayMonth(ev?.event_date)}</span>
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-bold text-slate-900">{cls || "Buổi học"}</div>
+                          <div className="truncate text-sm font-semibold text-zinc-900">{cls || "Buổi học"}</div>
                           {time && (
-                            <div className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-slate-500">
+                            <div className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-zinc-500">
                               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                               {time}
                             </div>
@@ -516,15 +536,15 @@ export default function LearningLog() {
                       <div className="flex shrink-0 items-center gap-2">
                         {payReady &&
                           (paid ? (
-                            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Đã đóng</span>
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Đã đóng</span>
                           ) : (
-                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Chưa đóng</span>
+                            <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-zinc-600 ring-1 ring-zinc-200">Chưa đóng</span>
                           ))}
-                        <span className="text-xs font-medium text-slate-400">Buổi {sessionNo.get(a.id)}</span>
+                        <span className="text-xs font-medium tabular-nums text-zinc-500">Buổi {sessionNo.get(a.id)}</span>
                       </div>
                     </header>
 
-                    <div className="grid gap-4 p-5 md:grid-cols-2">
+                    <div className="grid gap-5 p-5 md:grid-cols-2">
                       <LogField icon={BookOpen} label="Nội dung buổi học">
                         <Textarea
                           rows={3}
@@ -577,7 +597,7 @@ export default function LearningLog() {
                                 type="button"
                                 aria-label={`Xóa bài kiểm tra ${i + 1}`}
                                 onClick={() => removeTest(a, i)}
-                                className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 text-slate-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 ${
+                                className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 ${
                                   tests.length > 1 || !isBlankTest(t) ? "" : "invisible"
                                 }`}
                               >
@@ -589,7 +609,7 @@ export default function LearningLog() {
                             type="button"
                             disabled={lastTestBlank}
                             onClick={() => addTest(a)}
-                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-dashed border-slate-300 px-3 text-xs font-semibold text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
                           >
                             <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                             Thêm bài kiểm tra
@@ -612,7 +632,7 @@ export default function LearningLog() {
             </>
           ) : (
             !studentsQ.isLoading && (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+              <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-10 text-center text-sm text-zinc-500">
                 Chưa có học sinh nào. Thêm học sinh ở trang Học sinh để bắt đầu ghi nhật ký.
               </div>
             )
