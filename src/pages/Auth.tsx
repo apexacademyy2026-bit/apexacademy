@@ -21,9 +21,13 @@ import {
   CalendarDays,
   Receipt,
   GraduationCap,
+  ArrowUpRight,
+  CheckCircle2,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { resolveStudentColor } from "@/lib/studentColor";
+import { cn } from "@/lib/utils";
 
 /* =====================================================================
    NỘI DUNG TRANG: sửa ở đây, không cần đụng vào phần giao diện bên dưới.
@@ -136,20 +140,58 @@ const WEEK_DAYS = [
 ];
 
 /* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG (cùng hệ với trang Dashboard) ----------------
-   Bảng màu: mực navy #0B1B3A · nền trắng · viền zinc mảnh · nhấn hổ phách #FFB547 (chỉ trên nền navy).
-   Thẻ trắng viền mảnh, không đổ bóng. Duy nhất khối hero là nền navy. */
+   Bảng màu: mực navy #0B1B3A · nền trắng đặc · viền zinc mảnh · nhấn hổ phách #FFB547 (chỉ trên nền navy).
+   Thẻ phẳng, không đổ bóng. Chip, nút chuyển và ô chọn nhỏ bo tròn hết cỡ. Mảng navy đặc chỉ dùng cho hero.
+   Thẻ nền trắng đặc nên vẫn đọc tốt nếu sau này trang có hình nền. */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
 const CARD = "rounded-2xl border border-zinc-200 bg-white";
-const CHIP_BTN = "inline-flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30";
-const FIELD = "h-11 rounded-xl border-zinc-200 bg-white text-sm shadow-none focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/20";
-const SELECT = "h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm focus:border-[#0B1B3A] focus:outline-none focus:ring-2 focus:ring-[#0B1B3A]/20";
+const CARD_HOVER = "transition-colors hover:border-zinc-400/60";
+const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm font-medium text-zinc-700";
+const CHIP_BTN = `${CHIP} transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30`;
+const EYEBROW = "inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-600";
+const DARK_CHIP = "inline-flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 text-xs font-medium text-white/80";
+const NAV_LINK = "inline-flex h-9 items-center rounded-full px-3.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30";
+// Thanh chuyển hai trạng thái (Đăng nhập / Đăng ký), cùng kiểu với bộ lọc thời gian ở Dashboard
+const SEG = "flex w-full gap-0.5 rounded-full bg-zinc-100 p-1";
+const segBtn = (active: boolean) =>
+  cn(
+    "h-9 flex-1 rounded-full px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+    active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+  );
+// Nút chọn một trong nhiều (khối lớp)
+const pillBtn = (active: boolean) =>
+  cn(
+    "h-9 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+    active ? "border-[#0B1B3A] bg-[#0B1B3A] text-white" : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+  );
+const SECTION = "mx-auto max-w-7xl scroll-mt-28 px-4 pt-20 sm:px-6 sm:pt-24 lg:px-8";
+const BLOCK = "space-y-4 rounded-2xl border border-zinc-200 p-4 sm:p-5";
+const FIELD = "h-11 rounded-xl border-zinc-200 bg-white text-sm shadow-none focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/10";
+const SELECT = "h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm focus:border-[#0B1B3A] focus:outline-none focus:ring-2 focus:ring-[#0B1B3A]/10";
 const LABEL = "text-sm font-medium text-zinc-700";
 const PRIMARY = "bg-[#0B1B3A] text-white shadow-none hover:bg-[#13285a]";
 const OUTLINE = "border-zinc-200 bg-white text-zinc-700 shadow-none hover:bg-zinc-50";
-const CLOSE = "absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-800";
+const CLOSE = "absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-800";
 const FOCUS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2";
 const MODAL = "relative w-full overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-xl animate-scale-up";
 const H2 = "text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl";
 const ICON_TILE = "grid shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700";
+
+// Các mục trên thanh điều hướng (cuộn tới phần tương ứng)
+const NAV = [
+  { id: "features", label: "Hệ thống học tập" },
+  { id: "classes", label: "Chương trình" },
+  { id: "workflow", label: "Lộ trình" },
+  { id: "teacher", label: "Giáo viên" },
+  { id: "feedbacks", label: "Cảm nhận" },
+];
+// Biểu tượng cho các thẻ số liệu ở đầu trang (theo thứ tự SITE.stats)
+const STAT_ICONS = [Users, CheckCircle2, GraduationCap, Receipt];
+// Khối lớp trong form học thử. Giá trị lưu giữ nguyên như bản chọn trong danh sách cũ.
+const GRADE_OPTIONS = [
+  ...[6, 7, 8, 9, 10, 11, 12].map((n) => ({ value: `Lớp ${n}`, label: `Lớp ${n}` })),
+  { value: "Luyện thi Đại học", label: "Ôn thi Đại học / Khác" },
+];
 
 // Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền bất kỳ
 const inkOn = (c: string) => {
@@ -166,12 +208,24 @@ const solid = (c: string): CSSProperties => ({
   boxShadow: `0 8px 18px -8px ${c}`,
 });
 
+// Đầu mỗi bước trong form: số thứ tự + tiêu đề
 const StepHead = ({ n, title, icon: Icon }: { n: number; title: string; icon?: any }) => (
   <div className="flex items-center gap-2.5">
     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#0B1B3A] text-xs font-semibold text-white">{n}</span>
     <h4 className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900">
       {Icon && <Icon className="h-4 w-4 text-zinc-400" />} {title}
     </h4>
+  </div>
+);
+
+// Đầu mỗi phần của trang: nhãn nhỏ có icon, tiêu đề, mô tả
+const SectionHead = ({ icon: Icon, eyebrow, title, body }: { icon: any; eyebrow: string; title: string; body?: string }) => (
+  <div className="max-w-2xl">
+    <span className={EYEBROW}>
+      <Icon className="h-3.5 w-3.5 text-zinc-400" aria-hidden /> {eyebrow}
+    </span>
+    <h2 className={`${H2} mt-4`}>{title}</h2>
+    {body && <p className="mt-3 text-base leading-relaxed text-zinc-500">{body}</p>}
   </div>
 );
 
@@ -485,47 +539,60 @@ export default function ClassLandingPage() {
   const openConsult = () => setShowConsultModal(true);
 
   return (
-    <div className="min-h-screen w-full bg-zinc-50 font-['Be_Vietnam_Pro',sans-serif] text-zinc-900 antialiased selection:bg-[#0B1B3A] selection:text-white">
+    <div className={cn("relative isolate min-h-screen w-full bg-zinc-50 text-zinc-900 antialiased selection:bg-[#0B1B3A] selection:text-white", FONT)}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
         @keyframes apex-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
         @keyframes apex-fill { from { opacity: 0; } to { opacity: 1; } }
         .apex-curve { stroke-dasharray: 1; animation: apex-draw 1.6s cubic-bezier(.4,0,.2,1) .3s both; }
         .apex-area { animation: apex-fill .8s ease-out 1.3s both; }
+        /* Giấy kẻ ô mờ ở đầu trang, gợi hệ trục tọa độ, tan dần xuống dưới */
+        .apex-grid {
+          background-image:
+            linear-gradient(to right, rgb(24 24 27 / .055) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(24 24 27 / .055) 1px, transparent 1px);
+          background-size: 40px 40px;
+          -webkit-mask-image: radial-gradient(ellipse 75% 100% at 50% 0%, #000 35%, transparent 78%);
+          mask-image: radial-gradient(ellipse 75% 100% at 50% 0%, #000 35%, transparent 78%);
+        }
+        /* Khoảng đệm phía trên thanh header: trên điện thoại giữ tối thiểu 2.5rem để không bị tai thỏ / Dynamic Island che */
+        .apex-safe-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+        @media (max-width: 767px) { .apex-safe-top { padding-top: max(2.5rem, env(safe-area-inset-top)); } }
         @media (prefers-reduced-motion: reduce) { .apex-curve, .apex-area { animation: none; } }
       `}</style>
 
-      {/* 1. THANH HEADER - Đẩy xuống tránh khuất bởi Dynamic Island / Tai thỏ */}
-      <header
-        className="sticky top-0 z-40 w-full border-b border-zinc-200 bg-white/90 backdrop-blur-md"
-        style={{
-          paddingTop: "max(2.5rem, env(safe-area-inset-top))", // Tạo khoảng đệm tối thiểu ở mép trên
-        }}
-      >
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} className={`flex items-center gap-2.5 rounded-lg ${FOCUS}`}>
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0B1B3A] text-lg font-semibold text-[#FFB547]">A</span>
-            <span className="text-lg font-semibold tracking-tight text-zinc-900">{SITE.brand}</span>
+      <div aria-hidden className="apex-grid pointer-events-none absolute inset-x-0 top-0 -z-10 h-[36rem]" />
+
+      {/* 1. HEADER: thanh nổi bo tròn, nền trắng mờ */}
+      <header className="apex-safe-top sticky top-0 z-40 w-full px-3 pb-2 sm:px-4">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-3 rounded-full border border-zinc-200 bg-white/90 px-2 backdrop-blur-md sm:pl-3">
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            className={cn("flex items-center gap-2.5 rounded-full py-1 pr-2", FOCUS)}
+          >
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#0B1B3A] text-base font-semibold text-[#FFB547]">A</span>
+            <span className="hidden text-base font-semibold tracking-tight text-zinc-900 min-[420px]:inline">{SITE.brand}</span>
           </button>
 
-          <nav className="hidden items-center gap-7 text-sm font-medium text-zinc-600 lg:flex">
-            <button type="button" onClick={() => scrollToId("features")} className="transition-colors hover:text-zinc-900">Hệ thống học tập</button>
-            <button type="button" onClick={() => scrollToId("classes")} className="transition-colors hover:text-zinc-900">Chương trình</button>
-            <button type="button" onClick={() => scrollToId("workflow")} className="transition-colors hover:text-zinc-900">Lộ trình</button>
-            <button type="button" onClick={() => scrollToId("teacher")} className="transition-colors hover:text-zinc-900">Giáo viên</button>
-            <button type="button" onClick={() => scrollToId("feedbacks")} className="transition-colors hover:text-zinc-900">Cảm nhận</button>
-            <Link to="/lop-hoc" className="transition-colors hover:text-zinc-900">Lịch và học phí</Link>
+          <nav className="hidden items-center gap-0.5 lg:flex">
+            {NAV.map((n) => (
+              <button key={n.id} type="button" onClick={() => scrollToId(n.id)} className={NAV_LINK}>
+                {n.label}
+              </button>
+            ))}
+            <Link to="/lop-hoc" className={NAV_LINK}>Lịch và học phí</Link>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Button
               variant="outline"
               onClick={() => { setAuthMode("login"); setShowAuthModal(true); }}
-              className={`h-10 rounded-xl px-4 text-sm font-semibold ${OUTLINE}`}
+              className={cn("h-10 rounded-full px-4 text-sm font-semibold", OUTLINE)}
             >
               Đăng nhập
             </Button>
-            <Button onClick={openConsult} className={`h-10 rounded-xl px-4 text-sm font-semibold ${PRIMARY}`}>
+            <Button onClick={openConsult} className={cn("h-10 rounded-full px-4 text-sm font-semibold", PRIMARY)}>
               Đăng ký
             </Button>
           </div>
@@ -533,97 +600,128 @@ export default function ClassLandingPage() {
       </header>
 
       <main>
-        {/* 2. HERO: khối navy duy nhất của trang */}
-        <section className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 lg:px-8">
-          <div className="relative grid items-center gap-10 overflow-hidden rounded-2xl bg-[#0B1B3A] px-6 py-12 sm:px-12 sm:py-16 lg:grid-cols-12">
-            <div className="relative space-y-6 text-center lg:col-span-7 lg:text-left">
-              <p className="text-sm font-medium text-white/60">Lớp Toán THPT, học trực tuyến</p>
-              <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-white sm:text-5xl">
-                Học Toán tư duy, làm chủ điểm 9, 10
-              </h1>
-              <p className="mx-auto max-w-xl text-base leading-relaxed text-white/70 sm:text-lg lg:mx-0">
-                Không học vẹt, không học mẹo. Lớp học trực tuyến giúp học sinh rèn tư duy sâu và nắm bản chất cấu trúc đề thi, để bứt phá thứ hạng trên lớp.
-              </p>
-              <div className="flex flex-col items-center gap-3 pt-2 sm:flex-row lg:justify-start">
-                <Button
-                  onClick={openConsult}
-                  className="h-12 w-full rounded-xl bg-[#FFB547] px-7 text-base font-semibold text-[#0B1B3A] shadow-none hover:bg-[#ffc266] sm:w-auto"
-                >
-                  Đăng ký học thử
-                </Button>
-                <Button
-                  asChild
-                  variant="outline"
-                  className="h-12 w-full rounded-xl border-white/25 bg-transparent px-6 text-base font-semibold text-white shadow-none hover:bg-white/10 hover:text-white sm:w-auto"
-                >
-                  <Link to="/lop-hoc">Xem lịch và học phí</Link>
-                </Button>
+        {/* 2. HERO: khối navy duy nhất của trang + thẻ đồ thị + ba thẻ số liệu */}
+        <section className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
+          <div className="grid gap-4 lg:grid-cols-12">
+            <div className="relative flex flex-col justify-center overflow-hidden rounded-3xl bg-[#0B1B3A] px-6 py-12 sm:px-10 sm:py-14 lg:col-span-7 lg:px-12 lg:py-16">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -bottom-24 -right-4 hidden select-none font-serif text-[22rem] italic leading-none text-white/[0.04] sm:block"
+              >
+                ∫
+              </span>
+              <div className="relative space-y-6">
+                <span className={DARK_CHIP}>Lớp Toán THPT, học trực tuyến</span>
+                <h1 className="max-w-2xl text-4xl font-semibold leading-[1.1] tracking-tight text-white sm:text-5xl">
+                  Học Toán tư duy, làm chủ điểm 9, 10
+                </h1>
+                <p className="max-w-xl text-base leading-relaxed text-white/70 sm:text-lg">
+                  Không học vẹt, không học mẹo. Lớp học trực tuyến giúp học sinh rèn tư duy sâu và nắm bản chất cấu trúc đề thi, để bứt phá thứ hạng trên lớp.
+                </p>
+                <div className="flex flex-col gap-3 pt-1 sm:flex-row">
+                  <Button
+                    onClick={openConsult}
+                    className="h-12 w-full rounded-full bg-[#FFB547] px-7 text-base font-semibold text-[#0B1B3A] shadow-none hover:bg-[#ffc266] sm:w-auto"
+                  >
+                    Đăng ký học thử
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="h-12 w-full rounded-full border-white/25 bg-transparent px-6 text-base font-semibold text-white shadow-none hover:bg-white/10 hover:text-white sm:w-auto"
+                  >
+                    <Link to="/lop-hoc">Xem lịch và học phí</Link>
+                  </Button>
+                </div>
+                <ul className="flex flex-wrap gap-2 pt-2">
+                  {[`Lớp ${GRADES.map((g) => g.grade).join(", ")}`, "Học trực tuyến", "Có video xem lại"].map((c) => (
+                    <li key={c} className={DARK_CHIP}>
+                      <Check className="h-3.5 w-3.5 text-[#FFB547]" aria-hidden /> {c}
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <dl className="flex justify-center gap-10 pt-4 lg:justify-start">
-                {SITE.stats.map((s) => (
-                  <div key={s.label} className="text-left">
-                    <dd className="text-2xl font-semibold tabular-nums text-white">{s.value}</dd>
-                    <dt className="text-xs text-white/60">{s.label}</dt>
-                  </div>
-                ))}
-              </dl>
             </div>
 
             {/* Đồ thị y = sin x: diện tích dưới đường cong từ 0 đến π */}
-            <div className="relative flex justify-center lg:col-span-5">
-              <figure className="w-full max-w-[400px] rounded-2xl bg-white p-5">
-                <svg viewBox="0 0 360 240" role="img" aria-label="Đồ thị hàm số y bằng sin x, phần diện tích từ 0 đến π được tô màu" className="block h-auto w-full">
-                  {Array.from({ length: 9 }, (_, k) => (
-                    <line key={`v${k}`} x1={GX + (k * GW) / 8} x2={GX + (k * GW) / 8} y1={GY - GA - 14} y2={GY + GA + 14} stroke="#E4E4E7" strokeWidth="1" />
-                  ))}
-                  {[-GA, -GA / 2, GA / 2, GA].map((dy) => (
-                    <line key={dy} x1={GX} x2={GX + GW} y1={GY + dy} y2={GY + dy} stroke="#E4E4E7" strokeWidth="1" />
-                  ))}
-                  <path className="apex-area" d={AREA} fill="#FFB547" fillOpacity="0.4" />
-                  <line x1={GX - 14} x2={GX + GW + 16} y1={GY} y2={GY} stroke="#0B1B3A" strokeWidth="1.5" />
-                  <line x1={GX} x2={GX} y1={GY - GA - 18} y2={GY + GA + 18} stroke="#0B1B3A" strokeWidth="1.5" />
-                  <path className="apex-curve" d={CURVE} pathLength={1} fill="none" stroke="#0B1B3A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  <line x1={GX + GW / 2} x2={GX + GW / 2} y1={GY - 6} y2={GY + 6} stroke="#0B1B3A" strokeWidth="1.5" />
-                  <g fontSize="12" fill="#71717A" fontStyle="italic" fontFamily="Georgia, 'Times New Roman', serif">
-                    <text x={GX - 12} y={GY + 16}>O</text>
-                    <text x={GX + GW / 2 - 4} y={GY + 22}>π</text>
-                    <text x={GX + GW - 8} y={GY + 22}>2π</text>
-                    <text x={GX - 18} y={GY - GA + 4}>1</text>
-                    <text x={GX - 24} y={GY + GA + 4}>−1</text>
-                    <text x={GX + GW - 40} y={GY - GA - 4} fill="#0B1B3A" fontWeight="bold">y = sin x</text>
-                  </g>
-                </svg>
-                <figcaption className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-zinc-100 pt-3">
-                  <span className="font-serif text-xl italic text-[#0B1B3A]">
-                    ∫<sub className="text-xs not-italic">0</sub>
-                    <sup className="text-xs not-italic">π</sup> sin x dx = 2
-                  </span>
-                  <span className="text-sm text-zinc-500">Diện tích dưới đường cong bằng 2</span>
-                </figcaption>
-              </figure>
-            </div>
+            <figure className={cn(CARD, "flex flex-col justify-center p-5 sm:p-7 lg:col-span-5")}>
+              <svg viewBox="0 0 360 240" role="img" aria-label="Đồ thị hàm số y bằng sin x, phần diện tích từ 0 đến π được tô màu" className="mx-auto block h-auto w-full max-w-[440px]">
+                {Array.from({ length: 9 }, (_, k) => (
+                  <line key={`v${k}`} x1={GX + (k * GW) / 8} x2={GX + (k * GW) / 8} y1={GY - GA - 14} y2={GY + GA + 14} stroke="#E4E4E7" strokeWidth="1" />
+                ))}
+                {[-GA, -GA / 2, GA / 2, GA].map((dy) => (
+                  <line key={dy} x1={GX} x2={GX + GW} y1={GY + dy} y2={GY + dy} stroke="#E4E4E7" strokeWidth="1" />
+                ))}
+                <path className="apex-area" d={AREA} fill="#FFB547" fillOpacity="0.4" />
+                <line x1={GX - 14} x2={GX + GW + 16} y1={GY} y2={GY} stroke="#0B1B3A" strokeWidth="1.5" />
+                <line x1={GX} x2={GX} y1={GY - GA - 18} y2={GY + GA + 18} stroke="#0B1B3A" strokeWidth="1.5" />
+                <path className="apex-curve" d={CURVE} pathLength={1} fill="none" stroke="#0B1B3A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <line x1={GX + GW / 2} x2={GX + GW / 2} y1={GY - 6} y2={GY + 6} stroke="#0B1B3A" strokeWidth="1.5" />
+                <g fontSize="12" fill="#71717A" fontStyle="italic" fontFamily="Georgia, 'Times New Roman', serif">
+                  <text x={GX - 12} y={GY + 16}>O</text>
+                  <text x={GX + GW / 2 - 4} y={GY + 22}>π</text>
+                  <text x={GX + GW - 8} y={GY + 22}>2π</text>
+                  <text x={GX - 18} y={GY - GA + 4}>1</text>
+                  <text x={GX - 24} y={GY + GA + 4}>−1</text>
+                  <text x={GX + GW - 40} y={GY - GA - 4} fill="#0B1B3A" fontWeight="bold">y = sin x</text>
+                </g>
+              </svg>
+              <figcaption className="mt-4 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-zinc-100 pt-4">
+                <span className="font-serif text-xl italic text-[#0B1B3A]">
+                  ∫<sub className="text-xs not-italic">0</sub>
+                  <sup className="text-xs not-italic">π</sup> sin x dx = 2
+                </span>
+                <span className="text-sm text-zinc-500">Diện tích dưới đường cong bằng 2</span>
+              </figcaption>
+            </figure>
+          </div>
+
+          {/* Thẻ số liệu: cùng kiểu thẻ số liệu của Dashboard */}
+          <div className="mt-4 grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(14rem, 1fr))" }}>
+            {SITE.stats.map((s, i) => {
+              const Icon = STAT_ICONS[i % STAT_ICONS.length];
+              return (
+                <dl key={s.label} className={cn(CARD, "flex flex-col justify-between gap-6 p-5 sm:p-6")}>
+                  <dt className="flex items-center justify-between gap-3 text-sm font-medium text-zinc-500">
+                    {s.label}
+                    <Icon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+                  </dt>
+                  <dd className="text-3xl font-semibold tabular-nums tracking-tight text-zinc-900">{s.value}</dd>
+                </dl>
+              );
+            })}
+            <Link to="/lop-hoc" className={cn("group block rounded-2xl", FOCUS)}>
+              <div className={cn(CARD, CARD_HOVER, "flex h-full flex-col justify-between gap-6 p-5 sm:p-6")}>
+                <div className="flex items-center justify-between gap-3 text-sm font-medium text-zinc-500">
+                  Lịch và học phí
+                  <CalendarDays className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-2xl font-semibold leading-9 tracking-tight text-zinc-900">Xem các lớp đang mở</span>
+                  <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-900" aria-hidden />
+                </div>
+              </div>
+            </Link>
           </div>
         </section>
 
         {/* 3. HỆ THỐNG HỌC TẬP */}
-        <section id="features" className="mx-auto grid max-w-7xl scroll-mt-28 gap-8 px-4 pt-24 sm:px-6 md:grid-cols-12 md:gap-12 lg:px-8">
-          <div className="md:col-span-4">
-            <div className="md:sticky md:top-32">
-              <h2 className={H2}>Mọi thứ cho việc học nằm trong một tài khoản</h2>
-              <p className="mt-3 max-w-sm text-base leading-relaxed text-zinc-500">
-                Học sinh vào lớp, làm bài, xem lịch và theo dõi học phí ngay trên cùng một nền tảng.
-              </p>
-            </div>
-          </div>
-          <ul className={`${CARD} divide-y divide-zinc-100 px-6 md:col-span-8`}>
+        <section id="features" className={SECTION}>
+          <SectionHead
+            icon={Video}
+            eyebrow="Hệ thống học tập"
+            title="Mọi thứ cho việc học nằm trong một tài khoản"
+            body="Học sinh vào lớp, làm bài, xem lịch và theo dõi học phí ngay trên cùng một nền tảng."
+          />
+          <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map((f) => (
-              <li key={f.title} className="flex items-start gap-4 py-6">
-                <span className={`${ICON_TILE} h-11 w-11`}>
+              <li key={f.title} className={cn(CARD, CARD_HOVER, "flex flex-col gap-5 p-6")}>
+                <span className={cn(ICON_TILE, "h-11 w-11")}>
                   <f.icon className="h-5 w-5" aria-hidden />
                 </span>
                 <div>
                   <h3 className="text-base font-semibold text-zinc-900">{f.title}</h3>
-                  <p className="mt-1 max-w-lg text-sm leading-relaxed text-zinc-500">{f.body}</p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">{f.body}</p>
                 </div>
               </li>
             ))}
@@ -631,74 +729,86 @@ export default function ClassLandingPage() {
         </section>
 
         {/* 4. CHƯƠNG TRÌNH BA KHỐI THPT */}
-        <section id="classes" className="mx-auto max-w-7xl scroll-mt-28 px-4 pt-24 sm:px-6 lg:px-8">
-          <div className="max-w-2xl">
-            <h2 className={H2}>Chương trình Toán ba khối THPT</h2>
-            <p className="mt-3 text-base leading-relaxed text-zinc-500">
-              Nội dung bám sát chương trình Toán lớp 10, 11 và 12. Lịch học và học phí các lớp đang mở có ở trang Lịch và học phí.
-            </p>
-          </div>
+        <section id="classes" className={SECTION}>
+          <SectionHead
+            icon={GraduationCap}
+            eyebrow="Chương trình"
+            title="Chương trình Toán ba khối THPT"
+            body="Nội dung bám sát chương trình Toán lớp 10, 11 và 12. Lịch học và học phí các lớp đang mở có ở trang Lịch và học phí."
+          />
 
           <div className="mt-10 grid gap-4 lg:grid-cols-3">
             {GRADES.map((g) => (
-              <article key={g.grade} className={`${CARD} p-6 sm:p-7`}>
-                <div className="flex items-center gap-3.5">
+              <article key={g.grade} className={cn(CARD, CARD_HOVER, "overflow-hidden")}>
+                <div className="flex items-center gap-3.5 px-6 py-5 sm:px-7" style={{ background: g.tint }}>
                   <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl text-lg font-semibold tabular-nums" style={solid(g.color)}>
                     {g.grade}
                   </span>
                   <div className="min-w-0">
-                    <h3 className="text-xl font-semibold tracking-tight text-zinc-900">Lớp {g.grade}</h3>
-                    <span className="mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium" style={{ background: g.tint, color: g.ink }}>{g.title}</span>
+                    <h3 className="text-xl font-semibold tracking-tight" style={{ color: g.ink }}>Lớp {g.grade}</h3>
+                    <p className="text-sm font-medium" style={{ color: g.ink }}>{g.title}</p>
                   </div>
                 </div>
-                <p className="mt-4 text-sm leading-relaxed text-zinc-500">{g.goal}</p>
 
-                <h4 className="mt-6 text-sm font-semibold text-zinc-900">Nội dung trọng tâm</h4>
-                <ul className="mt-3 space-y-2">
-                  {g.topics.map((t) => (
-                    <li key={t} className="flex items-start gap-2.5 text-sm leading-snug text-zinc-700">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: g.color }} aria-hidden />
-                      {t}
-                    </li>
-                  ))}
-                </ul>
+                <div className="p-6 sm:p-7">
+                  <p className="text-sm leading-relaxed text-zinc-500">{g.goal}</p>
+
+                  <h4 className="mt-6 text-sm font-semibold text-zinc-900">Nội dung trọng tâm</h4>
+                  <ul className="mt-3 space-y-2">
+                    {g.topics.map((t) => (
+                      <li key={t} className="flex items-start gap-2.5 text-sm leading-snug text-zinc-700">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0" style={{ color: g.color }} aria-hidden />
+                        {t}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </article>
             ))}
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button onClick={openConsult} className={`h-11 rounded-xl px-5 text-sm font-semibold ${PRIMARY}`}>
+            <Button onClick={openConsult} className={cn("h-11 rounded-full px-6 text-sm font-semibold", PRIMARY)}>
               Đăng ký học thử
             </Button>
-            <Button asChild variant="outline" className={`h-11 rounded-xl px-5 text-sm font-semibold ${OUTLINE}`}>
+            <Button asChild variant="outline" className={cn("h-11 rounded-full px-6 text-sm font-semibold", OUTLINE)}>
               <Link to="/lop-hoc">Xem lịch và học phí</Link>
             </Button>
           </div>
         </section>
 
         {/* 5. LỘ TRÌNH 3 BƯỚC */}
-        <section id="workflow" className="mx-auto max-w-7xl scroll-mt-28 px-4 pt-24 sm:px-6 lg:px-8">
-          <div className="max-w-2xl">
-            <h2 className={H2}>Lộ trình học cá nhân hóa</h2>
-            <p className="mt-3 text-base leading-relaxed text-zinc-500">
-              Ba bước giúp học sinh từ mất gốc đến đạt điểm số mong muốn nhanh nhất.
-            </p>
-          </div>
+        <section id="workflow" className={SECTION}>
+          <SectionHead
+            icon={CalendarDays}
+            eyebrow="Lộ trình"
+            title="Lộ trình học cá nhân hóa"
+            body="Ba bước giúp học sinh từ mất gốc đến đạt điểm số mong muốn nhanh nhất."
+          />
 
           <ol className="mt-10 grid gap-4 md:grid-cols-3">
-            {STEPS.map((st) => (
-              <li key={st.n} className={`${CARD} p-6 sm:p-7`}>
-                <span className="grid h-10 w-10 place-items-center rounded-full bg-[#0B1B3A] text-sm font-semibold text-[#FFB547]">{st.n}</span>
-                <h3 className="mt-5 text-lg font-semibold text-zinc-900">{st.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-500">{st.body}</p>
+            {STEPS.map((st, i) => (
+              <li key={st.n} className={cn(CARD, CARD_HOVER, "flex flex-col gap-5 p-6 sm:p-7")}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="grid h-10 w-10 place-items-center rounded-full bg-[#0B1B3A] text-sm font-semibold text-[#FFB547]">{st.n}</span>
+                  <span className="flex gap-1" aria-hidden>
+                    {STEPS.map((_, k) => (
+                      <span key={k} className={cn("h-1.5 w-8 rounded-full", k <= i ? "bg-[#0B1B3A]" : "bg-zinc-200")} />
+                    ))}
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900">{st.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-500">{st.body}</p>
+                </div>
               </li>
             ))}
           </ol>
         </section>
 
         {/* 6. GIÁO VIÊN */}
-        <section id="teacher" className="mx-auto max-w-7xl scroll-mt-28 px-4 pt-24 sm:px-6 lg:px-8">
-          <div className={`${CARD} grid gap-10 overflow-hidden p-6 sm:p-10 lg:grid-cols-12 lg:gap-14`}>
+        <section id="teacher" className={SECTION}>
+          <div className={cn(CARD, "grid gap-8 overflow-hidden p-5 sm:p-8 lg:grid-cols-12 lg:gap-12")}>
             <div className="lg:col-span-4">
               {SITE.teacher.photo ? (
                 <img src={SITE.teacher.photo} alt={SITE.teacher.name || "Giáo viên"} className="aspect-[4/5] w-full rounded-2xl object-cover" />
@@ -716,7 +826,10 @@ export default function ClassLandingPage() {
             </div>
 
             <div className="lg:col-span-8">
-              <h2 className={H2}>Dạy để học sinh tự nghĩ ra cách làm</h2>
+              <span className={EYEBROW}>
+                <Users className="h-3.5 w-3.5 text-zinc-400" aria-hidden /> Giáo viên
+              </span>
+              <h2 className={`${H2} mt-4`}>Dạy để học sinh tự nghĩ ra cách làm</h2>
               <div className="mt-4 max-w-2xl space-y-4 text-base leading-relaxed text-zinc-500">
                 <p>
                   Với thầy, học Toán không phải là nhớ thật nhiều công thức. Một bài toán khó sẽ dễ lại khi học sinh nhìn ra được bản chất của nó, và sự tự tin đến từ đó.
@@ -726,11 +839,11 @@ export default function ClassLandingPage() {
                 </p>
               </div>
 
-              <ul className="mt-8 divide-y divide-zinc-100 border-y border-zinc-100">
+              <ul className="mt-8 grid gap-3 sm:grid-cols-2">
                 {PILLARS.map((p) => (
-                  <li key={p.title} className="grid gap-1 py-4 sm:grid-cols-[15rem_1fr] sm:gap-6">
+                  <li key={p.title} className="rounded-xl border border-zinc-200 p-4">
                     <h3 className="text-sm font-semibold text-zinc-900">{p.title}</h3>
-                    <p className="text-sm leading-relaxed text-zinc-500">{p.body}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-zinc-500">{p.body}</p>
                   </li>
                 ))}
               </ul>
@@ -759,16 +872,17 @@ export default function ClassLandingPage() {
         </section>
 
         {/* 7. CẢM NHẬN */}
-        <section id="feedbacks" className="mx-auto max-w-7xl scroll-mt-28 px-4 pt-24 sm:px-6 lg:px-8">
-          <div className="max-w-2xl">
-            <h2 className={H2}>Học sinh nói gì về lớp</h2>
-          </div>
+        <section id="feedbacks" className={SECTION}>
+          <SectionHead icon={MessageSquare} eyebrow="Cảm nhận" title="Học sinh nói gì về lớp" />
           <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
             {FEEDBACKS.map((f) => {
               const color = String(resolveStudentColor(null, f.name));
               return (
-                <figure key={f.name} className={`${CARD} flex flex-col justify-between gap-6 p-6 sm:p-7`}>
-                  <blockquote className="text-base leading-relaxed text-zinc-700">"{f.quote}"</blockquote>
+                <figure key={f.name} className={cn(CARD, CARD_HOVER, "flex flex-col justify-between gap-5 p-6 sm:p-7")}>
+                  <div>
+                    <span aria-hidden className="block font-serif text-6xl leading-none text-zinc-300">“</span>
+                    <blockquote className="-mt-2 text-base leading-relaxed text-zinc-700">{f.quote}</blockquote>
+                  </div>
                   <figcaption className="flex items-center gap-3 border-t border-zinc-100 pt-4">
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-semibold" style={solid(color)}>{f.initials}</div>
                     <div className="min-w-0">
@@ -783,120 +897,122 @@ export default function ClassLandingPage() {
         </section>
 
         {/* 8. KÊU GỌI HÀNH ĐỘNG */}
-        <section className="mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6 lg:px-8">
-          <div className={`${CARD} px-6 py-12 text-center sm:px-12 sm:py-14`}>
-            <div className="mx-auto max-w-2xl">
+        <section className="mx-auto max-w-7xl px-4 pb-6 pt-20 sm:px-6 sm:pt-24 lg:px-8">
+          <div className={cn(CARD, "flex flex-col gap-8 p-6 sm:p-10 lg:flex-row lg:items-center lg:justify-between")}>
+            <div className="max-w-xl">
               <h2 className={H2}>Bắt đầu bằng một buổi học thử</h2>
               <p className="mt-3 text-base leading-relaxed text-zinc-500">
                 Điền form ngắn, thầy cô sẽ liên hệ qua Gmail để xếp lớp và gửi đề thi cho bạn.
               </p>
-              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Button onClick={openConsult} className={`h-12 w-full rounded-xl px-7 text-base font-semibold sm:w-auto ${PRIMARY}`}>
-                  Đăng ký học thử
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => { setAuthMode("login"); setShowAuthModal(true); }}
-                  className={`h-12 w-full rounded-xl px-6 text-base font-semibold sm:w-auto ${OUTLINE}`}
-                >
-                  Đăng nhập học viên
-                </Button>
-              </div>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row lg:shrink-0">
+              <Button onClick={openConsult} className={cn("h-12 w-full rounded-full px-7 text-base font-semibold sm:w-auto", PRIMARY)}>
+                Đăng ký học thử
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => { setAuthMode("login"); setShowAuthModal(true); }}
+                className={cn("h-12 w-full rounded-full px-6 text-base font-semibold sm:w-auto", OUTLINE)}
+              >
+                Đăng nhập học viên
+              </Button>
             </div>
           </div>
         </section>
       </main>
 
-      {/* 9. FOOTER */}
-      <footer className="border-t border-zinc-200 bg-white">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr] md:gap-12 lg:px-8">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0B1B3A] text-lg font-semibold text-[#FFB547]">A</span>
-              <span className="text-lg font-semibold tracking-tight text-zinc-900">{SITE.brand}</span>
+      {/* 9. FOOTER: thẻ bo góc cùng kiểu các khối khác */}
+      <footer className="mx-auto max-w-7xl px-4 pb-6 sm:px-6 lg:px-8">
+        <div className={cn(CARD, "overflow-hidden")}>
+          <div className="grid gap-10 p-6 sm:p-10 md:grid-cols-[1.4fr_1fr_1fr] md:gap-12">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-[#0B1B3A] text-base font-semibold text-[#FFB547]">A</span>
+                <span className="text-lg font-semibold tracking-tight text-zinc-900">{SITE.brand}</span>
+              </div>
+              <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-500">
+                Lớp Toán THPT, rèn tư duy bản chất và luyện đề theo cấu trúc đề thi. Đồng hành cùng học sinh lớp 10, 11 và 12.
+              </p>
             </div>
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-zinc-500">
-              Lớp Toán THPT, rèn tư duy bản chất và luyện đề theo cấu trúc đề thi. Đồng hành cùng học sinh lớp 10, 11 và 12.
+
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900">Thông tin liên hệ</h3>
+              <ul className="mt-4 space-y-2.5 text-sm text-zinc-600">
+                {phoneHref && (
+                  <li>
+                    <a href={phoneHref} className={`inline-flex items-center gap-2.5 ${FOOT_LINK}`}>
+                      <Phone className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> {phoneLabel}
+                    </a>
+                  </li>
+                )}
+                {zaloHref && (
+                  <li>
+                    <a href={zaloHref} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-2.5 ${FOOT_LINK}`}>
+                      <MessageCircle className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> Nhắn Zalo
+                    </a>
+                  </li>
+                )}
+                {facebookHref && (
+                  <li>
+                    <a href={facebookHref} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-2.5 ${FOOT_LINK}`}>
+                      <FacebookIcon className="h-4 w-4 shrink-0 text-zinc-400" /> Facebook
+                    </a>
+                  </li>
+                )}
+                {(addressText || mapsHref) && (
+                  <li>
+                    {mapsHref ? (
+                      <a
+                        href={mapsHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`${addressText || "Địa chỉ lớp"}, mở Google Maps`}
+                        className={`inline-flex items-start gap-2.5 ${FOOT_LINK}`}
+                      >
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> {addressText || "Xem trên Google Maps"}
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-start gap-2.5">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> {addressText}
+                      </span>
+                    )}
+                  </li>
+                )}
+                {!hasContact && <li className="text-zinc-500">Liên hệ qua form đăng ký học thử ở trên.</li>}
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900">Liên kết nhanh</h3>
+              <ul className="mt-4 space-y-2.5 text-sm text-zinc-600">
+                <li><button type="button" onClick={() => scrollToId("classes")} className={FOOT_LINK}>Chương trình</button></li>
+                <li><button type="button" onClick={() => scrollToId("workflow")} className={FOOT_LINK}>Lộ trình học</button></li>
+                <li><button type="button" onClick={() => scrollToId("teacher")} className={FOOT_LINK}>Giáo viên</button></li>
+                <li><Link to="/lop-hoc" className={FOOT_LINK}>Lịch và học phí</Link></li>
+                <li><button type="button" onClick={() => { setAuthMode("login"); setShowAuthModal(true); }} className={FOOT_LINK}>Đăng nhập học viên</button></li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="border-t border-zinc-100 px-6 py-4 sm:px-10">
+            <p className="text-center text-xs text-zinc-500">
+              © {new Date().getFullYear()} {SITE.brand}{addressText && `. ${addressText}`}.
             </p>
           </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-900">Thông tin liên hệ</h3>
-            <ul className="mt-4 space-y-2.5 text-sm text-zinc-600">
-              {phoneHref && (
-                <li>
-                  <a href={phoneHref} className={`inline-flex items-center gap-2.5 ${FOOT_LINK}`}>
-                    <Phone className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> {phoneLabel}
-                  </a>
-                </li>
-              )}
-              {zaloHref && (
-                <li>
-                  <a href={zaloHref} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-2.5 ${FOOT_LINK}`}>
-                    <MessageCircle className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> Nhắn Zalo
-                  </a>
-                </li>
-              )}
-              {facebookHref && (
-                <li>
-                  <a href={facebookHref} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-2.5 ${FOOT_LINK}`}>
-                    <FacebookIcon className="h-4 w-4 shrink-0 text-zinc-400" /> Facebook
-                  </a>
-                </li>
-              )}
-              {(addressText || mapsHref) && (
-                <li>
-                  {mapsHref ? (
-                    <a
-                      href={mapsHref}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`${addressText || "Địa chỉ lớp"}, mở Google Maps`}
-                      className={`inline-flex items-start gap-2.5 ${FOOT_LINK}`}
-                    >
-                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> {addressText || "Xem trên Google Maps"}
-                    </a>
-                  ) : (
-                    <span className="inline-flex items-start gap-2.5">
-                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden /> {addressText}
-                    </span>
-                  )}
-                </li>
-              )}
-              {!hasContact && <li className="text-zinc-500">Liên hệ qua form đăng ký học thử ở trên.</li>}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-zinc-900">Liên kết nhanh</h3>
-            <ul className="mt-4 space-y-2.5 text-sm text-zinc-600">
-              <li><button type="button" onClick={() => scrollToId("classes")} className={FOOT_LINK}>Chương trình</button></li>
-              <li><button type="button" onClick={() => scrollToId("workflow")} className={FOOT_LINK}>Lộ trình học</button></li>
-              <li><button type="button" onClick={() => scrollToId("teacher")} className={FOOT_LINK}>Giáo viên</button></li>
-              <li><Link to="/lop-hoc" className={FOOT_LINK}>Lịch và học phí</Link></li>
-              <li><button type="button" onClick={() => { setAuthMode("login"); setShowAuthModal(true); }} className={FOOT_LINK}>Đăng nhập học viên</button></li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="border-t border-zinc-100">
-          <p className="mx-auto max-w-7xl px-4 py-5 text-center text-xs text-zinc-500 sm:px-6 lg:px-8">
-            © {new Date().getFullYear()} {SITE.brand}{addressText && `. ${addressText}`}.
-          </p>
         </div>
       </footer>
 
       {/* POPUP ĐĂNG KÝ HỌC THỬ */}
       {showConsultModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/50 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowConsultModal(false); }}>
-          <div role="dialog" aria-modal="true" aria-label="Đăng ký học thử" className={`${MODAL} my-8 max-h-[92vh] max-w-2xl`}>
+          <div role="dialog" aria-modal="true" aria-label="Đăng ký học thử" className={cn(MODAL, "my-8 max-h-[92vh] max-w-2xl")}>
             <button type="button" aria-label="Đóng" className={CLOSE} onClick={() => setShowConsultModal(false)}>
               <X className="h-5 w-5" />
             </button>
 
             <div className="max-h-[92vh] overflow-y-auto">
               <div className="flex items-center gap-3 border-b border-zinc-100 px-6 py-5 pr-16 sm:px-8">
-                <div className={`${ICON_TILE} h-10 w-10`}>
+                <div className={cn(ICON_TILE, "h-10 w-10")}>
                   <MessageSquare className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -905,17 +1021,17 @@ export default function ClassLandingPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleConsultSubmit} className="space-y-6 px-6 py-6 sm:px-8">
-                <div className="space-y-3">
+              <form onSubmit={handleConsultSubmit} className="space-y-4 bg-zinc-50/60 px-4 py-5 sm:px-6">
+                <div className={cn(BLOCK, "bg-white")}>
                   <StepHead n={1} title="Thông tin cá nhân học sinh" />
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <div className="space-y-1.5">
                       <Label className={LABEL}>Họ và tên <span className="text-rose-500">*</span></Label>
-                      <Input placeholder="Ví dụ: Nguyễn Văn A" className={FIELD} value={studentForm.fullName} onChange={e => setStudentForm({ ...studentForm, fullName: e.target.value })} />
+                      <Input autoComplete="name" placeholder="Ví dụ: Nguyễn Văn A" className={FIELD} value={studentForm.fullName} onChange={e => setStudentForm({ ...studentForm, fullName: e.target.value })} />
                     </div>
                     <div className="space-y-1.5">
                       <Label className={LABEL}>Địa chỉ Gmail <span className="text-rose-500">*</span></Label>
-                      <Input type="email" placeholder="hocsinh@gmail.com" className={FIELD} value={studentForm.email} onChange={e => setStudentForm({ ...studentForm, email: e.target.value })} />
+                      <Input type="email" autoComplete="email" placeholder="hocsinh@gmail.com" className={FIELD} value={studentForm.email} onChange={e => setStudentForm({ ...studentForm, email: e.target.value })} />
                     </div>
                     <div className="space-y-1.5">
                       <Label className={LABEL}>Ngày sinh <span className="text-rose-500">*</span></Label>
@@ -924,7 +1040,7 @@ export default function ClassLandingPage() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className={cn(BLOCK, "bg-white")}>
                   <StepHead n={2} title="Khu vực hiện tại đang sinh sống" icon={MapPin} />
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-1.5">
@@ -941,20 +1057,12 @@ export default function ClassLandingPage() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className={cn(BLOCK, "bg-white")}>
                   <StepHead n={3} title="Thông tin trường học" icon={School} />
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-1.5">
                       <Label className={LABEL}>Tên trường đang học <span className="text-rose-500">*</span></Label>
                       <Input placeholder="Ví dụ: THPT Chuyên Nguyễn Huệ" className={FIELD} value={studentForm.schoolName} onChange={e => setStudentForm({ ...studentForm, schoolName: e.target.value })} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className={LABEL}>Khối lớp <span className="text-rose-500">*</span></Label>
-                      <select className={SELECT} value={studentForm.grade} onChange={e => setStudentForm({ ...studentForm, grade: e.target.value })}>
-                        <option value="">-- Chọn khối lớp --</option>
-                        {[6, 7, 8, 9, 10, 11, 12].map(num => <option key={num} value={`Lớp ${num}`}>Lớp {num}</option>)}
-                        <option value="Luyện thi Đại học">Ôn thi Đại học / Khác</option>
-                      </select>
                     </div>
                     <div className="space-y-1.5">
                       <Label className={LABEL}>Thuộc Tỉnh / Thành phố <span className="text-rose-500">*</span></Label>
@@ -964,9 +1072,25 @@ export default function ClassLandingPage() {
                       </select>
                     </div>
                   </div>
+                  <div className="space-y-1.5">
+                    <Label className={LABEL}>Khối lớp <span className="text-rose-500">*</span></Label>
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Khối lớp">
+                      {GRADE_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          aria-pressed={studentForm.grade === o.value}
+                          onClick={() => setStudentForm({ ...studentForm, grade: o.value })}
+                          className={pillBtn(studentForm.grade === o.value)}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className={cn(BLOCK, "bg-white")}>
                   <div className="flex items-center justify-between gap-3">
                     <StepHead n={4} title="Lịch rảnh mong muốn đăng ký" icon={Calendar} />
                     <button type="button" onClick={addWeeklySlot} className={CHIP_BTN}>
@@ -975,23 +1099,23 @@ export default function ClassLandingPage() {
                   </div>
 
                   {studentForm.slots.length === 0 ? (
-                    <p className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 py-5 text-center text-sm text-zinc-500">
+                    <p className="rounded-xl border border-dashed border-zinc-300 py-5 text-center text-sm text-zinc-500">
                       Chưa đăng ký lịch biểu nào. Bấm nút Thêm lịch để tự chọn ca.
                     </p>
                   ) : (
                     <div className="max-h-[170px] space-y-2 overflow-y-auto pr-1">
                       {studentForm.slots.map((slot, index) => (
-                        <div key={index} className="flex flex-wrap items-center gap-2 rounded-xl bg-zinc-50 p-2.5">
-                          <select className={`${SELECT} h-10 min-w-[100px] flex-1 text-sm`} value={slot.day} onChange={e => updateWeeklySlot(index, "day", e.target.value)}>
+                        <div key={index} className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-2.5">
+                          <select className={cn(SELECT, "h-10 min-w-[100px] flex-1 text-sm")} value={slot.day} onChange={e => updateWeeklySlot(index, "day", e.target.value)}>
                             {WEEK_DAYS.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
                           </select>
                           <div className="flex items-center gap-1.5 text-sm text-zinc-500">
                             <span>Từ</span>
-                            <Input type="time" className={`${FIELD} h-10 w-28 px-2`} value={slot.startTime} onChange={e => updateWeeklySlot(index, "startTime", e.target.value)} />
+                            <Input type="time" className={cn(FIELD, "h-10 w-28 px-2")} value={slot.startTime} onChange={e => updateWeeklySlot(index, "startTime", e.target.value)} />
                             <span>đến</span>
-                            <Input type="time" className={`${FIELD} h-10 w-28 px-2`} value={slot.endTime} onChange={e => updateWeeklySlot(index, "endTime", e.target.value)} />
+                            <Input type="time" className={cn(FIELD, "h-10 w-28 px-2")} value={slot.endTime} onChange={e => updateWeeklySlot(index, "endTime", e.target.value)} />
                           </div>
-                          <Button type="button" variant="ghost" size="icon" aria-label="Xóa lịch" onClick={() => removeWeeklySlot(index)} className="ml-auto h-10 w-10 rounded-xl text-zinc-400 hover:bg-rose-50 hover:text-rose-600">
+                          <Button type="button" variant="ghost" size="icon" aria-label="Xóa lịch" onClick={() => removeWeeklySlot(index)} className="ml-auto h-10 w-10 rounded-full text-zinc-400 hover:bg-rose-50 hover:text-rose-600">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -1000,7 +1124,7 @@ export default function ClassLandingPage() {
                   )}
                 </div>
 
-                <Button type="submit" disabled={isConsultSending} className={`group flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold ${PRIMARY}`}>
+                <Button type="submit" disabled={isConsultSending} className={cn("group flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold", PRIMARY)}>
                   {isConsultSending ? "Đang gửi..." : "Gửi đăng ký nhập học thử"}
                   {!isConsultSending && <ArrowRight className="h-4 w-4 text-[#FFB547] transition-transform group-hover:translate-x-1" />}
                 </Button>
@@ -1012,23 +1136,31 @@ export default function ClassLandingPage() {
 
       {/* POPUP ĐĂNG NHẬP / ĐĂNG KÝ HỆ THỐNG */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/50 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowAuthModal(false); }}>
-          <div role="dialog" aria-modal="true" aria-label="Đăng nhập" className={`${MODAL} max-w-[400px]`}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-zinc-950/50 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowAuthModal(false); }}>
+          <div role="dialog" aria-modal="true" aria-label={authMode === "login" ? "Đăng nhập" : "Đăng ký thành viên"} className={cn(MODAL, "my-8 max-w-[420px]")}>
             <button type="button" aria-label="Đóng" className={CLOSE} onClick={() => setShowAuthModal(false)}>
               <X className="h-5 w-5" />
             </button>
 
-            <div className="space-y-5 px-7 py-8">
-              <div className="space-y-3 text-center">
-                <div className={`${ICON_TILE} mx-auto h-11 w-11`}>
-                  <GraduationCap className="h-5 w-5" />
-                </div>
+            <div className="space-y-6 px-6 pb-7 pt-9 sm:px-8">
+              <div className="space-y-4 text-center">
+                <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#0B1B3A] text-xl font-semibold text-[#FFB547]">A</span>
                 <div className="space-y-1">
-                  <h3 className="text-xl font-semibold text-zinc-900">
+                  <h3 className="text-xl font-semibold tracking-tight text-zinc-900">
                     {authMode === "login" ? "Đăng nhập học tập" : "Đăng ký thành viên"}
                   </h3>
                   <p className="text-sm text-zinc-500">Kết nối vào không gian học tập trực tuyến cá nhân</p>
                 </div>
+              </div>
+
+              {/* Chuyển giữa đăng nhập và đăng ký */}
+              <div className={SEG} role="group" aria-label="Chế độ">
+                <button type="button" aria-pressed={authMode === "login"} onClick={() => setAuthMode("login")} className={segBtn(authMode === "login")}>
+                  Đăng nhập
+                </button>
+                <button type="button" aria-pressed={authMode === "signup"} onClick={() => setAuthMode("signup")} className={segBtn(authMode === "signup")}>
+                  Đăng ký
+                </button>
               </div>
 
               {/* Nút Đăng nhập Google Auth */}
@@ -1036,7 +1168,7 @@ export default function ClassLandingPage() {
                 type="button"
                 variant="outline"
                 onClick={handleGoogleSignIn}
-                className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold ${OUTLINE}`}
+                className={cn("flex h-11 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold", OUTLINE)}
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
                   <path fill="#EA4335" d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.54 14.98 1 12 1 7.35 1 3.41 3.65 1.5 7.5l3.85 2.99C6.26 7.49 8.91 5.04 12 5.04z"/><path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.29 1.48-1.14 2.73-2.4 3.58l3.73 2.89c2.18-2.01 3.7-4.99 3.7-8.62z"/><path fill="#FBBC05" d="M5.35 14.51c-.24-.74-.38-1.54-.38-2.37s.14-1.63.38-2.37L1.5 6.78C.54 8.7 0 10.85 0 13s.54 4.3 1.5 6.22l3.85-2.71z"/><path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.92l-3.73-2.89c-1.11.75-2.53 1.19-4.23 1.19-3.09 0-5.74-2.45-6.65-5.45L1.5 16.64C3.41 20.35 7.35 23 12 23z"/>
@@ -1044,7 +1176,7 @@ export default function ClassLandingPage() {
                 Đăng nhập bằng Google
               </Button>
 
-              <div className="relative flex items-center py-1">
+              <div className="relative flex items-center">
                 <div className="flex-grow border-t border-zinc-200"></div>
                 <span className="mx-3 text-xs font-medium text-zinc-400">Hoặc dùng tài khoản</span>
                 <div className="flex-grow border-t border-zinc-200"></div>
@@ -1055,42 +1187,24 @@ export default function ClassLandingPage() {
                 {authMode === "signup" && (
                   <div className="space-y-1.5">
                     <Label className={LABEL}>Họ và tên</Label>
-                    <Input placeholder="Nguyễn Văn A" className={FIELD} value={fullName} onChange={e => setFullName(e.target.value)} required />
+                    <Input autoComplete="name" placeholder="Nguyễn Văn A" className={FIELD} value={fullName} onChange={e => setFullName(e.target.value)} required />
                   </div>
                 )}
 
                 <div className="space-y-1.5">
                   <Label className={LABEL}>Địa chỉ email</Label>
-                  <Input type="email" placeholder="name@example.com" className={FIELD} value={email} onChange={e => setEmail(e.target.value)} required />
+                  <Input type="email" autoComplete="email" placeholder="name@example.com" className={FIELD} value={email} onChange={e => setEmail(e.target.value)} required />
                 </div>
 
                 <div className="space-y-1.5">
                   <Label className={LABEL}>Mật khẩu</Label>
-                  <Input type="password" placeholder="••••••••" className={FIELD} value={password} onChange={e => setPassword(e.target.value)} required />
+                  <Input type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} placeholder="••••••••" className={FIELD} value={password} onChange={e => setPassword(e.target.value)} required />
                 </div>
 
-                <Button type="submit" disabled={isAuthLoading} className={`h-11 w-full rounded-xl text-sm font-semibold ${PRIMARY}`}>
+                <Button type="submit" disabled={isAuthLoading} className={cn("h-11 w-full rounded-full text-sm font-semibold", PRIMARY)}>
                   {isAuthLoading ? "Đang xử lý..." : authMode === "login" ? "Đăng nhập" : "Đăng ký thành viên"}
                 </Button>
               </form>
-
-              <div className="text-center text-sm text-zinc-500">
-                {authMode === "login" ? (
-                  <>
-                    Chưa có tài khoản lớp học?{" "}
-                    <button type="button" onClick={() => setAuthMode("signup")} className="font-semibold text-[#0B1B3A] hover:underline">
-                      Đăng ký
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    Đã có tài khoản từ trước?{" "}
-                    <button type="button" onClick={() => setAuthMode("login")} className="font-semibold text-[#0B1B3A] hover:underline">
-                      Đăng nhập
-                    </button>
-                  </>
-                )}
-              </div>
             </div>
           </div>
         </div>

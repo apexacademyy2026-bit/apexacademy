@@ -209,14 +209,27 @@ const PALETTE: Palette[] = [
 ];
 const paletteFor = (c: ShowcaseClass, i: number) => PALETTE[(((c.colorIdx ?? i) % PALETTE.length) + PALETTE.length) % PALETTE.length];
 
+// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền của lớp
+const inkOn = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 170 ? "#0B1B3A" : "#ffffff";
+};
+
 const inputCls =
-  "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0B1B3A] focus:outline-none focus:ring-2 focus:ring-[#0B1B3A]/20";
+  "h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-[#0B1B3A] focus:outline-none focus:ring-2 focus:ring-[#0B1B3A]/10";
 const areaCls =
-  "w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-900 placeholder:text-slate-400 focus:border-[#0B1B3A] focus:outline-none focus:ring-2 focus:ring-[#0B1B3A]/20";
+  "w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm leading-relaxed text-zinc-900 placeholder:text-zinc-400 focus:border-[#0B1B3A] focus:outline-none focus:ring-2 focus:ring-[#0B1B3A]/10";
 const darkInputCls =
   "w-full rounded-xl border border-white/25 bg-white/10 px-3 text-white placeholder:text-white/40 focus:border-[#FFB547] focus:outline-none focus:ring-2 focus:ring-[#FFB547]/30";
 const iconBtn =
-  "grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]";
+  "grid h-9 w-9 place-items-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]";
+const BTN_PRIMARY =
+  "inline-flex items-center justify-center rounded-xl bg-[#0B1B3A] font-semibold text-white transition-colors hover:bg-[#13285a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2";
+const BTN_OUTLINE =
+  "inline-flex items-center justify-center rounded-xl border border-zinc-300 bg-white font-semibold text-zinc-900 transition-colors hover:border-[#0B1B3A] hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]";
 
 /* ---------------- Lấy lớp học từ hệ thống ---------------- */
 
@@ -361,7 +374,7 @@ function Timetable({
 
   if (!data) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center text-sm text-slate-500">
+      <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-500">
         Chưa có ca học nào được đăng.
       </div>
     );
@@ -378,7 +391,7 @@ function Timetable({
         <div className="grid" style={{ gridTemplateColumns: `3.25rem repeat(${days.length}, minmax(0, 1fr))` }}>
           <div />
           {days.map((d) => (
-            <div key={d} className="pb-3 text-center text-sm font-bold text-slate-900">
+            <div key={d} className="pb-3 text-center text-sm font-semibold text-zinc-900">
               {DAY_LONG[d]}
             </div>
           ))}
@@ -387,7 +400,7 @@ function Timetable({
               Array.from({ length: sg.to - sg.from + 1 }, (_, i) => sg.from + i).map((h) => (
                 <span
                   key={`${sg.from}-${h}`}
-                  className="absolute right-3 -translate-y-1/2 text-xs tabular-nums text-slate-400"
+                  className="absolute right-3 -translate-y-1/2 text-xs tabular-nums text-zinc-400"
                   style={{ top: sg.top + (h - sg.from) * PX_PER_HOUR }}
                 >
                   {String(h).padStart(2, "0")}:00
@@ -396,15 +409,15 @@ function Timetable({
             )}
           </div>
           {days.map((d) => (
-            <div key={d} className="relative border-l border-slate-200" style={{ height }}>
+            <div key={d} className="relative border-l border-zinc-200" style={{ height }}>
               {segments.map((sg, si) => (
                 <div key={sg.from}>
                   {Array.from({ length: sg.to - sg.from + 1 }, (_, i) => i).map((i) => (
-                    <div key={i} className="absolute inset-x-0 border-t border-slate-100" style={{ top: sg.top + i * PX_PER_HOUR }} />
+                    <div key={i} className="absolute inset-x-0 border-t border-zinc-100" style={{ top: sg.top + i * PX_PER_HOUR }} />
                   ))}
                   {si < segments.length - 1 && (
                     <div
-                      className="absolute inset-x-0 border-t border-dashed border-slate-300"
+                      className="absolute inset-x-0 border-t border-dashed border-zinc-300"
                       style={{ top: sg.top + (sg.to - sg.from) * PX_PER_HOUR + GAP_PX / 2 }}
                       aria-hidden
                     />
@@ -420,7 +433,7 @@ function Timetable({
                     onClick={() => onOpen(s.cls.id)}
                     title={`${s.cls.name}, ${timeLabel(s)}`}
                     className={cn(
-                      "absolute overflow-hidden rounded-lg border-l-[3px] py-1 text-left transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]",
+                      "absolute overflow-hidden rounded-lg py-1 text-left transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]",
                       s.lanes > 1 ? "px-1.5" : "px-2",
                     )}
                     style={{
@@ -428,19 +441,18 @@ function Timetable({
                       height: Math.max(yOf(s.end) - yOf(s.start) - 3, 28),
                       left: `calc(${(s.lane / s.lanes) * 100}% + 3px)`,
                       width: `calc(${100 / s.lanes}% - 6px)`,
-                      background: p.tint,
-                      borderColor: p.solid,
-                      color: p.ink,
+                      background: p.solid,
+                      color: inkOn(p.solid),
                     }}
                   >
-                    <div className={cn("font-bold leading-tight", s.lanes > 1 ? "text-[11px]" : "text-[13px]")}>{s.cls.name}</div>
+                    <div className={cn("font-semibold leading-tight", s.lanes > 1 ? "text-[11px]" : "text-[13px]")}>{s.cls.name}</div>
                     {s.lanes > 1 ? (
-                      <div className="mt-0.5 text-[11px] leading-tight tabular-nums opacity-80">
+                      <div className="mt-0.5 text-[11px] leading-tight tabular-nums opacity-90">
                         <div>{timeLabel(s).split("–")[0]}</div>
                         <div>–{timeLabel(s).split("–")[1]}</div>
                       </div>
                     ) : (
-                      <div className="text-xs tabular-nums opacity-80">{timeLabel(s)}</div>
+                      <div className="text-xs tabular-nums opacity-90">{timeLabel(s)}</div>
                     )}
                   </button>
                 );
@@ -454,7 +466,7 @@ function Timetable({
       <div className="space-y-6 md:hidden">
         {days.map((d) => (
           <div key={d}>
-            <h3 className="mb-2 text-sm font-bold text-slate-900">{DAY_LONG[d]}</h3>
+            <h3 className="mb-2 text-sm font-semibold text-zinc-900">{DAY_LONG[d]}</h3>
             <ul className="space-y-2">
               {[...(slots.get(d) || [])]
                 .sort((a, b) => a.start - b.start)
@@ -465,11 +477,11 @@ function Timetable({
                       <button
                         type="button"
                         onClick={() => onOpen(s.cls.id)}
-                        className="flex w-full items-center gap-3 rounded-xl border-l-4 px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
-                        style={{ background: p.tint, borderColor: p.solid, color: p.ink }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                        style={{ background: p.solid, color: inkOn(p.solid) }}
                       >
-                        <span className="w-28 shrink-0 text-sm font-semibold tabular-nums">{timeLabel(s)}</span>
-                        <span className="min-w-0 text-sm font-bold">{s.cls.name}</span>
+                        <span className="w-28 shrink-0 text-sm font-medium tabular-nums opacity-90">{timeLabel(s)}</span>
+                        <span className="min-w-0 text-sm font-semibold">{s.cls.name}</span>
                       </button>
                     </li>
                   );
@@ -489,29 +501,29 @@ function ClassRowView({ c, p, contactHref, onOpen }: { c: ShowcaseClass; p: Pale
   const noFee = !(c.feeMonth > 0) && !(c.feeSession > 0);
   return (
     <li id={`class-${c.id}`} className="relative scroll-mt-6 py-7 pl-5 md:grid md:grid-cols-[1.15fr_1.1fr_14rem] md:gap-8 md:pl-6">
-      <span className="absolute bottom-7 left-0 top-7 w-1 rounded-full" style={{ background: p.solid }} aria-hidden />
+      <span className="absolute bottom-7 left-0 top-7 w-1.5 rounded-full" style={{ background: p.solid }} aria-hidden />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-lg font-extrabold leading-snug text-slate-900">{c.name}</h3>
+          <h3 className="text-lg font-semibold leading-snug text-zinc-900">{c.name}</h3>
           {c.tag && (
-            <span className="rounded-md px-2 py-0.5 text-xs font-semibold" style={{ background: p.tint, color: p.ink }}>
+            <span className="rounded-md px-2 py-0.5 text-xs font-medium" style={{ background: p.tint, color: p.ink }}>
               {c.tag}
             </span>
           )}
         </div>
-        {c.description && <p className="mt-1.5 max-w-prose whitespace-pre-line text-sm leading-relaxed text-slate-600">{c.description}</p>}
-        {c.note && <p className="mt-1.5 text-sm font-medium text-slate-800">{c.note}</p>}
+        {c.description && <p className="mt-1.5 max-w-prose whitespace-pre-line text-sm leading-relaxed text-zinc-600">{c.description}</p>}
+        {c.note && <p className="mt-1.5 text-sm font-medium text-zinc-800">{c.note}</p>}
       </div>
 
       <div className="mt-4 md:mt-0">
         {groups.length === 0 ? (
-          <p className="text-sm text-slate-500">Chưa có lịch học</p>
+          <p className="text-sm text-zinc-500">Chưa có lịch học</p>
         ) : (
           <ul className="space-y-1.5">
             {groups.map((g) => (
               <li key={`${g.start}-${g.end}`} className="flex flex-wrap items-baseline gap-x-3 text-sm">
-                <span className="font-semibold text-slate-900">{dayText(g.days)}</span>
-                <span className="tabular-nums text-slate-600">
+                <span className="font-semibold text-zinc-900">{dayText(g.days)}</span>
+                <span className="tabular-nums text-zinc-600">
                   {g.start} – {g.end}
                 </span>
               </li>
@@ -523,25 +535,21 @@ function ClassRowView({ c, p, contactHref, onOpen }: { c: ShowcaseClass; p: Pale
       <div className="mt-4 md:mt-0 md:text-right">
         {c.feeMonth > 0 && (
           <div>
-            <span className="text-2xl font-extrabold tabular-nums tracking-tight text-slate-900">{formatVND(c.feeMonth)}</span>
-            <span className="text-sm text-slate-500"> / tháng</span>
+            <span className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900">{formatVND(c.feeMonth)}</span>
+            <span className="text-sm text-zinc-500"> / tháng</span>
           </div>
         )}
         {c.feeSession > 0 && (
-          <div className={c.feeMonth > 0 ? "mt-0.5 text-sm text-slate-600" : ""}>
-            <span className={cn("tabular-nums", c.feeMonth > 0 ? "font-semibold text-slate-800" : "text-2xl font-extrabold tracking-tight text-slate-900")}>
+          <div className={c.feeMonth > 0 ? "mt-0.5 text-sm text-zinc-600" : ""}>
+            <span className={cn("tabular-nums", c.feeMonth > 0 ? "font-semibold text-zinc-800" : "text-2xl font-semibold tracking-tight text-zinc-900")}>
               {formatVND(c.feeSession)}
             </span>
-            <span className="text-sm text-slate-500"> / buổi</span>
+            <span className="text-sm text-zinc-500"> / buổi</span>
           </div>
         )}
-        {noFee && <p className="text-sm text-slate-500">Liên hệ để biết học phí</p>}
+        {noFee && <p className="text-sm text-zinc-500">Liên hệ để biết học phí</p>}
         <div className="mt-3 flex flex-wrap gap-2 md:justify-end">
-          <button
-            type="button"
-            onClick={onOpen}
-            className="inline-flex h-9 items-center rounded-lg bg-[#0B1B3A] px-3 text-sm font-bold text-white transition-colors hover:bg-[#13285a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2"
-          >
+          <button type="button" onClick={onOpen} className={cn(BTN_PRIMARY, "h-9 px-3 text-sm")}>
             Xem chi tiết và đăng ký
           </button>
           {contactHref && (
@@ -549,7 +557,7 @@ function ClassRowView({ c, p, contactHref, onOpen }: { c: ShowcaseClass; p: Pale
               href={contactHref}
               target={contactHref.startsWith("http") ? "_blank" : undefined}
               rel="noreferrer"
-              className="inline-flex h-9 items-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-900 transition-colors hover:border-[#0B1B3A] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+              className={cn(BTN_OUTLINE, "h-9 px-3 text-sm")}
             >
               Hỏi về lớp này
             </a>
@@ -584,8 +592,8 @@ function ClassRowEditor({
   return (
     <li id={`class-${c.id}`} className="scroll-mt-6 py-3">
       <div
-        className={cn("space-y-4 rounded-2xl border border-slate-300 bg-white p-4 md:p-5", !c.visible && "bg-slate-50")}
-        style={{ borderLeft: `4px solid ${p.solid}` }}
+        className={cn("space-y-4 rounded-2xl border border-zinc-200 bg-white p-4 md:p-5", !c.visible && "bg-zinc-50")}
+        style={{ borderLeft: `6px solid ${p.solid}` }}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
@@ -593,8 +601,8 @@ function ClassRowEditor({
             onClick={() => onPatch({ visible: !c.visible })}
             aria-pressed={c.visible}
             className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]",
-              c.visible ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600",
+              "inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]",
+              c.visible ? "bg-emerald-50 text-emerald-700" : "bg-zinc-200 text-zinc-600",
             )}
           >
             {c.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -622,17 +630,17 @@ function ClassRowEditor({
 
         <div className="grid gap-3 sm:grid-cols-[1fr_11rem]">
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-600">Tên lớp</span>
+            <span className="text-xs font-medium text-zinc-600">Tên lớp</span>
             <input className={inputCls} value={c.name} onChange={(e) => onPatch({ name: e.target.value })} />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-600">Hình thức</span>
+            <span className="text-xs font-medium text-zinc-600">Hình thức</span>
             <input className={inputCls} value={c.tag} placeholder="Online, Tại lớp" onChange={(e) => onPatch({ tag: e.target.value })} />
           </label>
         </div>
 
         <label className="block space-y-1">
-          <span className="text-xs font-semibold text-slate-600">Mô tả ngắn</span>
+          <span className="text-xs font-medium text-zinc-600">Mô tả ngắn</span>
           <textarea
             className={areaCls}
             rows={2}
@@ -643,13 +651,13 @@ function ClassRowEditor({
         </label>
 
         <label className="block space-y-1">
-          <span className="text-xs font-semibold text-slate-600">Ghi chú nổi bật</span>
+          <span className="text-xs font-medium text-zinc-600">Ghi chú nổi bật</span>
           <input className={inputCls} value={c.note} placeholder="Ví dụ: Tối đa 8 học sinh" onChange={(e) => onPatch({ note: e.target.value })} />
         </label>
 
         <div className="space-y-2">
-          <span className="text-xs font-semibold text-slate-600">Ca học</span>
-          {c.sessions.length === 0 && <p className="text-sm text-slate-500">Chưa có ca học nào.</p>}
+          <span className="text-xs font-medium text-zinc-600">Ca học</span>
+          {c.sessions.length === 0 && <p className="text-sm text-zinc-500">Chưa có ca học nào.</p>}
           {c.sessions.map((s, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
               <select
@@ -665,7 +673,7 @@ function ClassRowEditor({
                 ))}
               </select>
               <input type="time" className={cn(inputCls, "w-28")} value={s.start} aria-label="Giờ bắt đầu" onChange={(e) => setSession(i, { start: e.target.value })} />
-              <span className="text-slate-400">đến</span>
+              <span className="text-zinc-400">đến</span>
               <input type="time" className={cn(inputCls, "w-28")} value={s.end} aria-label="Giờ kết thúc" onChange={(e) => setSession(i, { end: e.target.value })} />
               <button
                 type="button"
@@ -680,7 +688,7 @@ function ClassRowEditor({
           <button
             type="button"
             onClick={() => onPatch({ sessions: [...c.sessions, { day: 1, start: "18:00", end: "19:30" }].sort(bySession) })}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
           >
             <Plus className="h-4 w-4" /> Thêm ca học
           </button>
@@ -688,7 +696,7 @@ function ClassRowEditor({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-600">Học phí theo tháng (đ)</span>
+            <span className="text-xs font-medium text-zinc-600">Học phí theo tháng (đ)</span>
             <input
               type="number"
               min={0}
@@ -700,7 +708,7 @@ function ClassRowEditor({
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-600">Học phí theo buổi (đ)</span>
+            <span className="text-xs font-medium text-zinc-600">Học phí theo buổi (đ)</span>
             <input
               type="number"
               min={0}
@@ -715,7 +723,7 @@ function ClassRowEditor({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-600">Sĩ số tối đa (0 = không giới hạn)</span>
+            <span className="text-xs font-medium text-zinc-600">Sĩ số tối đa (0 = không giới hạn)</span>
             <input
               type="number"
               min={0}
@@ -726,7 +734,7 @@ function ClassRowEditor({
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs font-semibold text-slate-600">Số học sinh đã tham gia</span>
+            <span className="text-xs font-medium text-zinc-600">Số học sinh đã tham gia</span>
             <input
               type="number"
               min={0}
@@ -989,22 +997,22 @@ export default function PublicClasses() {
   const listed = editing ? view.classes : shown;
 
   return (
-    <div className="min-h-screen bg-[#F3F5F9] font-['Be_Vietnam_Pro',sans-serif] text-slate-900">
+    <div className="min-h-screen bg-zinc-50 font-['Be_Vietnam_Pro',sans-serif] text-zinc-900">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
         html { scroll-behavior: smooth; }
         @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
       `}</style>
 
       {/* THANH DÀNH RIÊNG CHO CHỦ TRANG */}
       {isOwner && (
-        <div className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="sticky top-0 z-50 border-b border-zinc-200 bg-white/90 backdrop-blur">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2.5 md:px-6">
             {editing ? (
               <>
-                <p className="text-sm font-semibold text-slate-800">
+                <p className="text-sm font-semibold text-zinc-800">
                   Đang chỉnh sửa
-                  <span className="ml-2 font-normal text-slate-500">
+                  <span className="ml-2 font-normal text-zinc-500">
                     {dirty ? "Người xem chưa thấy thay đổi cho đến khi bạn đăng trang." : "Chưa có thay đổi nào."}
                   </span>
                 </p>
@@ -1013,14 +1021,14 @@ export default function PublicClasses() {
                     type="button"
                     onClick={() => syncFromSystem()}
                     disabled={syncing}
-                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                    className={cn(BTN_OUTLINE, "h-9 gap-2 px-3 text-sm disabled:opacity-60")}
                   >
                     <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} /> Lấy lớp từ hệ thống
                   </button>
                   <button
                     type="button"
                     onClick={cancelEdit}
-                    className="inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                    className="inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                   >
                     Hủy thay đổi
                   </button>
@@ -1028,7 +1036,7 @@ export default function PublicClasses() {
                     type="button"
                     onClick={savePage}
                     disabled={saving || !dirty}
-                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2"
+                    className={cn(BTN_PRIMARY, "h-9 gap-2 px-4 text-sm disabled:opacity-50")}
                   >
                     {saving ? "Đang đăng..." : "Đăng trang"}
                   </button>
@@ -1036,20 +1044,16 @@ export default function PublicClasses() {
               </>
             ) : (
               <>
-                <p className="text-sm text-slate-600">Bạn đang xem trang như khách. Chỉ bạn thấy thanh này.</p>
+                <p className="text-sm text-zinc-600">Bạn đang xem trang như khách. Chỉ bạn thấy thanh này.</p>
                 <div className="flex items-center gap-2">
                   <Link
                     to={DASHBOARD_PATH}
-                    className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                    className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                   >
                     <LayoutDashboard className="h-4 w-4" /> Về trang quản lý
                   </Link>
-                  <button
-                    type="button"
-                    onClick={startEdit}
-                    className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#0B1B3A] px-4 text-sm font-bold text-white hover:bg-[#13285a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2"
-                  >
-                    <Pencil className="h-4 w-4" /> Chỉnh sửa trang
+                  <button type="button" onClick={startEdit} className={cn(BTN_PRIMARY, "h-9 gap-2 px-4 text-sm")}>
+                    <Pencil className="h-4 w-4 text-[#FFB547]" /> Chỉnh sửa trang
                   </button>
                 </div>
               </>
@@ -1070,83 +1074,83 @@ export default function PublicClasses() {
       )}
 
       {/* ĐẦU TRANG */}
-      <header className="relative overflow-hidden bg-[#0B1B3A] pb-28 text-white md:pb-36">
-        <div className="pointer-events-none absolute -bottom-28 -right-20 hidden h-72 w-72 rounded-full bg-[#FFB547] md:block" aria-hidden />
-        <div className="relative mx-auto max-w-6xl px-4 md:px-6">
-          <nav className="flex items-center justify-between gap-4 py-5">
+      <header className="border-b border-zinc-200 bg-white">
+        <div className="mx-auto max-w-6xl px-4 md:px-6">
+          <nav className="flex items-center justify-between gap-4 py-4">
             {editing ? (
               <input
                 aria-label="Tên thương hiệu"
-                className={cn(darkInputCls, "h-10 max-w-[14rem] text-base font-extrabold")}
+                className={cn(inputCls, "max-w-[14rem] text-base font-semibold")}
                 value={view.brand}
                 onChange={(e) => patch({ brand: e.target.value })}
               />
             ) : (
-              <Link to={LANDING_PATH} className="text-lg font-extrabold tracking-tight hover:opacity-90">
+              <Link to={LANDING_PATH} className="text-lg font-semibold tracking-tight text-[#0B1B3A] hover:opacity-80">
                 {view.brand}
               </Link>
             )}
-            <div className="flex items-center gap-5 text-sm font-semibold text-white/80">
-              <a href="#schedule" onClick={jumpTo("schedule")} className="hidden hover:text-white sm:inline">
+            <div className="flex items-center gap-5 text-sm font-medium text-zinc-600">
+              <a href="#schedule" onClick={jumpTo("schedule")} className="hidden hover:text-zinc-900 sm:inline">
                 Lịch học
               </a>
-              <a href="#fees" onClick={jumpTo("fees")} className="hover:text-white">
+              <a href="#fees" onClick={jumpTo("fees")} className="hover:text-zinc-900">
                 Học phí
               </a>
               {showAbout && (
-                <a href="#about" onClick={jumpTo("about")} className="hidden hover:text-white sm:inline">
+                <a href="#about" onClick={jumpTo("about")} className="hidden hover:text-zinc-900 sm:inline">
                   Giới thiệu
                 </a>
               )}
               {showContact && (
-                <a href="#contact" onClick={jumpTo("contact")} className="hover:text-white">
+                <a href="#contact" onClick={jumpTo("contact")} className="hover:text-zinc-900">
                   Liên hệ
                 </a>
               )}
             </div>
           </nav>
 
-          <div className="max-w-3xl pt-10 md:pt-16">
+          <div className="max-w-3xl pb-14 pt-10 md:pb-20 md:pt-16">
             {editing ? (
               <div className="space-y-3">
                 <textarea
                   aria-label="Tiêu đề trang"
                   rows={2}
-                  className={cn(darkInputCls, "py-2 text-3xl font-extrabold leading-tight md:text-4xl")}
+                  className={cn(areaCls, "text-3xl font-semibold leading-tight md:text-4xl")}
                   value={view.heroTitle}
                   onChange={(e) => patch({ heroTitle: e.target.value })}
                 />
                 <textarea
                   aria-label="Giới thiệu ngắn"
                   rows={3}
-                  className={cn(darkInputCls, "py-2 text-base leading-relaxed")}
+                  className={cn(areaCls, "text-base")}
                   value={view.heroText}
                   onChange={(e) => patch({ heroText: e.target.value })}
                 />
               </div>
             ) : (
               <>
-                <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight md:text-6xl">{view.heroTitle}</h1>
-                {view.heroText && <p className="mt-5 max-w-xl text-base leading-relaxed text-white/75 md:text-lg">{view.heroText}</p>}
+                <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-[#0B1B3A] md:text-6xl">{view.heroTitle}</h1>
+                {view.heroText && <p className="mt-5 max-w-xl text-base leading-relaxed text-zinc-600 md:text-lg">{view.heroText}</p>}
               </>
             )}
-            {summary && <p className="mt-5 max-w-xl text-sm font-semibold text-[#FFB547] md:text-base">{summary}</p>}
+            {summary && (
+              <p className="mt-6 inline-flex max-w-xl items-start gap-2 rounded-2xl bg-zinc-100 px-4 py-2.5 text-sm font-medium leading-relaxed text-zinc-700">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#0B1B3A]" aria-hidden />
+                {summary}
+              </p>
+            )}
             <div className="mt-8 flex flex-wrap gap-3">
               {contactHref && (
                 <a
                   href={contactHref}
                   target={contactHref.startsWith("http") ? "_blank" : undefined}
                   rel="noreferrer"
-                  className="inline-flex h-12 items-center rounded-xl bg-[#FFB547] px-6 text-sm font-bold text-[#0B1B3A] transition-colors hover:bg-[#ffc46b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B1B3A]"
+                  className={cn(BTN_PRIMARY, "h-12 px-6 text-sm")}
                 >
                   {zaloHref ? "Nhắn Zalo để đăng ký" : "Gọi để đăng ký"}
                 </a>
               )}
-              <a
-                href="#fees"
-                onClick={jumpTo("fees")}
-                className="inline-flex h-12 items-center rounded-xl border border-white/30 px-6 text-sm font-bold text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-              >
+              <a href="#fees" onClick={jumpTo("fees")} className={cn(BTN_OUTLINE, "h-12 px-6 text-sm")}>
                 Xem học phí
               </a>
             </div>
@@ -1156,14 +1160,14 @@ export default function PublicClasses() {
 
       <main>
         {/* LỊCH HỌC TRONG TUẦN */}
-        <section id="schedule" className="relative mx-auto -mt-16 max-w-6xl scroll-mt-6 px-4 md:-mt-24 md:px-6">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xl shadow-[#0B1B3A]/10 md:p-8">
+        <section id="schedule" className="mx-auto max-w-6xl scroll-mt-6 px-4 pt-10 md:px-6 md:pt-14">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 md:p-8">
             <div className="mb-6 flex flex-wrap items-end justify-between gap-2">
-              <h2 className="text-xl font-extrabold tracking-tight md:text-2xl">Lịch học trong tuần</h2>
-              <p className="text-sm text-slate-500">Bấm vào một ca học để xem chi tiết và đăng ký.</p>
+              <h2 className="text-xl font-semibold tracking-tight md:text-2xl">Lịch học trong tuần</h2>
+              <p className="text-sm text-zinc-500">Bấm vào một ca học để xem chi tiết và đăng ký.</p>
             </div>
             {!loaded ? (
-              <div className="h-64 animate-pulse rounded-2xl bg-slate-100" />
+              <div className="h-64 animate-pulse rounded-xl bg-zinc-100" />
             ) : (
               <Timetable classes={shown} palette={palette} onOpen={setOpenId} />
             )}
@@ -1171,9 +1175,9 @@ export default function PublicClasses() {
         </section>
 
         {/* HỌC PHÍ TỪNG LỚP */}
-        <section id="fees" className="mx-auto max-w-6xl scroll-mt-6 px-4 py-16 md:px-6 md:py-20">
+        <section id="fees" className="mx-auto max-w-6xl scroll-mt-6 px-4 py-14 md:px-6 md:py-20">
           <div className="max-w-2xl">
-            <h2 className="text-2xl font-extrabold tracking-tight md:text-3xl">Học phí từng lớp</h2>
+            <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Học phí từng lớp</h2>
             {editing ? (
               <textarea
                 aria-label="Ghi chú về học phí"
@@ -1184,21 +1188,21 @@ export default function PublicClasses() {
                 onChange={(e) => patch({ feeNote: e.target.value })}
               />
             ) : (
-              view.feeNote.trim() && <p className="mt-3 whitespace-pre-line leading-relaxed text-slate-600">{view.feeNote}</p>
+              view.feeNote.trim() && <p className="mt-3 whitespace-pre-line leading-relaxed text-zinc-600">{view.feeNote}</p>
             )}
           </div>
 
           {listed.length === 0 ? (
-            <div className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-              <p className="font-bold text-slate-900">{isOwner ? "Chưa có lớp nào trên trang" : "Trang đang được cập nhật"}</p>
-              <p className="mt-1 text-sm text-slate-500">
+            <div className="mt-8 rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-12 text-center">
+              <p className="font-semibold text-zinc-900">{isOwner ? "Chưa có lớp nào trên trang" : "Trang đang được cập nhật"}</p>
+              <p className="mt-1 text-sm text-zinc-500">
                 {isOwner
                   ? "Bấm Chỉnh sửa trang, rồi Lấy lớp từ hệ thống để thêm các lớp đang mở."
                   : "Các lớp học sẽ hiện ở đây ngay khi giáo viên đăng lịch."}
               </p>
             </div>
           ) : (
-            <ul className={cn("mt-8", editing ? "space-y-1" : "divide-y divide-slate-200 border-y border-slate-200")}>
+            <ul className={cn("mt-8", editing ? "space-y-1" : "divide-y divide-zinc-200 border-y border-zinc-200")}>
               {listed.map((c, i) =>
                 editing ? (
                   <ClassRowEditor
@@ -1228,7 +1232,7 @@ export default function PublicClasses() {
             <button
               type="button"
               onClick={addClass}
-              className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl border border-dashed border-slate-400 bg-white px-4 text-sm font-bold text-slate-800 hover:border-[#0B1B3A] hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+              className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl border border-dashed border-zinc-400 bg-white px-4 text-sm font-semibold text-zinc-800 hover:border-[#0B1B3A] hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
             >
               <Plus className="h-4 w-4" /> Thêm lớp
             </button>
@@ -1237,14 +1241,14 @@ export default function PublicClasses() {
 
         {/* GIỚI THIỆU */}
         {showAbout && (
-          <section id="about" className="scroll-mt-6 border-t border-slate-200 bg-white">
-            <div className="mx-auto grid max-w-6xl gap-10 px-4 py-16 md:grid-cols-5 md:gap-14 md:px-6 md:py-20">
+          <section id="about" className="scroll-mt-6 border-t border-zinc-200 bg-white">
+            <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 md:grid-cols-5 md:gap-14 md:px-6 md:py-20">
               <div className="md:col-span-3">
                 {editing ? (
                   <div className="space-y-3">
                     <input
                       aria-label="Tiêu đề phần giới thiệu"
-                      className={cn(inputCls, "h-12 text-xl font-extrabold")}
+                      className={cn(inputCls, "h-12 text-xl font-semibold")}
                       value={view.aboutTitle}
                       onChange={(e) => patch({ aboutTitle: e.target.value })}
                     />
@@ -1259,8 +1263,8 @@ export default function PublicClasses() {
                   </div>
                 ) : (
                   <>
-                    <h2 className="text-2xl font-extrabold tracking-tight md:text-3xl">{view.aboutTitle}</h2>
-                    <div className="mt-4 space-y-4 text-base leading-relaxed text-slate-600">
+                    <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{view.aboutTitle}</h2>
+                    <div className="mt-4 space-y-4 text-base leading-relaxed text-zinc-600">
                       {paragraphs(view.aboutText).map((p, i) => (
                         <p key={i} className="max-w-prose whitespace-pre-line">
                           {p}
@@ -1273,7 +1277,7 @@ export default function PublicClasses() {
               <div className="md:col-span-2">
                 {editing ? (
                   <label className="block space-y-1">
-                    <span className="text-xs font-semibold text-slate-600">Điểm nổi bật (mỗi dòng một ý)</span>
+                    <span className="text-xs font-medium text-zinc-600">Điểm nổi bật (mỗi dòng một ý)</span>
                     <textarea
                       rows={7}
                       className={areaCls}
@@ -1283,13 +1287,13 @@ export default function PublicClasses() {
                     />
                   </label>
                 ) : (
-                  <ul className="divide-y divide-slate-200 border-y border-slate-200">
+                  <ul className="divide-y divide-zinc-200 border-y border-zinc-200">
                     {view.highlights
                       .map((h) => h.trim())
                       .filter(Boolean)
                       .map((h, i) => (
-                        <li key={i} className="flex items-start gap-3 py-3.5 text-sm font-medium leading-relaxed text-slate-800">
-                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+                        <li key={i} className="flex items-start gap-3 py-3.5 text-sm font-medium leading-relaxed text-zinc-800">
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#0B1B3A]" aria-hidden />
                           {h}
                         </li>
                       ))}
@@ -1305,7 +1309,7 @@ export default function PublicClasses() {
           <section id="contact" className="scroll-mt-0 bg-[#0B1B3A] text-white">
             <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-2 md:gap-14 md:px-6 md:py-14">
               <div>
-                <h2 className="text-2xl font-extrabold tracking-tight md:text-3xl">Liên hệ tư vấn</h2>
+                <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Liên hệ tư vấn</h2>
                 <p className="mt-3 max-w-md leading-relaxed text-white/70">Nhắn hoặc gọi để hỏi về lớp, giờ học và học phí.</p>
               </div>
               {editing ? (
