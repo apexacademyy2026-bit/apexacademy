@@ -1,19 +1,19 @@
 import { useState } from "react";
+import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { 
-  UserPlus, 
-  KeyRound, 
-  ArrowRight, 
-  Sparkles, 
-  HelpCircle, 
-  BookOpenCheck,
-  ShieldAlert
-} from "lucide-react";
+import { ArrowRight, HelpCircle, KeyRound, UserPlus, X } from "lucide-react";
+
+/* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG (cùng ngôn ngữ với Dashboard) ----------------
+   Bảng màu: mực navy #0B1B3A · nền trắng · viền zinc mảnh · nhấn hổ phách #FFB547 (chỉ trên nền navy). */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+const CARD = "rounded-2xl border border-zinc-200 bg-white";
+const TILE = "grid shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700";
 
 export default function JoinClass() {
   const { user } = useApp();
@@ -21,7 +21,7 @@ export default function JoinClass() {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleJoin = async (e: React.FormEvent) => {
+  const handleJoin = async (e: FormEvent) => {
     e.preventDefault();
     const cleanCode = code.trim().toUpperCase();
 
@@ -37,11 +37,11 @@ export default function JoinClass() {
 
     setLoading(true);
     try {
-      // 1. Tìm lớp theo mã
+      // 1. Tìm lớp theo mã (Đã sửa "code" thành "join_code")
       const { data: cls, error: clsErr } = await (supabase as any)
         .from("classes")
-        .select("id, name, code")
-        .eq("code", cleanCode)
+        .select("id, name, join_code")
+        .eq("join_code", cleanCode)
         .maybeSingle();
 
       if (clsErr || !cls) {
@@ -86,55 +86,54 @@ export default function JoinClass() {
   };
 
   return (
-    <div className="min-h-[85vh] bg-[#f8fafc] flex flex-col items-center justify-center p-4 sm:p-6">
-      
-      <div className="w-full max-w-xl space-y-6">
-        
-        {/* 1. MAIN CARD FORM THAM GIA LỚP */}
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-200/50 overflow-hidden">
-          
-          {/* Header Card với Gradient */}
-          <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-8 text-white text-center relative">
-            <div className="absolute -right-8 -bottom-8 h-32 w-32 rounded-full bg-white/10 blur-xl pointer-events-none" />
-            
-            <div className="inline-flex p-3.5 rounded-2xl bg-white/15 backdrop-blur-md mb-3 border border-white/20 text-white shadow-inner">
-              <UserPlus className="h-7 w-7" />
+    <div className={cn("flex min-h-[85vh] w-full flex-col items-center justify-center bg-zinc-50 p-4 sm:p-8", FONT)}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
+
+      <div className="w-full max-w-xl space-y-4">
+        {/* THẺ FORM THAM GIA LỚP */}
+        <section className={cn(CARD, "overflow-hidden")}>
+          <header className="flex items-center gap-4 border-b border-zinc-100 px-5 py-5 sm:px-7">
+            <div className={cn(TILE, "h-11 w-11")}>
+              <UserPlus className="h-5 w-5" aria-hidden="true" />
             </div>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl">Tham gia lớp học</h1>
+              <p className="mt-0.5 text-sm text-zinc-500">
+                Nhập mã lớp do thầy cô cung cấp để tham gia vào phòng học ngay lập tức.
+              </p>
+            </div>
+          </header>
 
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              Tham gia lớp học
-            </h1>
-            <p className="text-blue-100 text-xs sm:text-sm font-medium mt-1 max-w-md mx-auto">
-              Nhập mã lớp do thầy cô cung cấp để tham gia vào phòng học ngay lập tức.
-            </p>
-          </div>
-
-          {/* Form nhập Mã Lớp */}
-          <form onSubmit={handleJoin} className="p-6 sm:p-8 space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <KeyRound className="h-3.5 w-3.5 text-blue-600" /> Mã đăng ký lớp học
-                </span>
-                <span className="text-[11px] text-slate-400 font-normal">Ví dụ: MATH12A, TOAN88...</span>
-              </label>
+          <form onSubmit={handleJoin} className="space-y-5 px-5 py-6 sm:px-7">
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <label htmlFor="class-code" className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+                  <KeyRound className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                  Mã đăng ký lớp học
+                </label>
+                <span className="text-xs text-zinc-500">Ví dụ: MATH12A, TOAN88...</span>
+              </div>
 
               <div className="relative">
                 <Input
+                  id="class-code"
                   type="text"
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   placeholder="NHẬP MÃ LỚP..."
                   maxLength={12}
-                  className="h-14 pl-4 pr-12 text-center text-xl sm:text-2xl font-black tracking-widest uppercase font-mono rounded-2xl border-slate-200 bg-slate-50/50 focus:bg-white focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition-all shadow-inner"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="h-14 rounded-xl border-zinc-200 bg-white pl-4 pr-12 text-center font-mono text-xl font-semibold uppercase tracking-widest text-zinc-900 shadow-none placeholder:text-zinc-300 focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/10 focus-visible:ring-offset-0 sm:text-2xl"
                 />
                 {code && (
                   <button
                     type="button"
                     onClick={() => setCode("")}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-600 bg-slate-200/60 rounded-full h-6 w-6 flex items-center justify-center"
+                    aria-label="Xóa mã lớp"
+                    className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-zinc-100 text-zinc-500 transition-colors hover:bg-zinc-200 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30"
                   >
-                    ✕
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -143,40 +142,40 @@ export default function JoinClass() {
             <Button
               type="submit"
               disabled={loading || !code.trim()}
-              className="w-full h-12 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-sm shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              className="h-12 w-full gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white shadow-none hover:bg-[#13285a] disabled:opacity-50"
             >
               {loading ? (
                 <span>Đang kết nối...</span>
               ) : (
                 <>
-                  Tham gia lớp học ngay <ArrowRight className="h-4 w-4" />
+                  Tham gia lớp học ngay <ArrowRight className="h-4 w-4 text-[#FFB547]" aria-hidden="true" />
                 </>
               )}
             </Button>
           </form>
+        </section>
 
-        </div>
-
-        {/* 2. HƯỚNG DẪN DÀNH CHO HỌC SINH */}
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 p-4 sm:p-5 text-xs text-slate-600 space-y-3">
-          <div className="flex items-center gap-2 font-bold text-slate-900 border-b border-slate-100 pb-2">
-            <HelpCircle className="h-4 w-4 text-blue-600" /> Hướng dẫn lấy mã lớp
+        {/* HƯỚNG DẪN DÀNH CHO HỌC SINH */}
+        <section className={cn(CARD, "space-y-4 p-5 sm:p-6")}>
+          <div className="flex items-center gap-3">
+            <div className={cn(TILE, "h-10 w-10")}>
+              <HelpCircle className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <h2 className="text-base font-semibold text-zinc-900">Hướng dẫn lấy mã lớp</h2>
           </div>
 
-          <ul className="space-y-2 text-slate-500 font-medium leading-relaxed pl-1">
-            <li className="flex items-start gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+          <ul className="space-y-2.5 rounded-xl bg-zinc-50 p-4 text-sm leading-relaxed text-zinc-600">
+            <li className="flex items-start gap-2.5">
+              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" />
               <span>Mã lớp học gồm từ 4 - 8 ký tự (chữ viết hoa hoặc số) được giáo viên phụ trách cung cấp.</span>
             </li>
-            <li className="flex items-start gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+            <li className="flex items-start gap-2.5">
+              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" />
               <span>Nếu chưa nhận được mã, vui lòng liên hệ trực tiếp với thầy cô giáo hoặc phụ huynh.</span>
             </li>
           </ul>
-        </div>
-
+        </section>
       </div>
-
     </div>
   );
 }

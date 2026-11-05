@@ -488,7 +488,7 @@ export default function StudentDetail() {
             ) : visibleAttendance.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-8 text-center text-sm text-slate-500">Chưa có dữ liệu điểm danh.</div>
             ) : (
-              <div className="space-y-2">
+              <div className="max-h-[60vh] min-h-[200px] space-y-2 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin] [scrollbar-color:#cbd5e1_transparent]">
                 {visibleAttendance.map((a: any) => {
                   const ev = a.schedule_events;
                   const cls = (classes.data || []).find((c: any) => c.id === ev?.class_id);

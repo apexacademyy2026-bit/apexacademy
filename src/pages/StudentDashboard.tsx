@@ -1,26 +1,170 @@
 import { useEffect, useState } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import type { LucideIcon } from "lucide-react";
+import {
+  Award,
+  BookOpen,
+  Calendar,
+  CalendarCheck2,
+  ChevronRight,
+  Clock,
+  Edit3,
+  FileCheck2,
+  GraduationCap,
+  Mail,
+  Phone,
+  Plus,
+  User,
+} from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import { supabase } from "@/integrations/supabase/client";
-import { 
-  Plus, 
-  BookOpen, 
-  Clock, 
-  User, 
-  Mail, 
-  Phone, 
-  Calendar, 
-  GraduationCap, 
-  Sparkles, 
-  Award, 
-  FileCheck2, 
-  Edit3
-} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { formatVND } from "@/lib/format";
+import { resolveStudentColor } from "@/lib/studentColor";
+
+/* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG (cùng ngôn ngữ với Dashboard) ----------------
+   Bảng màu: mực navy #0B1B3A · nền trắng · viền zinc mảnh · nhấn hổ phách #FFB547 (chỉ trên nền navy).
+   Thẻ dùng nền trắng đặc nên luôn đọc rõ. */
+const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+const CARD = "rounded-2xl border border-zinc-200 bg-white";
+const CHIP = "inline-flex h-9 min-w-0 max-w-full items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm font-medium text-zinc-700";
+const CHIP_BTN = `${CHIP} shrink-0 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30`;
+const TILE = "grid shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700";
+const NAVY_BTN =
+  "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#13285a]";
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
+
+const EMPTY = "Chưa cập nhật";
+
+// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
+const inkOn = (c: string) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
+  if (!m) return "#ffffff";
+  const n = parseInt(m[1], 16);
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 170 ? "#0B1B3A" : "#ffffff";
+};
+// Ô màu đặc, có quầng sáng cùng màu để nổi bật
+const solid = (c: string): CSSProperties => ({
+  background: c,
+  color: inkOn(c),
+  boxShadow: `0 8px 18px -8px ${c}`,
+});
+
+// 2008-05-12 → 12/05/2008, giá trị khác giữ nguyên
+const fmtDob = (v: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : v;
+};
+const greetingNow = () => {
+  const h = new Date().getHours();
+  return h < 11 ? "Chào buổi sáng" : h < 14 ? "Chào buổi trưa" : h < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+};
+
+function InfoRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+  const empty = value === EMPTY;
+  return (
+    <div className="flex items-center gap-3">
+      <div className={cn(TILE, "h-10 w-10")}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs text-zinc-500">{label}</div>
+        <div className={cn("truncate text-sm", empty ? "italic text-zinc-400" : "font-semibold text-zinc-900")}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-3.5 border-t border-zinc-100 pt-5">
+      <h3 className="text-xs font-medium text-zinc-500">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+// Thẻ số liệu: nhãn + icon xám ở trên, số lớn ở dưới (giống thẻ số liệu Dashboard)
+function StatCard({ icon: Icon, label, value, loading }: { icon: LucideIcon; label: string; value: string; loading?: boolean }) {
+  return (
+    <div className={cn(CARD, "flex h-full flex-col justify-between gap-6 p-5 sm:p-6")}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-zinc-500">{label}</span>
+        <Icon className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
+      </div>
+      {loading ? (
+        <Skeleton className="h-9 w-24" />
+      ) : (
+        <h3 className="truncate text-3xl font-semibold tabular-nums tracking-tight text-zinc-900">{value}</h3>
+      )}
+    </div>
+  );
+}
+
+function ClassCard({ c, roster, schedules, days }: { c: any; roster: any; schedules: any[]; days: string[] }) {
+  const monthly = roster?.fee_per_month || c.fee_per_month;
+  const perSession = roster?.fee_per_session || c.fee_per_session;
+  const upcoming = monthly && Number(monthly) > 0 ? monthly : perSession;
+  const upcomingLabel = monthly && Number(monthly) > 0 ? "/ tháng" : "/ buổi";
+  const color = c.color || resolveStudentColor(null, String(c.id));
+  const meta = [c.subject, c.grade].filter(Boolean).join(" · ");
+
+  return (
+    <div className="space-y-4 rounded-xl border border-zinc-200 bg-white p-4">
+      <Link
+        to={`/student/classes/${c.id}`}
+        className={cn("group flex items-center gap-3 rounded-lg", focusRing)}
+      >
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-sm font-semibold" style={solid(color)} aria-hidden="true">
+          {c.name ? String(c.name).slice(0, 1).toUpperCase() : "L"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate text-sm font-semibold text-zinc-900 group-hover:underline">{c.name}</h4>
+          {meta && <p className="truncate text-xs text-zinc-500">{meta}</p>}
+        </div>
+        <ChevronRight
+          className="h-4 w-4 shrink-0 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-600"
+          aria-hidden="true"
+        />
+      </Link>
+
+      <div className="rounded-lg bg-zinc-50 px-3 py-2.5">
+        <div className="text-xs text-zinc-500">Học phí sắp tới</div>
+        <div className="pt-0.5 text-sm font-semibold tabular-nums text-zinc-900">
+          {formatVND(Number(upcoming || 0))} <span className="text-xs font-normal text-zinc-400">{upcomingLabel}</span>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-zinc-500">
+          <Clock className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" /> Lịch học trong tuần
+        </div>
+        {schedules.length === 0 ? (
+          <p className="text-xs italic text-zinc-400">Chưa sắp xếp lịch học.</p>
+        ) : (
+          <ul className="space-y-1">
+            {schedules.map((s: any) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-100 bg-white px-3 py-2 text-xs">
+                <span className="font-semibold text-zinc-900">{days[s.day_of_week]}</span>
+                <span className="tabular-nums text-zinc-500">
+                  {s.start_time.slice(0, 5)} – {s.end_time.slice(0, 5)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function StudentDashboard() {
   const { t, user, profile, lang } = useApp();
-  
+
   const [classes, setClasses] = useState<any[]>([]);
   const [schedulesByClass, setSchedulesByClass] = useState<Record<string, any[]>>({});
   const [rosterByClass, setRosterByClass] = useState<Record<string, any>>({});
@@ -86,7 +230,9 @@ export default function StudentDashboard() {
         if (primary) {
           setStudentDetail(primary);
           const rMap: Record<string, any> = {};
-          ids.forEach((cid: string) => { rMap[cid] = primary; });
+          ids.forEach((cid: string) => {
+            rMap[cid] = primary;
+          });
           setRosterByClass(rMap);
         }
       } catch (err) {
@@ -97,10 +243,10 @@ export default function StudentDashboard() {
     })();
   }, [user?.id]);
 
-  const fmtVnd = (n: number) => `${Number(n || 0).toLocaleString("vi-VN")} ₫`;
-  const days = lang === "vi"
-    ? ["Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"]
-    : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const days =
+    lang === "vi"
+      ? ["Chủ Nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"]
+      : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   // Ưu tiên bản fetch mới nhất của chính trang này, rồi mới tới profile
   // trong context — cả hai đều là bảng `profiles`, chỉ khác thời điểm tải.
@@ -117,243 +263,176 @@ export default function StudentDashboard() {
       user?.user_metadata?.full_name ||
       "Học sinh",
 
-    email: user?.email || "Chưa cập nhật",
+    email: user?.email || EMPTY,
 
-    phone:
-      (activeProfile as any)?.phone ||
-      studentDetail?.phone ||
-      "Chưa cập nhật",
+    phone: (activeProfile as any)?.phone || studentDetail?.phone || EMPTY,
 
-    dob:
-      (activeProfile as any)?.date_of_birth ||
-      studentDetail?.date_of_birth ||
-      "Chưa cập nhật",
+    dob: (activeProfile as any)?.date_of_birth || studentDetail?.date_of_birth || EMPTY,
 
-    grade:
-      (activeProfile as any)?.school_class ||
-      studentDetail?.grade ||
-      "Chưa cập nhật",
+    grade: (activeProfile as any)?.school_class || studentDetail?.grade || EMPTY,
 
-    parentName:
-      (activeProfile as any)?.parent_name ||
-      studentDetail?.parent_name ||
-      "Chưa cập nhật",
+    parentName: (activeProfile as any)?.parent_name || studentDetail?.parent_name || EMPTY,
 
-    parentPhone:
-      (activeProfile as any)?.parent_phone ||
-      studentDetail?.parent_phone ||
-      "Chưa cập nhật",
+    parentPhone: (activeProfile as any)?.parent_phone || studentDetail?.parent_phone || EMPTY,
   };
 
+  // Màu avatar dùng chung bảng màu với trang Học sinh
+  const avatarColor = resolveStudentColor(studentDetail?.color ?? null, String(studentDetail?.id ?? user?.id ?? ""));
+
+  const stats: { key: string; label: string; value: string; icon: LucideIcon; loading?: boolean }[] = [
+    { key: "classes", label: "Lớp đang học", value: String(classes.length), icon: BookOpen, loading: isLoading },
+    { key: "status", label: "Trạng thái học tập", value: "Hoạt động", icon: FileCheck2 },
+    { key: "rank", label: "Xếp loại chung", value: "Giỏi", icon: Award },
+    { key: "schedule", label: "Lịch học", value: "Theo tuần", icon: Clock },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 sm:p-6 space-y-6">
-      
-      {/* BANNER CHÀO MỪNG */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 p-6 sm:p-8 text-white shadow-xl shadow-blue-500/10">
-        <div className="absolute -right-10 -bottom-10 h-64 w-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-xs font-bold tracking-wide uppercase backdrop-blur-md">
-              <Sparkles className="h-3.5 w-3.5 text-yellow-300" /> Góc học tập cá nhân
+    <div className={cn("min-h-screen w-full bg-zinc-50", FONT)}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
+
+      <div className="mx-auto max-w-7xl space-y-4 p-4 pb-12 sm:p-8 sm:pb-14">
+        {/* LỜI CHÀO */}
+        <section className={cn(CARD, "flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7")}>
+          <div className="flex min-w-0 items-center gap-4">
+            <div
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-base font-semibold"
+              style={solid(avatarColor)}
+              aria-hidden="true"
+            >
+              {String(studentInfo.fullName).slice(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <p className="text-sm text-zinc-500">Góc học tập cá nhân</p>
+              <h1 className="break-words text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+                {greetingNow()}, {studentInfo.fullName}
+              </h1>
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className={CHIP}>
+              <CalendarCheck2 className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
+              {new Date().toLocaleDateString("vi-VN")}
             </span>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-  Chào mừng trở lại, {studentInfo.fullName}! 👋
-</h1>
-            <p className="text-blue-100 text-sm font-medium max-w-lg">
-              Bạn đang tham gia <span className="font-bold text-yellow-300">{classes.length} lớp học</span> trực tuyến. Hãy kiểm tra lịch học để chuẩn bị bài tốt nhất!
-            </p>
+            <span className={CHIP}>
+              <BookOpen className="h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
+              {isLoading ? "Đang tải..." : `${classes.length} lớp học`}
+            </span>
+          </div>
+        </section>
+
+        {/* SỐ LIỆU + THẺ NỔI BẬT */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-8">
+            {stats.map((s) => (
+              <StatCard key={s.key} icon={s.icon} label={s.label} value={s.value} loading={s.loading} />
+            ))}
           </div>
 
-          <Link to="/join">
-            <Button className="h-12 px-6 rounded-2xl bg-white text-blue-600 hover:bg-blue-50 font-bold text-sm shadow-md shrink-0 flex items-center gap-2 transition-all cursor-pointer">
-              <Plus className="h-4 w-4" /> Tham gia lớp học mới
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      {/* STATS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="h-12 w-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <BookOpen className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Lớp đang học</p>
-            <h3 className="text-2xl font-black text-slate-900">{classes.length} Lớp</h3>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="h-12 w-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <FileCheck2 className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trạng thái học tập</p>
-            <h3 className="text-xl font-black text-emerald-600">Hoạt động</h3>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="h-12 w-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <Award className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Xếp loại chung</p>
-            <h3 className="text-2xl font-black text-slate-900">Giỏi</h3>
+          {/* Thẻ nổi bật duy nhất của trang: nền navy đặc, nhấn hổ phách.
+              Trên điện thoại đưa lên đầu; từ màn lớn nằm bên phải. */}
+          <div className="order-first lg:order-none lg:col-span-4">
+            <Link
+              to="/join"
+              className={cn(
+                "group flex h-full min-h-[11rem] w-full flex-col justify-between gap-8 rounded-2xl bg-[#0B1B3A] p-6 text-left text-white transition-colors hover:bg-[#10244b]",
+                focusRing
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-white/65">Lớp học mới</span>
+                <Plus className="h-4 w-4 shrink-0 text-[#FFB547]" aria-hidden="true" />
+              </div>
+              <div className="space-y-3">
+                <h3 className="text-3xl font-semibold leading-tight tracking-tight">Tham gia lớp học mới</h3>
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-white/65 transition-colors group-hover:text-white">
+                  Nhập mã đăng ký lớp
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                </span>
+              </div>
+            </Link>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="h-12 w-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Clock className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Lịch học</p>
-            <h3 className="text-sm font-black text-slate-900">Theo tuần</h3>
-          </div>
-        </div>
-      </div>
-
-      {/* BỐ CỤC CHÍNH */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* LỚP HỌC */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <GraduationCap className="h-5 w-5 text-blue-600" /> Các lớp học của bạn
-            </h2>
-          </div>
-
-          {isLoading ? (
-            <div className="p-8 text-center text-slate-400 bg-white rounded-3xl border border-slate-100">
-              Đang tải danh sách lớp học...
+        {/* LỚP HỌC + THÔNG TIN CÁ NHÂN */}
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
+          <section className={cn(CARD, "space-y-5 p-5 sm:p-6 lg:col-span-8")}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={cn(TILE, "h-10 w-10")}>
+                  <GraduationCap className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-zinc-900">Các lớp học của bạn</h2>
+                  <p className="text-xs text-zinc-500">Lịch học và học phí sắp tới của từng lớp</p>
+                </div>
+              </div>
+              {!isLoading && classes.length > 0 && (
+                <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium tabular-nums text-zinc-600">
+                  {classes.length} lớp
+                </span>
+              )}
             </div>
-          ) : classes.length === 0 ? (
-            <div className="p-10 text-center bg-white rounded-3xl border border-slate-100 shadow-sm space-y-3">
-              <p className="text-sm font-medium text-slate-400">Bạn chưa tham gia lớp học nào.</p>
-              <Link to="/join">
-                <Button className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs">
+
+            {isLoading ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Skeleton className="h-56 rounded-xl" />
+                <Skeleton className="h-56 rounded-xl" />
+              </div>
+            ) : classes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-zinc-300 px-6 py-10 text-center">
+                <p className="text-sm text-zinc-500">Bạn chưa tham gia lớp học nào.</p>
+                <Link to="/join" className={cn(NAVY_BTN, focusRing)}>
+                  <Plus className="h-4 w-4 text-[#FFB547]" aria-hidden="true" />
                   Nhập mã đăng ký lớp ngay
-                </Button>
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {classes.map((c) => {
-                const r = rosterByClass[c.id];
-                const monthly = r?.fee_per_month || c.fee_per_month;
-                const perSession = r?.fee_per_session || c.fee_per_session;
-                const upcoming = monthly && Number(monthly) > 0 ? monthly : perSession;
-                const upcomingLabel = monthly && Number(monthly) > 0 ? "/ tháng" : "/ buổi";
-                const schs = schedulesByClass[c.id] || [];
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {classes.map((c) => (
+                  <ClassCard
+                    key={c.id}
+                    c={c}
+                    roster={rosterByClass[c.id]}
+                    schedules={schedulesByClass[c.id] || []}
+                    days={days}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
 
-                return (
-                  <div key={c.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm space-y-4 hover:border-blue-200 transition-all">
-                    <Link to={`/student/classes/${c.id}`} className="block space-y-2 group">
-                      <div className="h-2.5 w-12 rounded-full" style={{ background: c.color || "#3b82f6" }} />
-                      <h3 className="font-bold text-slate-900 text-base group-hover:text-blue-600 transition-colors">
-                        {c.name}
-                      </h3>
-                      <p className="text-xs font-semibold text-slate-400">
-                        {c.subject} {c.grade && `· ${c.grade}`}
-                      </p>
-                    </Link>
-
-                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100/80 text-xs">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Học phí sắp tới</span>
-                      <div className="font-black text-slate-900 text-sm pt-0.5">
-                        {fmtVnd(upcoming)}{" "}
-                        <span className="text-[10px] font-normal text-slate-400">{upcomingLabel}</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                        <Clock className="h-3 w-3" /> Lịch học trong tuần
-                      </span>
-                      {schs.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic">Chưa sắp xếp lịch học.</p>
-                      ) : (
-                        <ul className="space-y-1 text-xs">
-                          {schs.map((s: any) => (
-                            <li key={s.id} className="flex justify-between items-center bg-slate-50 px-2.5 py-1.5 rounded-xl font-medium text-slate-700">
-                              <span className="font-bold text-blue-600">{days[s.day_of_week]}</span>
-                              <span>{s.start_time.slice(0, 5)} – {s.end_time.slice(0, 5)}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* CỘT THÔNG TIN CÁ NHÂN */}
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
-                <User className="h-4 w-4 text-blue-600" /> Thông tin cá nhân
-              </h3>
-              <Link to="/settings">
-                <Button variant="ghost" size="sm" className="h-8 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg gap-1">
-                  <Edit3 className="h-3.5 w-3.5" /> Sửa
-                </Button>
+          <section className={cn(CARD, "space-y-5 p-5 sm:p-6 lg:col-span-4")}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className={cn(TILE, "h-10 w-10")}>
+                  <User className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <h2 className="truncate text-base font-semibold text-zinc-900">Thông tin cá nhân</h2>
+              </div>
+              <Link to="/settings" className={CHIP_BTN}>
+                <Edit3 className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                Sửa
               </Link>
             </div>
 
-            <div className="space-y-3 text-xs font-semibold text-slate-600">
-              <div className="flex justify-between items-center py-1 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5"><User className="h-3.5 w-3.5" /> Họ và tên</span>
-                <span className="font-bold text-slate-900">{studentInfo.fullName}</span>
-              </div>
+            <div className="space-y-5">
+              <Group title="Cá nhân">
+                <InfoRow icon={User} label="Họ và tên" value={studentInfo.fullName} />
+                <InfoRow icon={Mail} label="Email" value={studentInfo.email} />
+                <InfoRow icon={Phone} label="Số điện thoại" value={studentInfo.phone} />
+                <InfoRow icon={Calendar} label="Ngày sinh" value={fmtDob(studentInfo.dob)} />
+                <InfoRow icon={GraduationCap} label="Khối lớp" value={studentInfo.grade} />
+              </Group>
 
-              <div className="flex justify-between items-center py-1 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> Email</span>
-                <span className="font-bold text-slate-900 truncate max-w-[150px]">{studentInfo.email}</span>
-              </div>
-
-              <div className="flex justify-between items-center py-1 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> Số điện thoại</span>
-                <span className="font-bold text-slate-900">{studentInfo.phone}</span>
-              </div>
-
-              <div className="flex justify-between items-center py-1 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Ngày sinh</span>
-                <span className="font-bold text-slate-900">{studentInfo.dob}</span>
-              </div>
-
-              <div className="flex justify-between items-center py-1">
-                <span className="text-slate-400 flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> Khối lớp</span>
-                <span className="font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">{studentInfo.grade}</span>
-              </div>
+              <Group title="Phụ huynh">
+                <InfoRow icon={User} label="Tên phụ huynh" value={studentInfo.parentName} />
+                <InfoRow icon={Phone} label="SĐT liên hệ" value={studentInfo.parentPhone} />
+              </Group>
             </div>
-
-            {/* Thông tin Phụ huynh */}
-            <div className="pt-3 border-t border-slate-100 space-y-3">
-              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">Thông tin phụ huynh</h4>
-              
-              <div className="bg-slate-50 p-3 rounded-2xl space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">Tên phụ huynh:</span>
-                  <span className="font-bold text-slate-900">{studentInfo.parentName}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">SĐT liên hệ:</span>
-                  <span className="font-bold text-slate-900">{studentInfo.parentPhone}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          </section>
         </div>
-
       </div>
-
     </div>
   );
 }
