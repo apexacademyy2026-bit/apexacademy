@@ -69,7 +69,15 @@ const deep = (c: string) => `color-mix(in srgb, ${c} 62%, black)`;
 
 // Link học online của lớp: có link nghĩa là lớp học online
 const LINK_KEYS = ["link", "online_link", "meeting_link", "meeting_url", "meet_link", "zoom_link", "class_link", "url"];
+// Lớp online: cột định dạng (Format) có giá trị "online", hoặc cờ is_online = true
+const isOnline = (c: any): boolean => {
+  if (c?.is_online === true || c?.online === true) return true;
+  return Object.entries(c ?? {}).some(
+    ([k, v]) => k !== "name" && k !== "notes" && typeof v === "string" && v.trim().toLowerCase() === "online"
+  );
+};
 const linkOf = (c: any): string => {
+  if (!isOnline(c)) return ""; // lớp offline thì không hiện link
   let raw = "";
   for (const k of LINK_KEYS) {
     if (c?.[k]) {
