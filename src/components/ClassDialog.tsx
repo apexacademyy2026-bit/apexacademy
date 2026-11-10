@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Plus, Trash2, BookOpen, Palette, Clock, Wallet } from "lucide-react";
+import { Plus, Trash2, BookOpen, Palette, Clock, Wallet, Video, MapPin, Link2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ const COLORS = [
 ];
 
 type Category = "math" | "english" | "none";
+type Mode = "online" | "offline";
 
 // Môn học được suy ra từ dropdown phân loại (lưu vào cột `subject` để các trang khác vẫn dùng được)
 const SUBJECT_LABEL: Record<Category, string> = {
@@ -192,6 +193,8 @@ export default function ClassDialog({ open, onOpenChange, cls }: { open: boolean
   const [name, setName] = useState("");
   const [grade, setGrade] = useState("");
   const [category, setCategory] = useState<Category>("none");
+  const [mode, setMode] = useState<Mode>("offline");
+  const [meetingUrl, setMeetingUrl] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [feePerSession, setFeePerSession] = useState("");
@@ -223,6 +226,8 @@ export default function ClassDialog({ open, onOpenChange, cls }: { open: boolean
       setName(cls.name || "");
       setGrade(cls.grade || "");
       setCategory(cls.category || "none");
+      setMode(cls.delivery_mode === "online" ? "online" : "offline");
+      setMeetingUrl(cls.meeting_url || "");
       setStartDate(cls.start_date || "");
       setEndDate(cls.end_date || "");
       setFeePerMonth(cls.fee_per_month ? String(cls.fee_per_month) : "");
@@ -247,7 +252,7 @@ export default function ClassDialog({ open, onOpenChange, cls }: { open: boolean
         end_time: s.end_time.slice(0, 5),
       })));
     } else {
-      setName(""); setGrade(""); setCategory("none");
+      setName(""); setGrade(""); setCategory("none"); setMode("offline"); setMeetingUrl("");
       setStartDate(""); setEndDate(""); setFeePerMonth(""); setFeePerSession(""); setSessionsPerWeek("");
       applyHex(COLORS[0]); setNotes(""); setSchedules([]);
     }
@@ -286,12 +291,20 @@ export default function ClassDialog({ open, onOpenChange, cls }: { open: boolean
       SUBJECT_LABEL[category] ||
       (cls && (cls.category ?? "none") === "none" ? cls.subject || "" : "");
 
-    const payload = {
+    // Link học: tự thêm https:// nếu người dùng quên; chỉ lưu khi lớp học online
+    let link = meetingUrl.trim();
+    if (link && !/^https?:\/\//i.test(link)) link = `https://${link}`;
+
+    // Ép kiểu any vì types.ts của Supabase chưa có 2 cột mới (delivery_mode, meeting_url).
+    // Sau khi tạo lại types.ts thì có thể bỏ ": any".
+    const payload: any = {
       user_id: user.id,
       name,
       subject,
       grade,
       category,
+      delivery_mode: mode,
+      meeting_url: mode === "online" && link ? link : null,
       start_date: startDate || null,
       end_date: endDate || null,
       fee_per_month: feePerMonth ? Number(feePerMonth) : null,
@@ -407,6 +420,47 @@ export default function ClassDialog({ open, onOpenChange, cls }: { open: boolean
                 />
               </div>
             </div>
+
+            <div>
+              <Label className={LABEL}>{vi ? "Hình thức" : "Format"}</Label>
+              <div className="inline-flex w-fit gap-0.5 rounded-full bg-zinc-100 p-1">
+                {(["offline", "online"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={mode === m}
+                    onClick={() => setMode(m)}
+                    className={cn(
+                      "flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                      mode === m ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+                    )}
+                  >
+                    {m === "online" ? <Video className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
+                    {m === "online" ? "Online" : "Offline"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {mode === "online" && (
+              <div>
+                <Label className={LABEL}>{vi ? "Link học" : "Class link"}</Label>
+                <div className="relative">
+                  <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                  <Input
+                    type="url"
+                    inputMode="url"
+                    value={meetingUrl}
+                    onChange={(e) => setMeetingUrl(e.target.value)}
+                    placeholder="https://meet.google.com/abc-defg-hij"
+                    className={cn(FIELD, "pl-10")}
+                  />
+                </div>
+                <p className="mt-1.5 text-xs text-zinc-500">
+                  {vi ? "Dán link Google Meet, Zoom, Teams… của lớp (không bắt buộc)." : "Paste the Google Meet, Zoom or Teams link for this class (optional)."}
+                </p>
+              </div>
+            )}
           </section>
 
           {/* 2. THỜI GIAN & HỌC PHÍ */}

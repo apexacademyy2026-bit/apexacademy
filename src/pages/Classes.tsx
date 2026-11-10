@@ -14,6 +14,8 @@ import {
   Search,
   ArrowUpDown,
   ChevronRight,
+  Video,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -64,6 +66,32 @@ const solid = (c: string): CSSProperties => ({
 // Phủ một lớp màu rất nhạt lên nền trắng, và chữ đậm cùng tông
 const wash = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, white)`;
 const deep = (c: string) => `color-mix(in srgb, ${c} 62%, black)`;
+
+// Link học online của lớp: có link nghĩa là lớp học online
+const LINK_KEYS = ["link", "online_link", "meeting_link", "meeting_url", "meet_link", "zoom_link", "class_link", "url"];
+const linkOf = (c: any): string => {
+  let raw = "";
+  for (const k of LINK_KEYS) {
+    if (c?.[k]) {
+      raw = String(c[k]).trim();
+      break;
+    }
+  }
+  // Dự phòng tạm: chưa biết tên cột thì lấy trường đầu tiên chứa địa chỉ http(s)
+  if (!raw) {
+    const found = Object.values(c ?? {}).find((v) => typeof v === "string" && /^https?:\/\//i.test(v.trim()));
+    raw = String(found ?? "").trim();
+  }
+  if (!raw) return "";
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+};
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
 
 export default function Classes() {
   const { t, lang } = useApp();
@@ -149,6 +177,26 @@ export default function Classes() {
       onCommit={(hex) => commitColor(c, hex)}
     />
   );
+
+  // Nút vào lớp online. z-20 để nằm trên lớp Link phủ kín thẻ (z-10), bấm vào sẽ mở link thay vì sang trang chi tiết lớp
+  const joinLink = (c: any) => {
+    const url = linkOf(c);
+    if (!url) return null;
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={url}
+        className="relative z-20 inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40"
+        style={solid(classColor(c))}
+      >
+        <Video className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">Vào lớp online</span>
+        <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+      </a>
+    );
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -339,6 +387,13 @@ export default function Classes() {
                     )}
                   </div>
 
+                  {linkOf(c) && (
+                    <div className="flex min-w-0 items-center gap-2">
+                      {joinLink(c)}
+                      <span className="truncate text-xs text-zinc-400">{hostOf(linkOf(c))}</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between gap-3 border-t border-zinc-100 pt-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
                       <Users className="h-4 w-4 text-zinc-400" />
@@ -361,12 +416,13 @@ export default function Classes() {
       ) : (
         <div className={cn(CARD, "overflow-hidden")}>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[44rem] text-left text-sm">
+            <table className="w-full min-w-[52rem] text-left text-sm">
               <thead className="border-b border-zinc-100 bg-zinc-50/70 text-xs font-medium text-zinc-500">
                 <tr>
                   <th className="px-6 py-3">{t.className}</th>
                   <th className="px-4 py-3">{t.students}</th>
                   <th className="px-4 py-3">{t.weeklySchedule}</th>
+                  <th className="px-4 py-3">Link học</th>
                   <th className="px-6 py-3 text-right">Thao tác</th>
                 </tr>
               </thead>
@@ -397,6 +453,9 @@ export default function Classes() {
                             </span>
                           ))}
                         </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {linkOf(c) ? joinLink(c) : <span className="text-xs text-zinc-300">—</span>}
                       </td>
                       <td className="px-6 py-3">
                         <div className="flex items-center justify-end gap-0.5">
