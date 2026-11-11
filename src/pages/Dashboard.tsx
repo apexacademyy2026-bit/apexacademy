@@ -20,6 +20,8 @@ import {
   AlertCircle,
   Sparkles,
   Clock,
+  Video,
+  ExternalLink,
 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import { useStudents, useClasses, usePayments, useEvents, useEnrollments, useClassSchedules } from "@/hooks/useData";
@@ -141,6 +143,50 @@ const isSessionCollected = (studentPayments: any[], sess: SessionItem, rec: any)
       sess.date <= String(p.period_end).slice(0, 10)
     );
   });
+
+/* ---------------- LỚP ONLINE ----------------
+   Chưa biết chắc cột nào trong bảng lớp / buổi học lưu "online" và link vào lớp, nên dò nhiều tên cột phổ biến.
+   Nếu app dùng tên cột khác, chỉ cần thêm vào ONLINE_LINK_KEYS (link) hoặc isOnlineFlag (cờ online) bên dưới. */
+const ONLINE_LINK_KEYS = [
+  "meeting_link", "meeting_url", "meet_link", "meet_url", "online_link", "online_url",
+  "zoom_link", "zoom_url", "join_link", "join_url", "class_link", "class_url", "hangout_link", "link", "url",
+];
+// Chỉ nhận link http/https (link nhập tay nên không cho các kiểu như javascript:)
+const toSafeUrl = (raw: any): string | null => {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const withProto = /^https?:\/\//i.test(s) ? s : /^[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(s) ? `https://${s}` : null;
+  if (!withProto) return null;
+  try {
+    const u = new URL(withProto);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+};
+const pickLink = (obj: any): string | null => {
+  if (!obj) return null;
+  for (const k of ONLINE_LINK_KEYS) {
+    const u = toSafeUrl(obj[k]);
+    if (u) return u;
+  }
+  return null;
+};
+const isOnlineFlag = (obj: any) =>
+  !!obj &&
+  (obj.is_online === true ||
+    obj.online === true ||
+    ["online", "onl", "zoom", "meet"].includes(
+      String(obj.mode ?? obj.format ?? obj.class_type ?? obj.type ?? obj.delivery ?? obj.delivery_mode ?? obj.location_type ?? "").toLowerCase(),
+    ));
+// Tên lớp có chữ "Onl" / "Online" đứng riêng (vd. "Lớp 10 Onl Trâm")
+const NAME_ONLINE_RE = /(^|[^\p{L}\p{N}])onl(ine)?([^\p{L}\p{N}]|$)/iu;
+// Link ưu tiên: của riêng buổi học (vd. Google Meet đồng bộ từ lịch), sau đó tới link của lớp
+const getOnlineInfo = (cls: any, ev: any): { online: boolean; url: string | null } => {
+  const url = pickLink(ev) || toSafeUrl(ev?.location) || pickLink(cls);
+  const online = !!url || isOnlineFlag(cls) || isOnlineFlag(ev) || NAME_ONLINE_RE.test(String(cls?.name || ev?.title || ""));
+  return { online, url };
+};
 
 /* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG ----------------
    Bảng màu: mực navy #0B1B3A · nhấn hổ phách #FFB547 · nền thẻ trắng đặc, đổ bóng mềm.
@@ -965,6 +1011,12 @@ export default function Dashboard() {
 
   const DOW_SHORT = vi ? ["CN", "T2", "T3", "T4", "T5", "T6", "T7"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+  // Ca học hôm nay có phải lớp online không, và link vào lớp (nếu có)
+  const onlineOf = (group: any) => {
+    const cls = (classes.data || []).find((c: any) => String(c.id) === String(group.event.class_id));
+    return getOnlineInfo(cls, group.event);
+  };
+
   // Tiến độ điểm danh hôm nay (cộng tất cả các ca)
   const todayTotalStudents = todayShiftGroups.reduce((n, g) => n + g.students.length, 0);
   const todayPresentTotal = todayShiftGroups.reduce(
@@ -1214,6 +1266,7 @@ export default function Dashboard() {
                   const evId = group.event.id;
                   const shiftMap = attendanceMap[evId] || {};
                   const presentCount = group.students.filter((s: any) => !!shiftMap[String(s.id)]).length;
+                  const online = onlineOf(group);
                   return (
                     <div key={evId} className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white">
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50/70 px-4 py-3">
@@ -1225,10 +1278,36 @@ export default function Dashboard() {
                           <Link to={`/classes/${group.event.class_id}`} className="text-sm font-semibold text-zinc-900 hover:underline">
                             {group.className}
                           </Link>
+                          {online.online && (
+                            <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">Online</span>
+                          )}
                         </div>
-                        <span className="text-xs font-medium tabular-nums text-zinc-500">
-                          {presentCount}/{group.students.length} {vi ? "có mặt" : "present"}
-                        </span>
+                        <div className="flex items-center gap-3">
+                          {online.online &&
+                            (online.url ? (
+                              <a
+                                href={online.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[#0B1B3A] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40"
+                              >
+                                <Video className="h-3.5 w-3.5" />
+                                {vi ? "Vào lớp" : "Join class"}
+                                <ExternalLink className="h-3 w-3 opacity-60" />
+                              </a>
+                            ) : (
+                              <Link
+                                to={`/classes/${group.event.class_id}`}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-dashed border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-900"
+                              >
+                                <Video className="h-3.5 w-3.5" />
+                                {vi ? "Thêm link lớp" : "Add class link"}
+                              </Link>
+                            ))}
+                          <span className="text-xs font-medium tabular-nums text-zinc-500">
+                            {presentCount}/{group.students.length} {vi ? "có mặt" : "present"}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 p-4">
