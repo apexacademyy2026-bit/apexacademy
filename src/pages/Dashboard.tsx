@@ -12,10 +12,13 @@ import {
   Hourglass,
   CheckCircle2,
   CalendarCheck2,
+  CalendarRange,
   UserCheck,
   ChevronRight,
   ChevronDown,
   ArrowUpRight,
+  AlertCircle,
+  Sparkles,
   Clock,
 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
@@ -34,7 +37,7 @@ import { BackgroundPicker } from "@/components/DashboardBackground";
 // (buổi đã qua mà vắng / chưa điểm danh không hiện và không tính tiền)
 const SESSION_GROUPS = [
   { k: "attended", vi: "Đã học", en: "Attended", dot: "bg-emerald-500", pill: "bg-emerald-50 text-emerald-700" },
-  { k: "upcoming", vi: "Chưa học", en: "Upcoming", dot: "bg-zinc-300", pill: "bg-zinc-100 text-zinc-600" },
+  { k: "upcoming", vi: "Chưa học", en: "Upcoming", dot: "bg-amber-400", pill: "bg-amber-50 text-amber-700" },
 ] as const;
 const shortDate = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
@@ -140,15 +143,38 @@ const isSessionCollected = (studentPayments: any[], sess: SessionItem, rec: any)
   });
 
 /* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG ----------------
-   Bảng màu: mực navy #0B1B3A · nền trắng · viền zinc mảnh · nhấn hổ phách #FFB547 (chỉ trên nền navy).
+   Bảng màu: mực navy #0B1B3A · nhấn hổ phách #FFB547 · nền thẻ trắng đặc, đổ bóng mềm.
+   Mỗi số liệu có một sắc riêng (xanh trời / tím / hổ phách / chàm / lục lam) chỉ ở ô icon và quầng sáng góc thẻ.
    Đỏ chỉ dành cho khoản chưa thu từ kỳ trước, xanh lục chỉ dành cho trạng thái đã thu / có mặt.
    Thẻ dùng nền trắng đặc nên vẫn đọc tốt dù hình nền toàn ứng dụng là gì. */
 const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
-const CARD = "rounded-2xl border border-zinc-200 bg-white";
-const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm font-medium text-zinc-700";
-const CHIP_BTN = `${CHIP} transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30`;
+const CARD =
+  "rounded-3xl border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(11,27,58,0.04),0_12px_32px_-16px_rgba(11,27,58,0.18)]";
+// Chip kính mờ đặt trên nền navy của phần chào
+const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 text-sm font-medium text-white backdrop-blur-sm";
+const CHIP_BTN = `${CHIP} transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50`;
 const SEG = "flex w-fit max-w-full flex-wrap gap-0.5 rounded-full bg-zinc-100 p-1";
-const modalShell = `flex max-h-[92vh] flex-col gap-0 overflow-hidden rounded-3xl border border-zinc-200 bg-white p-0 shadow-xl sm:max-w-2xl ${FONT}`;
+const modalShell = `flex max-h-[92vh] flex-col gap-0 overflow-hidden rounded-[28px] border border-zinc-200 bg-white p-0 shadow-2xl sm:max-w-2xl ${FONT}`;
+
+// Nền gradient navy (phần chào + thẻ nổi bật)
+const HERO_BG: CSSProperties = {
+  backgroundImage:
+    "radial-gradient(90% 140% at 100% 0%, rgba(255,181,71,0.30) 0%, rgba(255,181,71,0) 55%), radial-gradient(70% 120% at 0% 100%, rgba(99,102,241,0.38) 0%, rgba(99,102,241,0) 60%), linear-gradient(135deg, #0B1B3A 0%, #15295c 100%)",
+};
+const NAVY_BG: CSSProperties = {
+  backgroundImage:
+    "radial-gradient(100% 100% at 100% 0%, rgba(255,181,71,0.26) 0%, rgba(255,181,71,0) 60%), linear-gradient(145deg, #0B1B3A 0%, #12285a 100%)",
+};
+const ICON_TILE_BG: CSSProperties = { backgroundImage: "linear-gradient(145deg, #0B1B3A 0%, #1a3a7a 100%)" };
+
+// Sắc riêng của từng thẻ số liệu: ô icon + quầng sáng góc thẻ
+const TONES: Record<string, { tile: string; glow: string }> = {
+  students: { tile: "bg-sky-50 text-sky-600", glow: "#38BDF8" },
+  classes: { tile: "bg-violet-50 text-violet-600", glow: "#A78BFA" },
+  tuition: { tile: "bg-amber-50 text-amber-600", glow: "#FFB547" },
+  payments: { tile: "bg-indigo-50 text-indigo-600", glow: "#818CF8" },
+  avg: { tile: "bg-cyan-50 text-cyan-600", glow: "#22D3EE" },
+};
 
 // Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
 const inkOn = (c: string) => {
@@ -165,7 +191,7 @@ const solid = (c: string): CSSProperties => ({
   boxShadow: `0 8px 18px -8px ${c}`,
 });
 
-// Đầu popup: ô icon trung tính + tiêu đề + tổng tiền lớn
+// Đầu popup: ô icon navy + tiêu đề + tổng tiền lớn, quầng hổ phách mờ ở góc
 function ModalHead({
   icon: Icon,
   title,
@@ -178,15 +204,16 @@ function ModalHead({
   children?: ReactNode;
 }) {
   return (
-    <DialogHeader className="shrink-0 space-y-4 border-b border-zinc-100 px-6 py-5 text-left">
-      <div className="flex items-center gap-3">
-        <div className="grid h-9 w-9 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
-          <Icon className="h-4 w-4" />
+    <DialogHeader className="relative shrink-0 space-y-4 overflow-hidden border-b border-zinc-100 bg-gradient-to-b from-zinc-50/80 to-white px-6 py-6 text-left">
+      <div className="relative flex items-center gap-3">
+        <div className="grid h-10 w-10 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#0B1B3A]/25" style={ICON_TILE_BG}>
+          <Icon className="h-[18px] w-[18px]" />
         </div>
-        <DialogTitle className="text-base font-semibold text-zinc-900">{title}</DialogTitle>
+        <DialogTitle className="text-sm font-medium text-zinc-500">{title}</DialogTitle>
       </div>
-      <div className="text-3xl font-semibold tabular-nums tracking-tight text-zinc-900">{total}</div>
-      {children}
+      <div className="relative text-4xl font-semibold tabular-nums tracking-tight text-zinc-900">{total}</div>
+      {children && <div className="relative">{children}</div>}
+      <div aria-hidden className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[#FFB547]/20 blur-3xl" />
     </DialogHeader>
   );
 }
@@ -907,6 +934,8 @@ export default function Dashboard() {
   // = tổng các hóa đơn CHƯA THU trong danh sách hóa đơn sắp tới (rawUpcoming ở trên), cộng tất cả học sinh.
   // Ví dụ: Thư 640.000 + Cua 1.000.000 + ... = tổng hiện trên thẻ.
   const expectedTotal = rawUpcoming.filter((u) => !u.paid).reduce((sum, u) => sum + u.amount, 0);
+  // Số học sinh còn hóa đơn chưa thu (hiện phụ trên thẻ nổi bật)
+  const unpaidStudentCount = new Set(rawUpcoming.filter((u) => !u.paid).map((u) => String(u.studentId))).size;
   // Tổng của danh sách đang hiển thị trong popup (theo tab Chưa thu / Đã thu / Tất cả)
   const billsListTotal = groupedUpcoming.reduce((sum, g) => sum + g.totalAmount, 0);
 
@@ -921,10 +950,12 @@ export default function Dashboard() {
       ? lang === "vi" ? "Năm nay" : "This year"
       : lang === "vi" ? "Tuỳ chỉnh" : "Custom";
 
-  /* ---------------- GIAO DIỆN (tối giản: thẻ trắng viền mảnh, một thẻ navy làm điểm nhấn) ---------------- */
+  /* ---------------- GIAO DIỆN ----------------
+     Phần chào gradient navy → thẻ điểm danh có thanh tiến độ → thẻ nổi bật navy →
+     bộ lọc thời gian → lưới số liệu có ô icon màu. Các popup dùng đầu popup có quầng sáng. */
   const vi = lang === "vi";
 
-  // Màu riêng của từng học sinh, dùng chung bảng màu với trang Học sinh (chỉ hiện ở avatar nhỏ)
+  // Màu riêng của từng học sinh, dùng chung bảng màu với trang Học sinh
   const studentColorMap = useMemo(
     () => new Map<string, string>(students.map((s: any) => [String(s.id), resolveStudentColor(s.color, s.id)])),
     [students],
@@ -932,26 +963,42 @@ export default function Dashboard() {
   const colorOf = (id: any) => studentColorMap.get(String(id)) || resolveStudentColor(null, String(id));
   const avatarBase = "grid shrink-0 place-items-center font-semibold";
 
-  // Một dòng buổi học trong popup (status chỉ dùng cho các kỳ trước)
-  const renderSessionRow = (sess: SessionItem, student: any, status?: string) => (
-    <div key={sess.key} className="flex items-center justify-between gap-3 rounded-lg border border-zinc-100 bg-white px-3 py-2 text-xs">
-      <span className="shrink-0 font-semibold text-zinc-900">
-        {t.daysLong[new Date(`${sess.date}T00:00:00`).getDay()]} {shortDate(sess.date)}
-      </span>
-      <span className="shrink-0 tabular-nums text-zinc-500">
-        {sess.start} – {sess.end}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-right text-zinc-500">
-        {status ? `${status}, ` : ""}
-        {sess.className}
-      </span>
-      {isBySessionStudent(student) && (
-        <span className="shrink-0 font-semibold tabular-nums text-zinc-900">
-          {formatVND(Number((classes.data || []).find((c: any) => String(c.id) === sess.classId)?.fee_per_session || 0))}
-        </span>
-      )}
-    </div>
+  const DOW_SHORT = vi ? ["CN", "T2", "T3", "T4", "T5", "T6", "T7"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  // Tiến độ điểm danh hôm nay (cộng tất cả các ca)
+  const todayTotalStudents = todayShiftGroups.reduce((n, g) => n + g.students.length, 0);
+  const todayPresentTotal = todayShiftGroups.reduce(
+    (n, g) => n + g.students.filter((s: any) => !!(attendanceMap[g.event.id] || {})[String(s.id)]).length,
+    0,
   );
+  const todayPct = todayTotalStudents > 0 ? Math.round((todayPresentTotal / todayTotalStudents) * 100) : 0;
+
+  // Một dòng buổi học trong popup: ô ngày + lớp & giờ + học phí (status chỉ dùng cho các kỳ trước)
+  const renderSessionRow = (sess: SessionItem, student: any, status?: string) => {
+    const dow = new Date(`${sess.date}T00:00:00`).getDay();
+    return (
+      <div key={sess.key} className="flex items-center gap-3 rounded-xl border border-zinc-100 bg-white px-2.5 py-2">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-zinc-100 text-center leading-none">
+          <div>
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-zinc-500">{DOW_SHORT[dow]}</div>
+            <div className="mt-1 text-xs font-semibold tabular-nums text-zinc-900">{shortDate(sess.date)}</div>
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-zinc-900">{sess.className}</div>
+          <div className="truncate text-xs tabular-nums text-zinc-500">
+            {sess.start} – {sess.end}
+            {status ? ` · ${status}` : ""}
+          </div>
+        </div>
+        {isBySessionStudent(student) && (
+          <span className="shrink-0 text-sm font-semibold tabular-nums text-zinc-900">
+            {formatVND(Number((classes.data || []).find((c: any) => String(c.id) === sess.classId)?.fee_per_session || 0))}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const greeting =
     today.getHours() < 11
@@ -981,65 +1028,84 @@ export default function Dashboard() {
 
   const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
 
-  // Thẻ số liệu thường: nhãn + icon xám, số lớn, mũi tên chuyển sang đậm khi rê chuột
+  // Thẻ số liệu thường: ô icon màu + nhãn, số lớn, nút mũi tên chuyển navy khi rê chuột, quầng sáng góc thẻ
   const renderStat = (s: (typeof stats)[number], big = false) => {
+    const tone = TONES[s.key] || TONES.students;
     const card = (
       <div
         className={cn(
           CARD,
-          "group flex h-full flex-col justify-between gap-6 p-5 transition-colors hover:border-zinc-400/60",
+          "group relative flex h-full flex-col justify-between gap-7 overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(11,27,58,0.05),0_20px_40px_-16px_rgba(11,27,58,0.28)]",
           big && "sm:p-6",
         )}
       >
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium text-zinc-500">{s.label}</span>
-          <s.icon className="h-4 w-4 shrink-0 text-zinc-400" />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full opacity-25 blur-2xl transition-opacity duration-200 group-hover:opacity-45"
+          style={{ background: tone.glow }}
+        />
+        <div className="relative flex items-center gap-3">
+          <div className={cn("grid shrink-0 place-items-center rounded-2xl", tone.tile, big ? "h-11 w-11" : "h-10 w-10")}>
+            <s.icon className="h-5 w-5" />
+          </div>
+          <span className="text-sm font-medium leading-snug text-zinc-500">{s.label}</span>
         </div>
-        <div className="flex items-end justify-between gap-3">
+        <div className="relative flex items-end justify-between gap-3">
           {loading ? (
             <Skeleton className="h-9 w-28" />
           ) : (
             <h3 className={cn("truncate font-semibold tabular-nums tracking-tight text-zinc-900", big ? "text-3xl" : "text-2xl")}>{s.value}</h3>
           )}
-          <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-900" />
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-400 transition-colors duration-200 group-hover:bg-[#0B1B3A] group-hover:text-[#FFB547]">
+            <ArrowUpRight className="h-4 w-4" />
+          </span>
         </div>
       </div>
     );
     return s.to ? (
-      <Link key={s.key} to={s.to} className={cn("block h-full rounded-2xl", focusRing)}>
+      <Link key={s.key} to={s.to} className={cn("block h-full rounded-3xl", focusRing)}>
         {card}
       </Link>
     ) : (
-      <button key={s.key} type="button" onClick={s.onClick} className={cn("block h-full w-full rounded-2xl text-left", focusRing)}>
+      <button key={s.key} type="button" onClick={s.onClick} className={cn("block h-full w-full rounded-3xl text-left", focusRing)}>
         {card}
       </button>
     );
   };
 
-  // Thẻ nổi bật duy nhất của trang (học phí dự kiến trong kỳ): nền navy đặc, nhấn hổ phách
+  // Thẻ nổi bật duy nhất của trang (học phí dự kiến trong kỳ): gradient navy, quầng hổ phách, icon chìm
   const renderFeatured = (s: (typeof stats)[number]) => (
     <button
       key={s.key}
       type="button"
       onClick={s.onClick}
       className={cn(
-        "group flex h-full min-h-[11rem] w-full flex-col justify-between gap-8 rounded-2xl bg-[#0B1B3A] p-6 text-left text-white transition-colors hover:bg-[#10244b]",
+        "group relative flex h-full min-h-[13rem] w-full flex-col justify-between gap-8 overflow-hidden rounded-3xl p-6 text-left text-white shadow-[0_18px_40px_-18px_rgba(11,27,58,0.65)] transition-transform duration-200 hover:-translate-y-0.5",
         focusRing,
       )}
+      style={NAVY_BG}
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-white/65">{s.label}</span>
-        <s.icon className="h-4 w-4 shrink-0 text-[#FFB547]" />
+      <Hourglass aria-hidden className="pointer-events-none absolute -bottom-8 -right-6 h-40 w-40 -rotate-12 text-white/[0.06]" />
+      <div className="relative flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#FFB547]/15 text-[#FFB547] ring-1 ring-[#FFB547]/30">
+          <s.icon className="h-5 w-5" />
+        </div>
+        <span className="text-sm font-medium leading-snug text-white/70">{s.label}</span>
       </div>
-      <div className="space-y-3">
+      <div className="relative space-y-3">
         {loading ? (
           <Skeleton className="h-10 w-36 bg-white/20" />
         ) : (
           <h3 className="truncate text-4xl font-semibold tabular-nums tracking-tight">{s.value}</h3>
         )}
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-white/65 transition-colors group-hover:text-white">
-          {vi ? "Xem chi tiết" : "View details"} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-        </span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/80 ring-1 ring-white/10">
+            {unpaidStudentCount} {vi ? "học sinh chưa thu" : "students unpaid"}
+          </span>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#FFB547]">
+            {vi ? "Xem chi tiết" : "View details"} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
       </div>
     </button>
   );
@@ -1052,8 +1118,8 @@ export default function Dashboard() {
   ];
   const segBtn = (active: boolean) =>
     cn(
-      "h-8 rounded-full px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
-      active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+      "h-8 rounded-full px-3.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+      active ? "bg-[#0B1B3A] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900"
     );
   const datePill = "flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm focus-within:border-[#0B1B3A] focus-within:ring-2 focus-within:ring-[#0B1B3A]/10";
 
@@ -1064,25 +1130,34 @@ export default function Dashboard() {
       {/* Hình nền nằm ở AppLayout (toàn ứng dụng), các thẻ ở đây là nền trắng đặc nên luôn đọc rõ */}
       <div className="space-y-4">
         {/* LỜI CHÀO */}
-        <section className={cn(CARD, "flex flex-col gap-5 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-7")}>
-          <div className="space-y-1.5">
-            <p className="text-sm text-zinc-500">
-              {vi ? `Số liệu ${periodLabel.toLowerCase()}` : `Overview for ${periodLabel.toLowerCase()}`}
-            </p>
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
-              {greeting}, {(profile as any)?.brand_name || profile?.display_name || brandName}
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={CHIP}>
-              <CalendarCheck2 className="h-4 w-4 text-zinc-400" />
-              {new Date().toLocaleDateString(vi ? "vi-VN" : "en-US")}
-            </span>
-            <span className={CHIP}>
-              <Clock className="h-4 w-4 text-zinc-400" />
-              {vi ? `${todayShiftGroups.length} ca học hôm nay` : `${todayShiftGroups.length} classes today`}
-            </span>
-            <BackgroundPicker vi={vi} className={CHIP_BTN} />
+        <section
+          className="relative overflow-hidden rounded-3xl p-6 text-white shadow-[0_18px_40px_-20px_rgba(11,27,58,0.6)] sm:p-8"
+          style={HERO_BG}
+        >
+          <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border border-white/10" />
+          <div aria-hidden className="pointer-events-none absolute -right-4 -top-8 h-32 w-32 rounded-full border border-white/10" />
+          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-3">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-[#FFB547] ring-1 ring-white/10">
+                <Sparkles className="h-3.5 w-3.5" />
+                {vi ? `Số liệu ${periodLabel.toLowerCase()}` : `Overview for ${periodLabel.toLowerCase()}`}
+              </span>
+              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                {greeting},{" "}
+                <span className="text-[#FFB547]">{(profile as any)?.brand_name || profile?.display_name || brandName}</span>
+              </h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={CHIP}>
+                <CalendarCheck2 className="h-4 w-4 text-[#FFB547]" />
+                {new Date().toLocaleDateString(vi ? "vi-VN" : "en-US")}
+              </span>
+              <span className={CHIP}>
+                <Clock className="h-4 w-4 text-[#FFB547]" />
+                {vi ? `${todayShiftGroups.length} ca học hôm nay` : `${todayShiftGroups.length} classes today`}
+              </span>
+              <BackgroundPicker vi={vi} className={CHIP_BTN} />
+            </div>
           </div>
         </section>
 
@@ -1091,7 +1166,7 @@ export default function Dashboard() {
           <section className={cn(CARD, "space-y-5 p-5 sm:p-6 lg:col-span-8")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-100 text-zinc-700">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#0B1B3A]/20" style={ICON_TILE_BG}>
                   <UserCheck className="h-5 w-5" />
                 </div>
                 <div>
@@ -1105,7 +1180,7 @@ export default function Dashboard() {
                 <Button
                   onClick={handleSaveAllAttendance}
                   disabled={savingAttendance}
-                  className="h-10 shrink-0 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white shadow-none hover:bg-[#13285a]"
+                  className="h-10 shrink-0 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white shadow-md shadow-[#0B1B3A]/25 hover:bg-[#13285a]"
                 >
                   <CheckCircle2 className="h-4 w-4 text-[#FFB547]" />
                   {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu điểm danh" : "Save attendance"}
@@ -1113,9 +1188,24 @@ export default function Dashboard() {
               )}
             </div>
 
+            {todayShiftGroups.length > 0 && (
+              <div className="flex items-center gap-3 rounded-2xl bg-zinc-50 px-4 py-3">
+                <span className="text-sm font-semibold tabular-nums text-zinc-900">
+                  {todayPresentTotal}/{todayTotalStudents}
+                </span>
+                <span className="text-xs text-zinc-500">{vi ? "có mặt" : "present"}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-zinc-200">
+                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-300" style={{ width: `${todayPct}%` }} />
+                </div>
+                <span className="w-10 text-right text-xs font-semibold tabular-nums text-zinc-600">{todayPct}%</span>
+              </div>
+            )}
+
             {todayShiftGroups.length === 0 ? (
-              <div className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 py-8 text-sm text-zinc-500">
-                <CalendarCheck2 className="h-4 w-4" />
+              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 py-10 text-sm text-zinc-500">
+                <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-zinc-400 shadow-sm ring-1 ring-zinc-200">
+                  <CalendarCheck2 className="h-5 w-5" />
+                </div>
                 {vi ? "Hôm nay không có ca học nào." : "No scheduled classes for today."}
               </div>
             ) : (
@@ -1125,22 +1215,25 @@ export default function Dashboard() {
                   const shiftMap = attendanceMap[evId] || {};
                   const presentCount = group.students.filter((s: any) => !!shiftMap[String(s.id)]).length;
                   return (
-                    <div key={evId} className="rounded-xl border border-zinc-200 p-4">
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div key={evId} className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50/70 px-4 py-3">
                         <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#0B1B3A] px-2.5 py-1 text-xs font-semibold tabular-nums text-white">
+                            <Clock className="h-3 w-3 text-[#FFB547]" />
+                            {group.timeLabel}
+                          </span>
                           <Link to={`/classes/${group.event.class_id}`} className="text-sm font-semibold text-zinc-900 hover:underline">
                             {group.className}
                           </Link>
-                          <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-xs font-medium tabular-nums text-zinc-600">{group.timeLabel}</span>
                         </div>
                         <span className="text-xs font-medium tabular-nums text-zinc-500">
                           {presentCount}/{group.students.length} {vi ? "có mặt" : "present"}
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 p-4">
                         {group.students.length === 0 ? (
-                          <span className="text-xs text-zinc-500">Không có học sinh</span>
+                          <span className="text-xs text-zinc-500">{vi ? "Không có học sinh" : "No students"}</span>
                         ) : (
                           group.students.map((student: any) => {
                             const isPresent = !!shiftMap[String(student.id)];
@@ -1152,10 +1245,10 @@ export default function Dashboard() {
                                 aria-pressed={isPresent}
                                 onClick={() => toggleStudentAttendance(evId, student.id)}
                                 className={cn(
-                                  "inline-flex select-none items-center gap-2 rounded-full border py-1 pl-1 pr-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40",
+                                  "inline-flex select-none items-center gap-2 rounded-full border py-1 pl-1 pr-3.5 text-sm font-medium transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40",
                                   isPresent
                                     ? "border-transparent"
-                                    : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                                    : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"
                                 )}
                                 style={isPresent ? { ...solid(color), borderColor: color } : undefined}
                               >
@@ -1184,12 +1277,18 @@ export default function Dashboard() {
 
         {/* BỘ LỌC THỜI GIAN */}
         <div className={cn(CARD, "flex flex-col gap-3 p-2.5 lg:flex-row lg:items-center lg:justify-between")}>
-          <div className={SEG}>
-            {presets.map((p) => (
-              <button key={p.k} type="button" aria-pressed={preset === p.k} onClick={() => applyPreset(p.k)} className={segBtn(preset === p.k)}>
-                {vi ? p.vi : p.en}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="hidden items-center gap-2 pl-3 text-sm font-medium text-zinc-500 sm:inline-flex">
+              <CalendarRange className="h-4 w-4 text-zinc-400" />
+              {vi ? "Khoảng thời gian" : "Period"}
+            </span>
+            <div className={SEG}>
+              {presets.map((p) => (
+                <button key={p.k} type="button" aria-pressed={preset === p.k} onClick={() => applyPreset(p.k)} className={segBtn(preset === p.k)}>
+                  {vi ? p.vi : p.en}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className={datePill}>
@@ -1233,7 +1332,8 @@ export default function Dashboard() {
             total={formatVND(totalUpcomingFee)}
           >
             {totalOverdueFee > 0 && (
-              <span className="inline-flex w-fit max-w-full rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-600">
+              <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-600 ring-1 ring-rose-100">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                 {vi ? `Gồm ${formatVND(totalOverdueFee)} chưa thu từ các kỳ trước` : `Includes ${formatVND(totalOverdueFee)} unpaid from previous periods`}
               </span>
             )}
@@ -1243,7 +1343,7 @@ export default function Dashboard() {
           {billingGroups.length > 1 && (
             <div className="shrink-0 space-y-3 border-b border-zinc-100 bg-zinc-50/60 px-6 py-4">
               <div className="text-sm font-semibold text-zinc-900">{vi ? "Lọc theo ngày thu học phí" : "Filter by billing day"}</div>
-              <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+              <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto p-0.5">
                 {[
                   { key: "all", label: vi ? "Tất cả" : "All", count: students.length, fee: totalUpcomingFee },
                   ...billingGroups.map((g) => ({
@@ -1261,9 +1361,9 @@ export default function Dashboard() {
                       aria-pressed={active}
                       onClick={() => setBillingFilter(c.key)}
                       className={cn(
-                        "rounded-xl border px-3.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                        "rounded-2xl border px-3.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
                         active
-                          ? "border-[#0B1B3A] bg-[#0B1B3A] text-white"
+                          ? "border-[#0B1B3A] bg-[#0B1B3A] text-white shadow-md shadow-[#0B1B3A]/25"
                           : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
                       )}
                     >
@@ -1282,7 +1382,7 @@ export default function Dashboard() {
               </div>
 
               {activeGroup && (
-                <div className="flex items-center justify-between gap-3 rounded-xl bg-[#0B1B3A] px-4 py-3 text-white">
+                <div className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 text-white" style={NAVY_BG}>
                   <div className="min-w-0 space-y-0.5">
                     <div className="text-xs font-medium text-white/80">
                       {activeGroup.dueDate
@@ -1311,36 +1411,57 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-6 py-5">
             {visibleStudents.length > 0 ? (
               visibleStudents.map((student: any) => {
                 const info = upcomingByStudent.get(String(student.id));
                 const fee = info?.fee || 0;
                 const open = expandedStudent === String(student.id);
                 const groups = open ? studentSessionGroups(student) : null;
+                const bySess = isBySessionStudent(student);
                 return (
-                  <div key={student.id} className="rounded-xl border border-zinc-200 bg-white">
+                  <div
+                    key={student.id}
+                    className={cn(
+                      "rounded-2xl border bg-white transition-shadow",
+                      open ? "border-zinc-300 shadow-md" : "border-zinc-200 hover:shadow-sm",
+                    )}
+                  >
                     <button
                       type="button"
                       aria-expanded={open}
                       onClick={() => setExpandedStudent(open ? null : String(student.id))}
-                      className="flex w-full items-center justify-between gap-3 rounded-xl p-3 text-left transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className={cn(avatarBase, "h-10 w-10 rounded-full text-sm")} style={solid(colorOf(student.id))}>
+                        <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(student.id))}>
                           {student.name ? student.name.slice(0, 2).toUpperCase() : "HS"}
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 space-y-1">
                           <div className="truncate text-sm font-semibold text-zinc-900">{student.name}</div>
-                          <div className="truncate text-xs text-zinc-500">
-                            {isBySessionStudent(student) ? (vi ? `Theo buổi, ${info?.sessions || 0} buổi` : `Per session, ${info?.sessions || 0} sessions`) : vi ? "Theo tháng" : "Monthly"}
-                            {info?.hasBillingDay && ` · ${shortDate(info.start)} – ${shortDate(info.end)}`}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                bySess ? "bg-violet-50 text-violet-700" : "bg-sky-50 text-sky-700",
+                              )}
+                            >
+                              {bySess ? (vi ? `Theo buổi, ${info?.sessions || 0} buổi` : `Per session, ${info?.sessions || 0} sessions`) : vi ? "Theo tháng" : "Monthly"}
+                            </span>
+                            {info?.hasBillingDay && (
+                              <span className="tabular-nums">
+                                {shortDate(info.start)} – {shortDate(info.end)}
+                              </span>
+                            )}
                           </div>
                           {info && info.overdueFee > 0 && (
-                            <div className="truncate text-xs font-medium text-rose-600">
-                              {vi
-                                ? `Gồm ${formatVND(info.overdueFee)} chưa thu từ các kỳ trước`
-                                : `Includes ${formatVND(info.overdueFee)} unpaid from previous periods`}
+                            <div className="flex items-center gap-1 truncate text-xs font-medium text-rose-600">
+                              <AlertCircle className="h-3 w-3 shrink-0" />
+                              <span className="truncate">
+                                {vi
+                                  ? `Gồm ${formatVND(info.overdueFee)} chưa thu từ các kỳ trước`
+                                  : `Includes ${formatVND(info.overdueFee)} unpaid from previous periods`}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -1352,15 +1473,18 @@ export default function Dashboard() {
                     </button>
 
                     {open && groups && (
-                      <div className="space-y-4 rounded-b-xl border-t border-zinc-100 bg-zinc-50/70 p-3">
+                      <div className="space-y-4 rounded-b-2xl border-t border-zinc-100 bg-zinc-50/70 p-3">
                         {info && info.overdue.length > 0 && (
-                          <div className="space-y-3 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+                          <div className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50/60 p-3">
                             <div className="flex items-center justify-between gap-2 text-sm font-semibold text-rose-700">
-                              <span>{vi ? "Chưa thu từ các kỳ trước" : "Unpaid from previous periods"}</span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <AlertCircle className="h-4 w-4" />
+                                {vi ? "Chưa thu từ các kỳ trước" : "Unpaid from previous periods"}
+                              </span>
                               <span className="tabular-nums">+{formatVND(info.overdueFee)}</span>
                             </div>
                             {info.overdue.map((per) => (
-                              <div key={per.start} className="space-y-1">
+                              <div key={per.start} className="space-y-1.5">
                                 <div className="flex items-center justify-between gap-2 text-xs font-medium text-zinc-700">
                                   <span>
                                     {shortDate(per.start)} – {shortDate(per.end)} · {per.sessionList.length} {vi ? "buổi" : "sessions"}
@@ -1392,7 +1516,7 @@ export default function Dashboard() {
                               {list.length === 0 ? (
                                 <p className="pl-4 text-xs text-zinc-400">{vi ? "Không có buổi nào" : "No sessions"}</p>
                               ) : (
-                                <div className="space-y-1">{list.map((sess: SessionItem) => renderSessionRow(sess, student))}</div>
+                                <div className="space-y-1.5">{list.map((sess: SessionItem) => renderSessionRow(sess, student))}</div>
                               )}
                             </div>
                           );
@@ -1403,7 +1527,7 @@ export default function Dashboard() {
                 );
               })
             ) : (
-              <div className="py-4 text-center text-sm text-zinc-500">Chưa có dữ liệu học sinh</div>
+              <div className="py-4 text-center text-sm text-zinc-500">{vi ? "Chưa có dữ liệu học sinh" : "No student data yet"}</div>
             )}
           </div>
         </DialogContent>
@@ -1424,28 +1548,28 @@ export default function Dashboard() {
                 : `Fixed monthly fee of every class each student is enrolled in × ${monthsInRange} month${monthsInRange > 1 ? "s" : ""} (${periodLabel.toLowerCase()}).`}
             </p>
           </ModalHead>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-6 py-5">
             {salaryStudentList.length > 0 ? (
               salaryStudentList.map(({ student, total, items }: any) => (
                 <Link
                   key={student.id}
                   to={`/students/${student.id}`}
                   onClick={() => setShowSalaryModal(false)}
-                  className="group flex items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className={cn(avatarBase, "h-10 w-10 rounded-full text-sm")} style={solid(colorOf(student.id))}>
+                    <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(student.id))}>
                       {student.name ? student.name.slice(0, 2).toUpperCase() : "HS"}
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 space-y-1">
                       <div className="truncate text-sm font-semibold text-zinc-900">{student.name}</div>
                       {items.length === 0 ? (
                         <div className="text-xs text-zinc-400">{vi ? "Chưa ghi danh lớp nào" : "Not enrolled in any class"}</div>
                       ) : (
-                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-zinc-500">
+                        <div className="flex flex-wrap gap-1.5 text-xs text-zinc-500">
                           {items.map((it: SalaryItem) => (
-                            <span key={it.classId}>
-                              {it.className}: <span className="font-medium tabular-nums text-zinc-700">{formatVND(it.fee)}</span>
+                            <span key={it.classId} className="rounded-full bg-zinc-100 px-2 py-0.5">
+                              {it.className}: <span className="font-semibold tabular-nums text-zinc-700">{formatVND(it.fee)}</span>
                             </span>
                           ))}
                         </div>
@@ -1459,7 +1583,7 @@ export default function Dashboard() {
                 </Link>
               ))
             ) : (
-              <div className="py-4 text-center text-sm text-zinc-500">Chưa có dữ liệu học sinh</div>
+              <div className="py-4 text-center text-sm text-zinc-500">{vi ? "Chưa có dữ liệu học sinh" : "No student data yet"}</div>
             )}
           </div>
         </DialogContent>
@@ -1497,25 +1621,27 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-6 py-5">
+          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-6 py-5">
             {groupedUpcoming.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-zinc-300 py-10 text-center text-sm text-zinc-500">{t.nothingHere}</div>
+              <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 py-10 text-center text-sm text-zinc-500">{t.nothingHere}</div>
             ) : (
               groupedUpcoming.map((item) => (
                 <Link
                   to={`/students/${item.studentId}`}
                   key={item.studentId}
                   onClick={() => setShowExpectedModal(false)}
-                  className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition-colors hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  className="group flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className={cn(avatarBase, "h-10 w-10 rounded-full text-sm")} style={solid(colorOf(item.studentId))}>
+                    <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(item.studentId))}>
                       {item.studentName ? item.studentName.slice(0, 2).toUpperCase() : "HS"}
                     </div>
                     <div className="min-w-0">
                       <h4 className="truncate text-sm font-semibold text-zinc-900">{item.studentName}</h4>
                       <p className="truncate text-xs text-zinc-500">
-                        Gộp {item.cycles.length} kỳ ({item.cycles.join(", ")})
+                        {vi
+                          ? `Gộp ${item.cycles.length} kỳ (${item.cycles.join(", ")})`
+                          : `${item.cycles.length} period${item.cycles.length > 1 ? "s" : ""} combined (${item.cycles.join(", ")})`}
                       </p>
                     </div>
                   </div>
@@ -1523,10 +1649,11 @@ export default function Dashboard() {
                     <span className="text-sm font-semibold tabular-nums text-zinc-900">{formatVND(item.totalAmount)}</span>
                     <span
                       className={cn(
-                        "rounded-full px-2.5 py-1 text-xs font-medium",
-                        item.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-600"
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
+                        item.isPaid ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
                       )}
                     >
+                      {item.isPaid ? <CheckCircle2 className="h-3 w-3" /> : <Hourglass className="h-3 w-3" />}
                       {item.isPaid ? (vi ? "Đã thu" : "Paid") : vi ? "Chưa thu" : "Unpaid"}
                     </span>
                   </div>
