@@ -23,6 +23,12 @@ import {
   Video,
   ExternalLink,
   Calculator,
+  BookOpen,
+  ClipboardList,
+  ClipboardCheck,
+  StickyNote,
+  Plus,
+  X,
 } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import { useStudents, useClasses, usePayments, useEvents, useEnrollments, useClassSchedules } from "@/hooks/useData";
@@ -35,6 +41,11 @@ import { toast } from "sonner";
 import { resolveStudentColor } from "@/lib/studentColor";
 import { getBillingPeriod, getPastBillingPeriods, toISODate } from "@/lib/Billingperiod";
 import { BackgroundPicker } from "@/components/DashboardBackground";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+// Nhật ký học tập: dùng đúng tên cột và cách đọc/ghi bài kiểm tra của trang Learning log và trang Hóa đơn
+import { LOG, rawVal, type LogCol } from "@/lib/Learninglog";
+import { EMPTY_TEST, cleanTests, isBlankTest, parseTests, serializeTests, withSpare, type TestItem } from "@/lib/Learningtests";
 
 // Nhóm các buổi học trong popup chi tiết học phí
 // (buổi đã qua mà vắng / chưa điểm danh không hiện và không tính tiền)
@@ -144,6 +155,43 @@ const isSessionCollected = (studentPayments: any[], sess: SessionItem, rec: any)
       sess.date <= String(p.period_end).slice(0, 10)
     );
   });
+
+/* ---------------- NHẬT KÝ HỌC TẬP TRONG ĐIỂM DANH NHANH ----------------
+   Cùng dữ liệu với trang Learning log: các cột nhật ký nằm ngay trong bảng attendance (xem lib/Learninglog),
+   nên hóa đơn gửi phụ huynh đọc được luôn.
+   - Dùng chung cả ca: nội dung buổi học, bài tập về nhà (ghi cho mọi học sinh có mặt trong ca). Để trống thì giữ nguyên dữ liệu cũ.
+   - Riêng từng học sinh: bài kiểm tra (tên + điểm, nhiều dòng) và ghi chú. Ô nào đã sửa thì ghi đúng như đang hiển thị.
+   Chỉ ghi cho học sinh có mặt (giống trang Learning log). */
+type ShiftLogDraft = { content?: string; homework?: string };
+type StudentLogDraft = { note?: string; tests?: TestItem[] };
+
+const LOG_FIELD =
+  "rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/10";
+
+// Các cột nhật ký cần ghi cho một học sinh có mặt; null nếu không có gì để ghi
+const buildLogFields = (shift: ShiftLogDraft | undefined, own: StudentLogDraft | undefined): Record<string, string | null> | null => {
+  const fields: Record<string, string | null> = {};
+  const content = (shift?.content ?? "").trim();
+  const homework = (shift?.homework ?? "").trim();
+  if (content) fields[LOG.content] = content;
+  if (homework) fields[LOG.homework] = homework;
+  if (own?.note !== undefined) fields[LOG.note] = own.note.trim() || null;
+  if (own?.tests !== undefined) {
+    const { name, score } = serializeTests(own.tests);
+    fields[LOG.testName] = name || null;
+    fields[LOG.testScore] = score || null;
+  }
+  return Object.keys(fields).length > 0 ? fields : null;
+};
+
+function LogLabel({ icon: Icon, text }: { icon: any; text: string }) {
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-zinc-600">
+      <Icon className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
+      {text}
+    </div>
+  );
+}
 
 /* ---------------- LỚP ONLINE ----------------
    Chưa biết chắc cột nào trong bảng lớp / buổi học lưu "online" và link vào lớp, nên dò nhiều tên cột phổ biến.
@@ -524,6 +572,12 @@ export default function Dashboard() {
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
   // Lọc popup học phí kỳ sắp tới theo ngày thu: "all" | "none" | "25" ...
   const [billingFilter, setBillingFilter] = useState<string>("all");
+  // Nhật ký học tập ghi nhanh trong phần điểm danh: bản nháp dùng chung cả ca (khoá = id ca)
+  // và riêng từng học sinh (khoá = "id ca:id học sinh"); openLog / openStudentLog là trạng thái đóng mở các ô
+  const [shiftLogDraft, setShiftLogDraft] = useState<Record<string, ShiftLogDraft>>({});
+  const [studentLogDraft, setStudentLogDraft] = useState<Record<string, StudentLogDraft>>({});
+  const [openLog, setOpenLog] = useState<Record<string, boolean>>({});
+  const [openStudentLog, setOpenStudentLog] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     document.title = `${t.dashboard} — ${t.appName}`;
@@ -659,6 +713,7 @@ export default function Dashboard() {
     setSavingAttendance(true);
     try {
       const allUpdates: any[] = [];
+      const logWrites: { eventId: any; studentId: string; fields: Record<string, string | null> }[] = [];
       for (const group of todayShiftGroups) {
         let targetEventId = group.event.id;
 
@@ -686,14 +741,54 @@ export default function Dashboard() {
             present,
           });
         });
+        // Nhật ký học tập của các học sinh có mặt trong ca này (chỉ những ô đã nhập / đã sửa)
+        const shiftDraft = shiftLogDraft[String(group.event.id)];
+        group.students.forEach((s: any) => {
+          if (!shiftAttMap[String(s.id)]) return;
+          const fields = buildLogFields(shiftDraft, studentLogDraft[`${group.event.id}:${s.id}`]);
+          if (fields) logWrites.push({ eventId: targetEventId, studentId: String(s.id), fields });
+        });
       }
       if (allUpdates.length > 0) {
         const { error } = await supabase.from("attendance").upsert(allUpdates, { onConflict: "event_id,student_id" });
         if (error) throw error;
       }
-      toast.success(lang === "vi" ? "Đã lưu điểm danh tất cả các ca học!" : "Attendance saved for all shifts!");
-      queryClient.invalidateQueries({ queryKey: ["attendance"] });
-      queryClient.invalidateQueries({ queryKey: ["events"] });
+
+      // Nhật ký ghi riêng bằng update theo (ca, học sinh), KHÔNG gộp vào upsert ở trên: upsert nhiều dòng
+      // sẽ ghi null vào các cột bị thiếu và làm mất nhật ký đã có của những học sinh không nhập gì.
+      let logError: string | null = null;
+      if (logWrites.length > 0) {
+        const results = await Promise.all(
+          logWrites.map((w) =>
+            supabase.from("attendance").update(w.fields as any).eq("event_id", w.eventId).eq("student_id", w.studentId),
+          ),
+        );
+        const failed = results.find((r) => r.error);
+        if (failed?.error) logError = failed.error.message || "error";
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["attendance"] }),
+        queryClient.invalidateQueries({ queryKey: ["events"] }),
+        queryClient.invalidateQueries({ queryKey: ["learning-log"] }),
+        queryClient.invalidateQueries({ queryKey: ["student-bill-attendance"] }),
+      ]);
+
+      if (logError) {
+        // Điểm danh đã lưu xong; giữ nguyên chữ đang nhập để bấm lưu lại
+        toast.error(
+          lang === "vi" ? "Đã lưu điểm danh nhưng chưa lưu được nhật ký học tập" : "Attendance saved, but the learning log could not be saved",
+          { description: logError },
+        );
+        return;
+      }
+      setShiftLogDraft({});
+      setStudentLogDraft({});
+      toast.success(
+        logWrites.length > 0
+          ? lang === "vi" ? "Đã lưu điểm danh và nhật ký học tập!" : "Attendance and learning log saved!"
+          : lang === "vi" ? "Đã lưu điểm danh tất cả các ca học!" : "Attendance saved for all shifts!",
+      );
     } catch (err: any) {
       toast.error(err.message || "Lỗi khi lưu điểm danh");
     } finally {
@@ -1257,6 +1352,255 @@ export default function Dashboard() {
     return getOnlineInfo(cls, group.event);
   };
 
+  // ---- Nhật ký học tập ghi nhanh ngay trong thẻ ca học ----
+  const sk = (evId: any, sid: any) => `${evId}:${sid}`;
+  const existingText = (evId: any, sid: any, col: LogCol): string => {
+    const rec = attendanceByKey.get(`${evId}|${sid}`);
+    return rec ? String(rawVal(rec, col) ?? "") : "";
+  };
+  const existingTests = (evId: any, sid: any): TestItem[] => {
+    const rec = attendanceByKey.get(`${evId}|${sid}`);
+    return rec ? parseTests(rawVal(rec, LOG.testName), rawVal(rec, LOG.testScore)) : [];
+  };
+  // Danh sách đang hiển thị: bản nháp nếu có, không thì dữ liệu đã lưu. Luôn có ít nhất 1 dòng để nhập.
+  const testsOf = (evId: any, sid: any): TestItem[] => withSpare(studentLogDraft[sk(evId, sid)]?.tests ?? existingTests(evId, sid));
+  const noteOf = (evId: any, sid: any): string => studentLogDraft[sk(evId, sid)]?.note ?? existingText(evId, sid, LOG.note);
+  const mutateTests = (evId: any, sid: any, fn: (items: TestItem[]) => TestItem[]) =>
+    setStudentLogDraft((d) => {
+      const k = sk(evId, sid);
+      return { ...d, [k]: { ...d[k], tests: fn(withSpare(d[k]?.tests ?? existingTests(evId, sid))) } };
+    });
+  const setShiftField = (evId: string, field: keyof ShiftLogDraft, value: string) =>
+    setShiftLogDraft((d) => ({ ...d, [evId]: { ...d[evId], [field]: value } }));
+  // Giá trị chung của một ô dùng chung cả ca: có sẵn nếu mọi học sinh có mặt đang cùng một nội dung;
+  // khác nhau (mixed) thì để trống và nhắc rằng nhập mới sẽ ghi đè cho cả ca
+  const sharedOf = (evId: string, present: any[], col: LogCol) => {
+    const vals = new Set<string>();
+    present.forEach((s: any) => {
+      const v = existingText(evId, s.id, col).trim();
+      if (v) vals.add(v);
+    });
+    return { value: vals.size === 1 ? Array.from(vals)[0] : "", mixed: vals.size > 1 };
+  };
+
+  const renderShiftLog = (group: any) => {
+    if (group.students.length === 0) return null;
+    const evId = String(group.event.id);
+    const shiftMap = attendanceMap[evId] || {};
+    const present = group.students.filter((s: any) => !!shiftMap[String(s.id)]);
+    const open = !!openLog[evId];
+    const loggedN = present.filter((s: any) => existingText(evId, s.id, LOG.content).trim() !== "").length;
+    const draft = shiftLogDraft[evId];
+    const hasDraft =
+      !!(draft?.content || "").trim() ||
+      !!(draft?.homework || "").trim() ||
+      Object.keys(studentLogDraft).some((k) => k.startsWith(`${evId}:`));
+    const contentShared = sharedOf(evId, present, LOG.content);
+    const homeworkShared = sharedOf(evId, present, LOG.homework);
+
+    return (
+      <div className="border-t border-zinc-100">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpenLog((o) => ({ ...o, [evId]: !o[evId] }))}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0B1B3A]/40"
+        >
+          <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-zinc-800">
+            <BookOpen className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+            {vi ? "Nhật ký học tập" : "Learning log"}
+            {present.length > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
+                  loggedN === present.length ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500",
+                )}
+              >
+                {loggedN}/{present.length} {vi ? "đã ghi" : "logged"}
+              </span>
+            )}
+            {hasDraft && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">{vi ? "Chưa lưu" : "Unsaved"}</span>
+            )}
+          </span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-zinc-400 transition-transform", open && "rotate-180")} />
+        </button>
+
+        {open && (
+          <div className="space-y-4 border-t border-zinc-100 bg-zinc-50/60 p-4">
+            {present.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-5 text-center text-xs text-zinc-500">
+                {vi ? "Chạm tên học sinh có mặt ở trên để ghi nhật ký." : "Mark students as present above to write their log."}
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-zinc-500">
+                  {vi
+                    ? `Nội dung và bài tập áp dụng chung cho ${present.length} học sinh có mặt, hiện trong hóa đơn gửi phụ huynh.`
+                    : `Lesson content and homework apply to all ${present.length} present students and appear on the parent invoice.`}
+                </p>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <LogLabel icon={BookOpen} text={vi ? "Nội dung buổi học" : "Lesson content"} />
+                    <Textarea
+                      rows={3}
+                      aria-label={vi ? "Nội dung buổi học" : "Lesson content"}
+                      placeholder={vi ? "Hôm nay học gì..." : "What was taught today..."}
+                      className={cn("min-h-[84px] resize-y", LOG_FIELD)}
+                      value={draft?.content ?? contentShared.value}
+                      onChange={(e) => setShiftField(evId, "content", e.target.value)}
+                    />
+                    {contentShared.mixed && draft?.content === undefined && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        {vi
+                          ? "Các học sinh đang có nội dung khác nhau, nhập ở đây sẽ ghi đè cho cả ca."
+                          : "Students currently have different entries; typing here overwrites them for the whole shift."}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <LogLabel icon={ClipboardList} text={vi ? "Bài tập về nhà" : "Homework"} />
+                    <Textarea
+                      rows={3}
+                      aria-label={vi ? "Bài tập về nhà" : "Homework"}
+                      placeholder={vi ? "Bài tập giao cho buổi sau..." : "Homework for the next session..."}
+                      className={cn("min-h-[84px] resize-y", LOG_FIELD)}
+                      value={draft?.homework ?? homeworkShared.value}
+                      onChange={(e) => setShiftField(evId, "homework", e.target.value)}
+                    />
+                    {homeworkShared.mixed && draft?.homework === undefined && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        {vi
+                          ? "Các học sinh đang có bài tập khác nhau, nhập ở đây sẽ ghi đè cho cả ca."
+                          : "Students currently have different entries; typing here overwrites them for the whole shift."}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  {present.map((student: any) => {
+                    const key = sk(evId, student.id);
+                    const defaultOpen = present.length <= 2;
+                    const sOpen = openStudentLog[key] ?? defaultOpen;
+                    const tests = testsOf(evId, student.id);
+                    const lastBlank = isBlankTest(tests[tests.length - 1]);
+                    const testN = cleanTests(tests).length;
+                    const note = noteOf(evId, student.id);
+                    return (
+                      <div key={student.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                        <button
+                          type="button"
+                          aria-expanded={sOpen}
+                          onClick={() => setOpenStudentLog((o) => ({ ...o, [key]: !(o[key] ?? defaultOpen) }))}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0B1B3A]/40"
+                        >
+                          <span className="flex min-w-0 flex-wrap items-center gap-2">
+                            <span className={cn(avatarBase, "h-8 w-8 rounded-full text-xs")} style={solid(colorOf(student.id))}>
+                              {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+                            </span>
+                            <span className="truncate text-sm font-semibold text-zinc-900">{student.name}</span>
+                            {testN > 0 && (
+                              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
+                                {testN} {vi ? "bài kiểm tra" : testN > 1 ? "tests" : "test"}
+                              </span>
+                            )}
+                            {note.trim() !== "" && (
+                              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">{vi ? "Có ghi chú" : "Has note"}</span>
+                            )}
+                          </span>
+                          <ChevronDown className={cn("h-4 w-4 shrink-0 text-zinc-400 transition-transform", sOpen && "rotate-180")} />
+                        </button>
+
+                        {sOpen && (
+                          <div className="grid gap-3 border-t border-zinc-100 p-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                            <div className="min-w-0">
+                              <LogLabel icon={ClipboardCheck} text={vi ? "Bài kiểm tra" : "Tests"} />
+                              <div className="space-y-2">
+                                {tests.map((tItem, i) => (
+                                  <div key={i} className="flex gap-2">
+                                    <Input
+                                      type="text"
+                                      aria-label={`${vi ? "Tên bài kiểm tra" : "Test name"} ${i + 1}`}
+                                      placeholder={vi ? "Tên bài kiểm tra" : "Test name"}
+                                      className={cn("h-9 min-w-0 flex-1", LOG_FIELD)}
+                                      value={tItem.name}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        mutateTests(evId, student.id, (items) => items.map((x, j) => (j === i ? { ...x, name: v } : x)));
+                                      }}
+                                    />
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      aria-label={`${vi ? "Điểm kiểm tra" : "Test score"} ${i + 1}`}
+                                      placeholder={vi ? "Điểm" : "Score"}
+                                      className={cn("h-9 w-16 shrink-0 text-center font-semibold tabular-nums", LOG_FIELD)}
+                                      value={tItem.score}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        mutateTests(evId, student.id, (items) => items.map((x, j) => (j === i ? { ...x, score: v } : x)));
+                                      }}
+                                    />
+                                    <button
+                                      type="button"
+                                      aria-label={`${vi ? "Xóa bài kiểm tra" : "Remove test"} ${i + 1}`}
+                                      onClick={() => mutateTests(evId, student.id, (items) => items.filter((_, j) => j !== i))}
+                                      className={cn(
+                                        "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                                        tests.length > 1 || !isBlankTest(tItem) ? "" : "invisible",
+                                      )}
+                                    >
+                                      <X className="h-4 w-4" aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  disabled={lastBlank}
+                                  onClick={() => mutateTests(evId, student.id, (items) => [...items, { ...EMPTY_TEST }])}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                                >
+                                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                                  {vi ? "Thêm bài kiểm tra" : "Add test"}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="min-w-0">
+                              <LogLabel icon={StickyNote} text={vi ? "Ghi chú" : "Note"} />
+                              <Input
+                                type="text"
+                                aria-label={vi ? "Ghi chú" : "Note"}
+                                placeholder={vi ? "Nhận xét thêm cho phụ huynh..." : "Extra comments for parents..."}
+                                className={cn("h-9", LOG_FIELD)}
+                                value={note}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setStudentLogDraft((d) => ({ ...d, [key]: { ...d[key], note: v } }));
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[11px] text-zinc-400">
+                  {vi
+                    ? "Bấm “Lưu điểm danh” để lưu cùng lúc. Nội dung và bài tập chung để trống thì giữ nguyên dữ liệu cũ."
+                    : "Press “Save attendance” to save everything at once. Leaving shared content or homework empty keeps the existing entries."}
+                </p>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // Tiến độ điểm danh hôm nay (cộng tất cả các ca)
   const todayTotalStudents = todayShiftGroups.reduce((n, g) => n + g.students.length, 0);
   const todayPresentTotal = todayShiftGroups.reduce(
@@ -1477,7 +1821,9 @@ export default function Dashboard() {
                 <div>
                   <h3 className="text-base font-semibold text-zinc-900">{vi ? "Điểm danh nhanh hôm nay" : "Today's quick attendance"}</h3>
                   <p className="text-xs text-zinc-500">
-                    {vi ? "Chạm vào tên học sinh có mặt, rồi lưu một lần cho tất cả ca" : "Tap the students who are present, then save once for all shifts"}
+                    {vi
+                      ? "Chạm vào tên học sinh có mặt, ghi nhanh nhật ký học tập nếu cần, rồi lưu một lần cho tất cả ca"
+                      : "Tap the students who are present, jot down the learning log if needed, then save once for all shifts"}
                   </p>
                 </div>
               </div>
@@ -1597,6 +1943,8 @@ export default function Dashboard() {
                           })
                         )}
                       </div>
+
+                      {renderShiftLog(group)}
                     </div>
                   );
                 })}
