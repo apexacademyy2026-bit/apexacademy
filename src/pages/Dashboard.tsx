@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,14 @@ import {
   TrendingUp,
   Hourglass,
   CheckCircle2,
+  CheckCheck,
   CalendarCheck2,
   CalendarRange,
+  CalendarDays,
+  Timer,
+  Activity,
+  ArrowRight,
+  BarChart3,
   UserCheck,
   ChevronRight,
   ChevronDown,
@@ -166,7 +172,7 @@ type ShiftLogDraft = { content?: string; homework?: string };
 type StudentLogDraft = { note?: string; tests?: TestItem[] };
 
 const LOG_FIELD =
-  "rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[#0B1B3A] focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/10";
+  "rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[#3B1553] focus-visible:ring-2 focus-visible:ring-[#3B1553]/10";
 
 // Các cột nhật ký cần ghi cho một học sinh có mặt; null nếu không có gì để ghi
 const buildLogFields = (shift: ShiftLogDraft | undefined, own: StudentLogDraft | undefined): Record<string, string | null> | null => {
@@ -235,6 +241,21 @@ const getOnlineInfo = (cls: any, ev: any): { online: boolean; url: string | null
   const url = pickLink(ev) || toSafeUrl(ev?.location) || pickLink(cls);
   const online = !!url || isOnlineFlag(cls) || isOnlineFlag(ev) || NAME_ONLINE_RE.test(String(cls?.name || ev?.title || ""));
   return { online, url };
+};
+
+/* ---------------- TRẠNG THÁI CA HỌC HÔM NAY ----------------
+   Dựa vào giờ hiện tại so với giờ bắt đầu / kết thúc của ca (chỉ để hiển thị, không ảnh hưởng điểm danh hay học phí). */
+const SHIFT_STATUS = {
+  live: { vi: "Đang diễn ra", en: "In progress", pill: "bg-emerald-50 text-emerald-700 ring-emerald-100", dot: "bg-emerald-500" },
+  soon: { vi: "Sắp tới", en: "Upcoming", pill: "bg-amber-50 text-amber-700 ring-amber-100", dot: "bg-amber-400" },
+  done: { vi: "Đã kết thúc", en: "Ended", pill: "bg-zinc-100 text-zinc-600 ring-zinc-200", dot: "bg-zinc-400" },
+  allday: { vi: "Cả ngày", en: "All day", pill: "bg-zinc-100 text-zinc-600 ring-zinc-200", dot: "bg-zinc-400" },
+} as const;
+type ShiftStatus = keyof typeof SHIFT_STATUS;
+// "17:30" / "17:30:00" -> số phút trong ngày; null nếu không đọc được
+const toMinutes = (t: any): number | null => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(t ?? ""));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 };
 
 /* ---------------- TÍNH HỌC PHÍ ĐẾN NGÀY ----------------
@@ -454,29 +475,67 @@ const computeTuitionUntil = (o: {
 };
 
 /* ---------------- KIỂU GIAO DIỆN DÙNG CHUNG ----------------
-   Bảng màu: mực navy #0B1B3A · nhấn hổ phách #FFB547 · nền thẻ trắng đặc, đổ bóng mềm.
-   Mỗi số liệu có một sắc riêng (xanh trời / tím / hổ phách / chàm / lục lam) chỉ ở ô icon và quầng sáng góc thẻ.
-   Đỏ chỉ dành cho khoản chưa thu từ kỳ trước, xanh lục chỉ dành cho trạng thái đã thu / có mặt.
-   Thẻ dùng nền trắng đặc nên vẫn đọc tốt dù hình nền toàn ứng dụng là gì. */
+   Ngôn ngữ thiết kế "Aurora + Bento":
+   - Phần chào là khối mận đậm sâu có ba quầng sáng aurora trôi chậm, kèm thẻ kính mờ "Ca tiếp theo" đếm ngược theo phút.
+   - Dải lịch 7 ngày tới chọn được từng ngày; điểm danh hôm nay dạng dòng thời gian có vạch "Bây giờ".
+   - Phần tổng quan xếp kiểu bento: thẻ lớn nổi bật, thẻ vừa, biểu đồ nhỏ (phân bổ theo ngày thu, điểm danh 14 ngày).
+   - Số tiền / số đếm chạy lên khi tải; thẻ có ánh sáng đi theo con trỏ chuột (spotlight); mọi chuyển động tắt khi
+     người dùng bật "giảm chuyển động".
+   Bảng màu: mận đậm #3B1553 · hổ phách #FFB547 · tím hồng / hồng cho aurora.
+   Đỏ chỉ dành cho khoản chưa thu từ kỳ trước, xanh lục chỉ dành cho trạng thái đã thu / có mặt / đang diễn ra.
+   Mọi chữ nằm trong thẻ trắng đặc hoặc khối mận đậm nên đọc rõ dù hình nền toàn ứng dụng là gì. */
 const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
+// Số giờ / đồng hồ dùng chữ đơn cách (mono) cho cảm giác "bảng điều khiển"
+const MONO = "font-['JetBrains_Mono',ui-monospace,monospace]";
 const CARD =
-  "rounded-3xl border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(11,27,58,0.04),0_12px_32px_-16px_rgba(11,27,58,0.18)]";
-// Chip kính mờ đặt trên nền navy của phần chào
-const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 text-sm font-medium text-white backdrop-blur-sm";
+  "rounded-[28px] border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(59,21,83,0.04),0_18px_44px_-22px_rgba(59,21,83,0.22)]";
+// Kính mờ đặt trên nền mận đậm / aurora
+const GLASS = "border border-white/15 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-xl";
+const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 text-sm font-medium text-white backdrop-blur-md";
 const CHIP_BTN = `${CHIP} transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50`;
-const SEG = "flex w-fit max-w-full flex-wrap gap-0.5 rounded-full bg-zinc-100 p-1";
+const SEG = "flex w-fit max-w-full flex-wrap gap-0.5 rounded-3xl bg-zinc-100 p-1";
 const modalShell = `flex max-h-[92vh] flex-col gap-0 overflow-hidden rounded-[28px] border border-zinc-200 bg-white p-0 shadow-2xl sm:max-w-2xl ${FONT}`;
 
-// Nền gradient navy (phần chào + thẻ nổi bật)
+// Màu các phần trong biểu đồ phân bổ theo ngày thu
+const GROUP_COLORS = ["#FFB547", "#818CF8", "#22D3EE", "#F472B6", "#34D399", "#A78BFA"];
+
+// Nền gradient mận đậm (phần chào + các khối nổi bật)
 const HERO_BG: CSSProperties = {
-  backgroundImage:
-    "radial-gradient(90% 140% at 100% 0%, rgba(255,181,71,0.30) 0%, rgba(255,181,71,0) 55%), radial-gradient(70% 120% at 0% 100%, rgba(99,102,241,0.38) 0%, rgba(99,102,241,0) 60%), linear-gradient(135deg, #0B1B3A 0%, #15295c 100%)",
+  backgroundImage: "linear-gradient(140deg, #1F0A30 0%, #3B1553 52%, #5A2179 100%)",
 };
-const NAVY_BG: CSSProperties = {
+const DEEP_BG: CSSProperties = {
   backgroundImage:
-    "radial-gradient(100% 100% at 100% 0%, rgba(255,181,71,0.26) 0%, rgba(255,181,71,0) 60%), linear-gradient(145deg, #0B1B3A 0%, #12285a 100%)",
+    "radial-gradient(100% 100% at 100% 0%, rgba(255,181,71,0.26) 0%, rgba(255,181,71,0) 60%), linear-gradient(145deg, #3B1553 0%, #4F1C6B 100%)",
 };
-const ICON_TILE_BG: CSSProperties = { backgroundImage: "linear-gradient(145deg, #0B1B3A 0%, #1a3a7a 100%)" };
+const ICON_TILE_BG: CSSProperties = { backgroundImage: "linear-gradient(145deg, #3B1553 0%, #6B2A8F 100%)" };
+// Lưới chấm mờ phủ lên nền mận đậm, mờ dần về phía góc trái dưới
+const DOT_BG: CSSProperties = {
+  backgroundImage: "radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px)",
+  backgroundSize: "22px 22px",
+  WebkitMaskImage: "radial-gradient(80% 110% at 100% 0%, #000 0%, transparent 70%)",
+  maskImage: "radial-gradient(80% 110% at 100% 0%, #000 0%, transparent 70%)",
+};
+
+// CSS dùng chung: chữ, chuyển động aurora, hiệu ứng xuất hiện, spotlight
+const DASH_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
+@keyframes dash-drift-a { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(9%,10%,0) scale(1.14); } }
+@keyframes dash-drift-b { 0%,100% { transform: translate3d(0,0,0) scale(1.05); } 50% { transform: translate3d(-10%,12%,0) scale(0.92); } }
+@keyframes dash-drift-c { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(12%,-9%,0) scale(1.18); } }
+@keyframes dash-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes dash-sheen { from { background-position: 0% 50%; } to { background-position: 200% 50%; } }
+.dash-aurora-a { animation: dash-drift-a 20s ease-in-out infinite; }
+.dash-aurora-b { animation: dash-drift-b 24s ease-in-out infinite; }
+.dash-aurora-c { animation: dash-drift-c 28s ease-in-out infinite; }
+.dash-rise { animation: dash-rise .6s cubic-bezier(.2,.7,.2,1) backwards; animation-delay: var(--d, 0ms); }
+.dash-sheen { background-size: 200% 100%; animation: dash-sheen 7s linear infinite; }
+.dash-spot .dash-spot-glow { opacity: 0; transition: opacity .25s ease; }
+.dash-spot:hover .dash-spot-glow { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .dash-aurora-a, .dash-aurora-b, .dash-aurora-c, .dash-rise, .dash-sheen { animation: none !important; }
+  .dash-spot .dash-spot-glow { transition: none; }
+}
+`;
 
 // Sắc riêng của từng thẻ số liệu: ô icon + quầng sáng góc thẻ
 const TONES: Record<string, { tile: string; glow: string }> = {
@@ -487,13 +546,13 @@ const TONES: Record<string, { tile: string; glow: string }> = {
   avg: { tile: "bg-cyan-50 text-cyan-600", glow: "#22D3EE" },
 };
 
-// Chọn chữ navy hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
+// Chọn chữ mận đậm hay trắng để luôn đọc rõ trên màu nền do người dùng chọn
 const inkOn = (c: string) => {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(c).trim());
   if (!m) return "#ffffff";
   const n = parseInt(m[1], 16);
   const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-  return lum > 170 ? "#0B1B3A" : "#ffffff";
+  return lum > 170 ? "#3B1553" : "#ffffff";
 };
 // Ô màu đặc, có quầng sáng cùng màu để nổi bật
 const solid = (c: string): CSSProperties => ({
@@ -502,7 +561,106 @@ const solid = (c: string): CSSProperties => ({
   boxShadow: `0 8px 18px -8px ${c}`,
 });
 
-// Đầu popup: ô icon navy + tiêu đề + tổng tiền lớn, quầng hổ phách mờ ở góc
+// Số chạy lên từ giá trị đang hiển thị tới giá trị mới (tắt khi người dùng bật "giảm chuyển động")
+function useCountUp(target: number, duration = 800) {
+  const [val, setVal] = useState(0);
+  const fromRef = useRef(0);
+  useEffect(() => {
+    const safe = Number.isFinite(target) ? target : 0;
+    const reduce = typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      fromRef.current = safe;
+      setVal(safe);
+      return;
+    }
+    const from = fromRef.current;
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const p = Math.min(1, (now - t0) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      const v = from + (safe - from) * eased;
+      fromRef.current = v;
+      setVal(v);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return val;
+}
+function CountMoney({ value }: { value: number }) {
+  const v = useCountUp(value);
+  return <>{formatVND(Math.round(v))}</>;
+}
+function CountNum({ value }: { value: number }) {
+  const v = useCountUp(value, 600);
+  return <>{Math.round(v)}</>;
+}
+
+// Thẻ có ánh sáng đi theo con trỏ chuột (chỉ trang trí, không chặn thao tác)
+function Spot({
+  className,
+  children,
+  tint = "rgba(99,102,241,0.09)",
+  style,
+}: {
+  className?: string;
+  children: ReactNode;
+  tint?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      className={cn("dash-spot relative", className)}
+      style={style}
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+        e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+      }}
+    >
+      {children}
+      <div
+        aria-hidden
+        className="dash-spot-glow pointer-events-none absolute inset-0 rounded-[inherit]"
+        style={{ background: `radial-gradient(340px circle at var(--mx, 50%) var(--my, 0%), ${tint}, transparent 65%)` }}
+      />
+    </div>
+  );
+}
+
+// Vòng tiến độ có gradient hổ phách (dùng cho tỉ lệ có mặt hôm nay)
+function ProgressRing({ pct, size = 76, stroke = 7, id = "dash-ring" }: { pct: number; size?: number; stroke?: number; id?: string }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const safe = Math.min(100, Math.max(0, pct));
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#FFD27A" />
+          <stop offset="100%" stopColor="#FF8A5B" />
+        </linearGradient>
+      </defs>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={`url(#${id})`}
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={c - (c * safe) / 100}
+        className="transition-all duration-700 motion-reduce:transition-none"
+      />
+    </svg>
+  );
+}
+
+// Đầu popup: ô icon mận đậm + tiêu đề + tổng tiền lớn, quầng hổ phách mờ ở góc
 function ModalHead({
   icon: Icon,
   title,
@@ -517,14 +675,15 @@ function ModalHead({
   return (
     <DialogHeader className="relative shrink-0 space-y-4 overflow-hidden border-b border-zinc-100 bg-gradient-to-b from-zinc-50/80 to-white px-6 py-6 text-left">
       <div className="relative flex items-center gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#0B1B3A]/25" style={ICON_TILE_BG}>
+        <div className="grid h-10 w-10 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#3B1553]/25" style={ICON_TILE_BG}>
           <Icon className="h-[18px] w-[18px]" />
         </div>
         <DialogTitle className="text-sm font-medium text-zinc-500">{title}</DialogTitle>
       </div>
-      <div className="relative text-4xl font-semibold tabular-nums tracking-tight text-zinc-900">{total}</div>
+      <div className="relative text-4xl font-extrabold tabular-nums tracking-tight text-zinc-900">{total}</div>
       {children && <div className="relative">{children}</div>}
       <div aria-hidden className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[#FFB547]/20 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -left-16 -top-20 h-40 w-40 rounded-full bg-fuchsia-400/10 blur-3xl" />
     </DialogHeader>
   );
 }
@@ -641,28 +800,32 @@ export default function Dashboard() {
     return merged.filter((e: any) => e.notes !== "__cancelled__");
   }, [events.data, schedules.data, classes.data, todayStr]);
 
-  // Gom nhóm ca học hôm nay theo Khung giờ & Lớp
+  // Gom nhóm ca học hôm nay theo Khung giờ & Lớp (xếp theo giờ bắt đầu, ca cả ngày xuống cuối)
   const todayShiftGroups = useMemo(() => {
     if (!todayEvents.length || !students) return [];
-    return todayEvents.map((ev: any) => {
-      const cls = (classes.data || []).find((c: any) => String(c.id) === String(ev.class_id));
-      const enrolledStudentIds = new Set(
-        (enrollments.data || [])
-          .filter((e: any) => String(e.class_id) === String(ev.class_id))
-          .map((e: any) => String(e.student_id))
-      );
-      const shiftStudents = students.filter((s: any) => enrolledStudentIds.has(String(s.id)));
+    return todayEvents
+      .map((ev: any) => {
+        const cls = (classes.data || []).find((c: any) => String(c.id) === String(ev.class_id));
+        const enrolledStudentIds = new Set(
+          (enrollments.data || [])
+            .filter((e: any) => String(e.class_id) === String(ev.class_id))
+            .map((e: any) => String(e.student_id))
+        );
+        const shiftStudents = students.filter((s: any) => enrolledStudentIds.has(String(s.id)));
 
-      const timeLabel = ev.start_time
-        ? `${ev.start_time.slice(0, 5)}${ev.end_time ? ` - ${ev.end_time.slice(0, 5)}` : ""}`
-        : "Cả ngày";
-      return {
-        event: ev,
-        className: ev.title || cls?.name || "Lớp học",
-        timeLabel,
-        students: shiftStudents,
-      };
-    });
+        const timeLabel = ev.start_time
+          ? `${ev.start_time.slice(0, 5)}${ev.end_time ? ` - ${ev.end_time.slice(0, 5)}` : ""}`
+          : "Cả ngày";
+        return {
+          event: ev,
+          className: ev.title || cls?.name || "Lớp học",
+          timeLabel,
+          students: shiftStudents,
+        };
+      })
+      .sort((a: any, b: any) =>
+        String(a.event.start_time || "99:99").localeCompare(String(b.event.start_time || "99:99")),
+      );
   }, [todayEvents, classes.data, students, enrollments.data]);
 
   // Đồng bộ state điểm danh ban đầu cho tất cả ca học (Chỉ chạy khi có dữ liệu mới từ Database)
@@ -705,6 +868,18 @@ export default function Dashboard() {
           [sId]: !currentShift[sId],
         },
       };
+    });
+  };
+
+  // Đánh dấu có mặt / bỏ chọn cả ca chỉ bằng một chạm
+  const setShiftAllAttendance = (group: any, value: boolean) => {
+    const eId = String(group.event.id);
+    setAttendanceMap((prev) => {
+      const next = { ...(prev[eId] || {}) };
+      group.students.forEach((s: any) => {
+        next[String(s.id)] = value;
+      });
+      return { ...prev, [eId]: next };
     });
   };
 
@@ -1332,8 +1507,14 @@ export default function Dashboard() {
       : lang === "vi" ? "Tuỳ chỉnh" : "Custom";
 
   /* ---------------- GIAO DIỆN ----------------
-     Phần chào gradient navy → thẻ điểm danh có thanh tiến độ → thẻ nổi bật navy →
-     bộ lọc thời gian → lưới số liệu có ô icon màu. Các popup dùng đầu popup có quầng sáng. */
+     Bố cục (từ trên xuống):
+       1. Phần chào aurora + thẻ kính mờ "Ca tiếp theo" (đếm ngược theo phút, nút vào lớp, tỉ lệ có mặt hôm nay).
+       2. Lịch 7 ngày tới: chọn từng ngày để xem các ca.
+       3. Hàng chính: điểm danh nhanh dạng dòng thời gian (vạch "Bây giờ", nhật ký học tập) + ô "Tính học phí đến ngày".
+       4. Tổng quan theo kỳ lọc kiểu bento: thẻ lớn học phí dự kiến + phân bổ theo ngày thu, học phí kỳ sắp tới,
+          lương mặc định, biểu đồ có mặt 14 ngày, ba thẻ đếm gọn.
+       5. Thanh lưu nổi ở đáy màn hình khi còn thay đổi chưa lưu.
+     Chữ nào cũng nằm trong thẻ trắng đặc hoặc khối mận đậm nên đọc rõ trên mọi hình nền. */
   const vi = lang === "vi";
 
   // Màu riêng của từng học sinh, dùng chung bảng màu với trang Học sinh
@@ -1350,6 +1531,24 @@ export default function Dashboard() {
   const onlineOf = (group: any) => {
     const cls = (classes.data || []).find((c: any) => String(c.id) === String(group.event.class_id));
     return getOnlineInfo(cls, group.event);
+  };
+
+  // Ca đang diễn ra / sắp tới / đã kết thúc theo giờ hiện tại
+  // Đồng hồ làm mới mỗi phút để trạng thái ca học và đếm ngược luôn đúng mà không cần tải lại trang
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((n) => n + 1), 60000);
+    return () => window.clearInterval(id);
+  }, []);
+  const clockNow = new Date();
+  const nowMinutes = clockNow.getHours() * 60 + clockNow.getMinutes();
+  const shiftStatusOf = (ev: any): ShiftStatus => {
+    const s = toMinutes(ev.start_time);
+    const e = toMinutes(ev.end_time);
+    if (s == null) return "allday";
+    if (e != null && nowMinutes >= e) return "done";
+    if (nowMinutes >= s) return "live";
+    return "soon";
   };
 
   // ---- Nhật ký học tập ghi nhanh ngay trong thẻ ca học ----
@@ -1404,10 +1603,12 @@ export default function Dashboard() {
           type="button"
           aria-expanded={open}
           onClick={() => setOpenLog((o) => ({ ...o, [evId]: !o[evId] }))}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0B1B3A]/40"
+          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B1553]/40"
         >
           <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-zinc-800">
-            <BookOpen className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-zinc-100 text-zinc-500">
+              <BookOpen className="h-4 w-4" aria-hidden="true" />
+            </span>
             {vi ? "Nhật ký học tập" : "Learning log"}
             {present.length > 0 && (
               <span
@@ -1429,7 +1630,7 @@ export default function Dashboard() {
         {open && (
           <div className="space-y-4 border-t border-zinc-100 bg-zinc-50/60 p-4">
             {present.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-5 text-center text-xs text-zinc-500">
+              <div className="rounded-2xl border border-dashed border-zinc-300 bg-white px-4 py-5 text-center text-xs text-zinc-500">
                 {vi ? "Chạm tên học sinh có mặt ở trên để ghi nhật ký." : "Mark students as present above to write their log."}
               </div>
             ) : (
@@ -1489,12 +1690,12 @@ export default function Dashboard() {
                     const testN = cleanTests(tests).length;
                     const note = noteOf(evId, student.id);
                     return (
-                      <div key={student.id} className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                      <div key={student.id} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
                         <button
                           type="button"
                           aria-expanded={sOpen}
                           onClick={() => setOpenStudentLog((o) => ({ ...o, [key]: !(o[key] ?? defaultOpen) }))}
-                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#0B1B3A]/40"
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B1553]/40"
                         >
                           <span className="flex min-w-0 flex-wrap items-center gap-2">
                             <span className={cn(avatarBase, "h-8 w-8 rounded-full text-xs")} style={solid(colorOf(student.id))}>
@@ -1548,7 +1749,7 @@ export default function Dashboard() {
                                       aria-label={`${vi ? "Xóa bài kiểm tra" : "Remove test"} ${i + 1}`}
                                       onClick={() => mutateTests(evId, student.id, (items) => items.filter((_, j) => j !== i))}
                                       className={cn(
-                                        "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                                        "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
                                         tests.length > 1 || !isBlankTest(tItem) ? "" : "invisible",
                                       )}
                                     >
@@ -1560,7 +1761,7 @@ export default function Dashboard() {
                                   type="button"
                                   disabled={lastBlank}
                                   onClick={() => mutateTests(evId, student.id, (items) => [...items, { ...EMPTY_TEST }])}
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
                                 >
                                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                                   {vi ? "Thêm bài kiểm tra" : "Add test"}
@@ -1609,6 +1810,25 @@ export default function Dashboard() {
   );
   const todayPct = todayTotalStudents > 0 ? Math.round((todayPresentTotal / todayTotalStudents) * 100) : 0;
 
+  // Điểm danh đang chọn khác với dữ liệu đã lưu? (ca mới chưa có bản ghi thì chỉ "khác" khi có người được đánh dấu có mặt)
+  const attendanceDirty = useMemo(
+    () =>
+      todayShiftGroups.some((g) => {
+        const shiftMap = attendanceMap[String(g.event.id)];
+        if (!shiftMap) return false;
+        return g.students.some((s: any) => {
+          const sid = String(s.id);
+          const saved = g.event.virtual ? undefined : attendanceByKey.get(`${g.event.id}|${sid}`);
+          return !!shiftMap[sid] !== !!saved?.present;
+        });
+      }),
+    [todayShiftGroups, attendanceMap, attendanceByKey],
+  );
+  const unsavedLogs =
+    Object.values(shiftLogDraft).some((d) => !!(d?.content || "").trim() || !!(d?.homework || "").trim()) ||
+    Object.keys(studentLogDraft).length > 0;
+  const hasPending = todayShiftGroups.length > 0 && (attendanceDirty || unsavedLogs);
+
   // Ô "Tính học phí đến ngày": danh sách hiển thị (tắt "gồm buổi đã học chưa thu" thì bỏ phần đó khỏi từng dòng và tổng)
   const fullDate = (d: string) => (d && d.length >= 10 ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "");
   const calcRows = tuitionCalc.rows
@@ -1617,8 +1837,8 @@ export default function Dashboard() {
     .sort((a, b) => b.total - a.total || String(a.student.name || "").localeCompare(String(b.student.name || ""), "vi"));
   const calcTotal = calcRows.reduce((n, r) => n + r.total, 0);
   const calcPresets = [
-    { k: "eom", vi: "Hết tháng này", en: "End of this month", date: toISO(endOfThisMonth()) },
-    { k: "nom", vi: "Đầu tháng sau", en: "Start of next month", date: toISO(new Date(today.getFullYear(), today.getMonth() + 1, 1)) },
+    { k: "eom", vi: "Hết tháng này", en: "End of month", date: toISO(endOfThisMonth()) },
+    { k: "nom", vi: "Đầu tháng sau", en: "Next month", date: toISO(new Date(today.getFullYear(), today.getMonth() + 1, 1)) },
     { k: "d30", vi: "30 ngày tới", en: "Next 30 days", date: toISO(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30)) },
   ];
 
@@ -1657,107 +1877,149 @@ export default function Dashboard() {
       : today.getHours() < 18
       ? vi ? "Chào buổi chiều" : "Good afternoon"
       : vi ? "Chào buổi tối" : "Good evening";
+  const dateLabel = today.toLocaleDateString(vi ? "vi-VN" : "en-US", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+  const displayName = (profile as any)?.brand_name || profile?.display_name || brandName;
 
-  const stats: {
-    key: string;
-    label: string;
-    value: string | number;
-    icon: any;
-    to?: string;
-    onClick?: () => void;
-  }[] = [
-    { key: "students", to: "/students", label: vi ? "Học sinh hoạt động" : "Active students", value: activeStudents, icon: Users },
-    { key: "classes", to: "/classes", label: vi ? "Lớp có hoạt động" : "Active classes", value: activeClasses, icon: GraduationCap },
-    { key: "tuition", onClick: () => setShowCollectedModal(true), label: vi ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition", value: formatVND(totalUpcomingFee), icon: Wallet },
-    { key: "payments", to: "/students", label: vi ? "Số lần thanh toán" : "Payments count", value: paymentsCount, icon: CalendarClock },
-    { key: "avg", onClick: () => setShowSalaryModal(true), label: vi ? "Lương mặc định" : "Default salary", value: formatVND(defaultSalary), icon: TrendingUp },
-    { key: "pending", onClick: () => setShowExpectedModal(true), label: vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period", value: formatVND(expectedTotal), icon: Hourglass },
-  ];
-  const statOf = (key: string) => stats.find((s) => s.key === key)!;
+  /* ---------------- DỮ LIỆU CHO CÁC KHỐI MỚI ---------------- */
 
-  const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
-
-  // Thẻ số liệu thường: ô icon màu + nhãn, số lớn, nút mũi tên chuyển navy khi rê chuột, quầng sáng góc thẻ
-  const renderStat = (s: (typeof stats)[number], big = false) => {
-    const tone = TONES[s.key] || TONES.students;
-    const card = (
-      <div
-        className={cn(
-          CARD,
-          "group relative flex h-full flex-col justify-between gap-7 overflow-hidden p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(11,27,58,0.05),0_20px_40px_-16px_rgba(11,27,58,0.28)]",
-          big && "sm:p-6",
+  // Ca tiếp theo (hoặc đang diễn ra) trong hôm nay, kèm số phút còn lại tới lúc bắt đầu / kết thúc
+  const shiftsDone = todayShiftGroups.filter((g) => shiftStatusOf(g.event) === "done").length;
+  const nextUp = (() => {
+    const live = todayShiftGroups.find((g) => shiftStatusOf(g.event) === "live");
+    if (live) return { group: live, status: "live" as const };
+    const soon = todayShiftGroups.find((g) => shiftStatusOf(g.event) === "soon");
+    if (soon) return { group: soon, status: "soon" as const };
+    return null;
+  })();
+  const nextStart = nextUp ? toMinutes(nextUp.group.event.start_time) : null;
+  const nextEnd = nextUp ? toMinutes(nextUp.group.event.end_time) : null;
+  const nextMins = nextUp ? (nextUp.status === "live" ? (nextEnd != null ? nextEnd - nowMinutes : null) : nextStart != null ? nextStart - nowMinutes : null) : null;
+  const nextOnline = nextUp ? onlineOf(nextUp.group) : null;
+  const heroSub =
+    todayShiftGroups.length === 0
+      ? vi
+        ? "Hôm nay không có ca học nào, tranh thủ rà lại học phí nhé."
+        : "No classes today, a good moment to review tuition."
+      : vi
+      ? `Hôm nay có ${todayShiftGroups.length} ca học với ${todayTotalStudents} lượt học sinh${shiftsDone > 0 ? `, đã xong ${shiftsDone} ca` : ""}.`
+      : `${todayShiftGroups.length} classes today with ${todayTotalStudents} student slots${shiftsDone > 0 ? `, ${shiftsDone} done` : ""}.`;
+  // Số lớn + đơn vị nhỏ: "42 phút" hoặc "1 giờ 05 phút"
+  const renderDur = (m: number) => {
+    const mm = Math.max(m, 0);
+    const h = Math.floor(mm / 60);
+    const r = mm % 60;
+    const unit = (txt: string) => <span className="ml-1 mr-2 text-sm font-medium text-white/55">{txt}</span>;
+    return (
+      <span className={cn(MONO, "text-4xl font-bold tabular-nums tracking-tight text-[#FFD27A]")}>
+        {h > 0 && (
+          <>
+            {h}
+            {unit(vi ? "giờ" : "h")}
+          </>
         )}
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full opacity-25 blur-2xl transition-opacity duration-200 group-hover:opacity-45"
-          style={{ background: tone.glow }}
-        />
-        <div className="relative flex items-center gap-3">
-          <div className={cn("grid shrink-0 place-items-center rounded-2xl", tone.tile, big ? "h-11 w-11" : "h-10 w-10")}>
-            <s.icon className="h-5 w-5" />
-          </div>
-          <span className="text-sm font-medium leading-snug text-zinc-500">{s.label}</span>
-        </div>
-        <div className="relative flex items-end justify-between gap-3">
-          {loading ? (
-            <Skeleton className="h-9 w-28" />
-          ) : (
-            <h3 className={cn("truncate font-semibold tabular-nums tracking-tight text-zinc-900", big ? "text-3xl" : "text-2xl")}>{s.value}</h3>
-          )}
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-400 transition-colors duration-200 group-hover:bg-[#0B1B3A] group-hover:text-[#FFB547]">
-            <ArrowUpRight className="h-4 w-4" />
-          </span>
-        </div>
-      </div>
-    );
-    return s.to ? (
-      <Link key={s.key} to={s.to} className={cn("block h-full rounded-3xl", focusRing)}>
-        {card}
-      </Link>
-    ) : (
-      <button key={s.key} type="button" onClick={s.onClick} className={cn("block h-full w-full rounded-3xl text-left", focusRing)}>
-        {card}
-      </button>
+        {h > 0 ? String(r).padStart(2, "0") : Math.max(r, 1)}
+        {unit(vi ? "phút" : "min")}
+      </span>
     );
   };
+  const scrollToAttendance = () => document.getElementById("diem-danh")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
-  // Thẻ nổi bật duy nhất của trang (học phí dự kiến trong kỳ): gradient navy, quầng hổ phách, icon chìm
-  const renderFeatured = (s: (typeof stats)[number]) => (
-    <button
-      key={s.key}
-      type="button"
-      onClick={s.onClick}
-      className={cn(
-        "group relative flex h-full min-h-[13rem] w-full flex-col justify-between gap-8 overflow-hidden rounded-3xl p-6 text-left text-white shadow-[0_18px_40px_-18px_rgba(11,27,58,0.65)] transition-transform duration-200 hover:-translate-y-0.5",
-        focusRing,
-      )}
-      style={NAVY_BG}
-    >
-      <Hourglass aria-hidden className="pointer-events-none absolute -bottom-8 -right-6 h-40 w-40 -rotate-12 text-white/[0.06]" />
-      <div className="relative flex items-center gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#FFB547]/15 text-[#FFB547] ring-1 ring-[#FFB547]/30">
-          <s.icon className="h-5 w-5" />
-        </div>
-        <span className="text-sm font-medium leading-snug text-white/70">{s.label}</span>
-      </div>
-      <div className="relative space-y-3">
-        {loading ? (
-          <Skeleton className="h-10 w-36 bg-white/20" />
-        ) : (
-          <h3 className="truncate text-4xl font-semibold tabular-nums tracking-tight">{s.value}</h3>
-        )}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="inline-flex items-center rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-white/80 ring-1 ring-white/10">
-            {unpaidStudentCount} {vi ? "học sinh chưa thu" : "students unpaid"}
+  // Dải lịch 7 ngày tới: các buổi theo lịch cố định + buổi thêm tay (cùng quy tắc với phần tính học phí), bỏ buổi đã hủy
+  const [weekSel, setWeekSel] = useState<string | null>(null);
+  const weekDays = useMemo(() => {
+    const out: { date: string; dow: number; day: string; sessions: SessionItem[] }[] = [];
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      const date = toISO(d);
+      const sessions: SessionItem[] = [];
+      (classes.data || []).forEach((c: any) => sessions.push(...buildClassSessions(c, date, date, schedules.data || [], events.data || [])));
+      sessions.sort((a, b) => a.start.localeCompare(b.start));
+      out.push({ date, dow: d.getDay(), day: String(d.getDate()), sessions });
+    }
+    return out;
+  }, [classes.data, schedules.data, events.data]);
+  const selDay = weekDays.find((d) => d.date === weekSel) || weekDays[0];
+  const weekTotal = weekDays.reduce((n, d) => n + d.sessions.length, 0);
+
+  // Lượt có mặt 14 ngày gần nhất (đã lưu trong bảng điểm danh)
+  const attendance14 = useMemo(() => {
+    const dateOfEvent = new Map<string, string>();
+    (events.data || []).forEach((e: any) => {
+      if (e.event_date) dateOfEvent.set(String(e.id), String(e.event_date).slice(0, 10));
+    });
+    const counts = new Map<string, number>();
+    (attendanceAll.data || []).forEach((a: any) => {
+      if (!a.present) return;
+      const d = dateOfEvent.get(String(a.event_id));
+      if (d) counts.set(d, (counts.get(d) || 0) + 1);
+    });
+    const out: { date: string; dow: number; day: string; n: number; isToday: boolean }[] = [];
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(base);
+      d.setDate(base.getDate() - i);
+      const date = toISO(d);
+      out.push({ date, dow: d.getDay(), day: String(d.getDate()), n: counts.get(date) || 0, isToday: i === 0 });
+    }
+    return out;
+  }, [events.data, attendanceAll.data]);
+  const att14Total = attendance14.reduce((n, d) => n + d.n, 0);
+  const att14Max = Math.max(1, ...attendance14.map((d) => d.n));
+  const att14ActiveDays = attendance14.filter((d) => d.n > 0).length;
+  const att14Avg = att14ActiveDays > 0 ? Math.round((att14Total / att14ActiveDays) * 10) / 10 : 0;
+
+  // Học sinh còn hóa đơn chưa thu (dùng cho chồng avatar ở thẻ nổi bật)
+  const unpaidIds = new Set(rawUpcoming.filter((u) => !u.paid).map((u) => String(u.studentId)));
+  const unpaidStudents = students.filter((s: any) => unpaidIds.has(String(s.id)));
+
+  // Phân bổ học phí theo ngày thu (mỗi nhóm một màu) + cơ cấu kỳ hiện tại / chưa thu kỳ trước
+  const groupsColored = billingGroups.map((g, i) => ({ ...g, color: GROUP_COLORS[i % GROUP_COLORS.length] }));
+  const groupLabel = (g: BillingGroup) => (g.day ? (vi ? `Ngày ${g.day}` : `Day ${g.day}`) : vi ? "Chưa đặt ngày" : "Not set");
+  const currentOnly = Math.max(0, totalUpcomingFee - totalOverdueFee);
+  const overduePct = totalUpcomingFee > 0 ? Math.round((totalOverdueFee / totalUpcomingFee) * 100) : 0;
+
+  // Vị trí vạch "Bây giờ" trên dòng thời gian: trước ca đầu tiên chưa kết thúc (không hiện khi đang có ca diễn ra)
+  const firstOpenIdx = todayShiftGroups.findIndex((g) => shiftStatusOf(g.event) !== "done");
+  const nowIdx = firstOpenIdx === -1 ? todayShiftGroups.length : firstOpenIdx;
+  const showNowMarker = todayShiftGroups.length > 0 && !(firstOpenIdx !== -1 && shiftStatusOf(todayShiftGroups[firstOpenIdx].event) === "live");
+  const nowLabel = `${String(clockNow.getHours()).padStart(2, "0")}:${String(clockNow.getMinutes()).padStart(2, "0")}`;
+
+  const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
+  const rise = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
+
+  // Thẻ đếm gọn ở hàng cuối của phần tổng quan
+  const renderCounter = (key: "students" | "classes" | "payments", to: string, label: string, value: number, sub: string, Icon: any, delay: number) => {
+    const tone = TONES[key];
+    return (
+      <Link key={key} to={to} className={cn("group block rounded-[28px] lg:col-span-4", focusRing)}>
+        <Spot
+          tint="rgba(99,102,241,0.08)"
+          className={cn(CARD, "dash-rise flex h-full items-center gap-4 overflow-hidden p-4 transition-shadow duration-200 hover:shadow-[0_2px_4px_rgba(59,21,83,0.05),0_22px_44px_-18px_rgba(59,21,83,0.3)] sm:p-5")}
+          style={rise(delay)}
+        >
+          <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl", tone.tile)}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-medium text-zinc-500">{label}</div>
+            <div className="mt-0.5 flex items-baseline gap-2">
+              <span className="text-3xl font-extrabold tabular-nums tracking-tight text-zinc-900">
+                {loading ? <Skeleton className="inline-block h-7 w-12 align-middle" /> : <CountNum value={value} />}
+              </span>
+              <span className="truncate text-xs text-zinc-400">{sub}</span>
+            </div>
+          </div>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-400 transition-colors duration-200 group-hover:bg-[#3B1553] group-hover:text-[#FFB547]">
+            <ArrowUpRight className="h-4 w-4" />
           </span>
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#FFB547]">
-            {vi ? "Xem chi tiết" : "View details"} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-          </span>
-        </div>
-      </div>
-    </button>
-  );
+        </Spot>
+      </Link>
+    );
+  };
 
   const presets: { k: PresetKey; vi: string; en: string }[] = [
     { k: "thisMonth", vi: "Tháng này", en: "This month" },
@@ -1767,40 +2029,72 @@ export default function Dashboard() {
   ];
   const segBtn = (active: boolean) =>
     cn(
-      "h-8 rounded-full px-3.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
-      active ? "bg-[#0B1B3A] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+      "h-8 rounded-full px-3.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
+      active ? "bg-[#3B1553] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900"
     );
-  const datePill = "flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm focus-within:border-[#0B1B3A] focus-within:ring-2 focus-within:ring-[#0B1B3A]/10";
+  const datePill = "flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm focus-within:border-[#3B1553] focus-within:ring-2 focus-within:ring-[#3B1553]/10";
 
   return (
-    <div className={cn("mx-auto max-w-7xl pb-12", FONT)}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');`}</style>
+    <div className={cn("mx-auto max-w-7xl space-y-5 pb-12", hasPending && "pb-28", FONT)}>
+      <style>{DASH_CSS}</style>
 
-      {/* Hình nền nằm ở AppLayout (toàn ứng dụng), các thẻ ở đây là nền trắng đặc nên luôn đọc rõ */}
-      <div className="space-y-4">
-        {/* LỜI CHÀO */}
-        <section
-          className="relative overflow-hidden rounded-3xl p-6 text-white shadow-[0_18px_40px_-20px_rgba(11,27,58,0.6)] sm:p-8"
-          style={HERO_BG}
-        >
-          <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border border-white/10" />
-          <div aria-hidden className="pointer-events-none absolute -right-4 -top-8 h-32 w-32 rounded-full border border-white/10" />
-          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-3">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-[#FFB547] ring-1 ring-white/10">
-                <Sparkles className="h-3.5 w-3.5" />
-                {vi ? `Số liệu ${periodLabel.toLowerCase()}` : `Overview for ${periodLabel.toLowerCase()}`}
-              </span>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                {greeting},{" "}
-                <span className="text-[#FFB547]">{(profile as any)?.brand_name || profile?.display_name || brandName}</span>
+      {/* ========== 1. PHẦN CHÀO (aurora) + CA TIẾP THEO ========== */}
+      <section
+        className="dash-rise relative isolate overflow-hidden rounded-[36px] p-6 text-white shadow-[0_30px_60px_-30px_rgba(59,21,83,0.85)] sm:p-9"
+        style={HERO_BG}
+      >
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          <div className="dash-aurora-a absolute -left-24 -top-32 h-96 w-96 rounded-full bg-fuchsia-500/60 blur-[90px]" />
+          <div className="dash-aurora-b absolute -right-16 -top-10 h-[26rem] w-[26rem] rounded-full bg-[#FFB547]/40 blur-[100px]" />
+          <div className="dash-aurora-c absolute -bottom-44 left-1/3 h-96 w-96 rounded-full bg-pink-400/30 blur-[100px]" />
+          <div className="absolute inset-0" style={DOT_BG} />
+        </div>
+
+        <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-stretch">
+          <div className="flex min-w-0 flex-col justify-between gap-8">
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#FFB547] ring-1 ring-white/10">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {t.dashboard || (vi ? "Bảng điều khiển" : "Dashboard")}
+                </span>
+                <span className="text-xs font-medium text-white/60 first-letter:uppercase">{dateLabel}</span>
+              </div>
+              <h1 className="text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl">
+                {greeting},
+                <br />
+                <span className="dash-sheen bg-gradient-to-r from-[#FFD27A] via-[#FF9A6B] to-[#FFD27A] bg-clip-text text-transparent">{displayName}</span>
               </h1>
+              <p className="max-w-md text-sm leading-relaxed text-white/65">{heroSub}</p>
             </div>
+
             <div className="flex flex-wrap items-center gap-2">
-              <span className={CHIP}>
-                <CalendarCheck2 className="h-4 w-4 text-[#FFB547]" />
-                {new Date().toLocaleDateString(vi ? "vi-VN" : "en-US")}
-              </span>
+              <button
+                type="button"
+                onClick={() => setShowExpectedModal(true)}
+                className={cn(
+                  CHIP_BTN,
+                  unpaidStudentCount > 0 && "border-[#FFB547]/40 bg-[#FFB547]/15 text-[#FFD9A0] hover:bg-[#FFB547]/25",
+                )}
+              >
+                {unpaidStudentCount > 0 ? (
+                  <>
+                    <Hourglass className="h-4 w-4 text-[#FFB547]" />
+                    <span className="tabular-nums">
+                      {vi ? "Chưa thu" : "Unpaid"} {formatVND(expectedTotal)}
+                    </span>
+                    <span className="text-white/50">·</span>
+                    <span className="tabular-nums">
+                      {unpaidStudentCount} {vi ? "HS" : "students"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    {vi ? "Đã thu đủ học phí" : "All tuition collected"}
+                  </>
+                )}
+              </button>
               <span className={CHIP}>
                 <Clock className="h-4 w-4 text-[#FFB547]" />
                 {vi ? `${todayShiftGroups.length} ca học hôm nay` : `${todayShiftGroups.length} classes today`}
@@ -1808,162 +2102,407 @@ export default function Dashboard() {
               <BackgroundPicker vi={vi} className={CHIP_BTN} />
             </div>
           </div>
-        </section>
 
-        {/* HÔM NAY: ĐIỂM DANH NHANH + HỌC PHÍ DỰ KIẾN */}
-        <div className="grid gap-4 lg:grid-cols-12">
-          <section className={cn(CARD, "space-y-5 p-5 sm:p-6 lg:col-span-8")}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="grid h-11 w-11 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#0B1B3A]/20" style={ICON_TILE_BG}>
-                  <UserCheck className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-zinc-900">{vi ? "Điểm danh nhanh hôm nay" : "Today's quick attendance"}</h3>
-                  <p className="text-xs text-zinc-500">
-                    {vi
-                      ? "Chạm vào tên học sinh có mặt, ghi nhanh nhật ký học tập nếu cần, rồi lưu một lần cho tất cả ca"
-                      : "Tap the students who are present, jot down the learning log if needed, then save once for all shifts"}
-                  </p>
-                </div>
-              </div>
-              {todayShiftGroups.length > 0 && (
-                <Button
-                  onClick={handleSaveAllAttendance}
-                  disabled={savingAttendance}
-                  className="h-10 shrink-0 gap-2 rounded-xl bg-[#0B1B3A] px-4 text-sm font-semibold text-white shadow-md shadow-[#0B1B3A]/25 hover:bg-[#13285a]"
+          {/* Thẻ kính mờ: ca đang diễn ra / sắp tới + tỉ lệ có mặt hôm nay */}
+          <div className={cn(GLASS, "relative flex min-w-0 flex-col justify-between gap-6 overflow-hidden rounded-[28px] p-5 sm:p-6")}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em] text-white/60">
+                {nextUp?.status === "live" ? (
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70 motion-reduce:animate-none" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                  </span>
+                ) : (
+                  <Timer className="h-3.5 w-3.5" />
+                )}
+                {nextUp
+                  ? nextUp.status === "live"
+                    ? vi ? "Đang diễn ra" : "Happening now"
+                    : vi ? "Ca tiếp theo" : "Up next"
+                  : vi ? "Hôm nay" : "Today"}
+              </span>
+              {nextUp && nextOnline?.online && nextOnline.url && (
+                <a
+                  href={nextOnline.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[#3B1553] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
-                  <CheckCircle2 className="h-4 w-4 text-[#FFB547]" />
-                  {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu điểm danh" : "Save attendance"}
-                </Button>
+                  <Video className="h-3.5 w-3.5" />
+                  {vi ? "Vào lớp" : "Join class"}
+                  <ExternalLink className="h-3 w-3 opacity-60" />
+                </a>
               )}
             </div>
 
-            {todayShiftGroups.length > 0 && (
-              <div className="flex items-center gap-3 rounded-2xl bg-zinc-50 px-4 py-3">
-                <span className="text-sm font-semibold tabular-nums text-zinc-900">
-                  {todayPresentTotal}/{todayTotalStudents}
-                </span>
-                <span className="text-xs text-zinc-500">{vi ? "có mặt" : "present"}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-zinc-200">
-                  <div className="h-full rounded-full bg-emerald-500 transition-all duration-300" style={{ width: `${todayPct}%` }} />
+            {nextUp ? (
+              <div className="space-y-4">
+                <div className="min-w-0">
+                  <div className="truncate text-xl font-bold tracking-tight">{nextUp.group.className}</div>
+                  <div className={cn(MONO, "mt-1 text-sm text-white/60")}>{nextUp.group.timeLabel}</div>
                 </div>
-                <span className="w-10 text-right text-xs font-semibold tabular-nums text-zinc-600">{todayPct}%</span>
-              </div>
-            )}
-
-            {todayShiftGroups.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 py-10 text-sm text-zinc-500">
-                <div className="grid h-12 w-12 place-items-center rounded-full bg-white text-zinc-400 shadow-sm ring-1 ring-zinc-200">
-                  <CalendarCheck2 className="h-5 w-5" />
-                </div>
-                {vi ? "Hôm nay không có ca học nào." : "No scheduled classes for today."}
+                {nextMins != null && (
+                  <div className="flex flex-wrap items-baseline gap-x-1">
+                    {renderDur(nextMins)}
+                    <span className="text-sm text-white/55">
+                      {nextUp.status === "live" ? (vi ? "nữa kết thúc" : "left") : vi ? "nữa bắt đầu" : "to start"}
+                    </span>
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="space-y-3">
-                {todayShiftGroups.map((group) => {
-                  const evId = group.event.id;
-                  const shiftMap = attendanceMap[evId] || {};
-                  const presentCount = group.students.filter((s: any) => !!shiftMap[String(s.id)]).length;
-                  const online = onlineOf(group);
-                  return (
-                    <div key={evId} className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 bg-zinc-50/70 px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#0B1B3A] px-2.5 py-1 text-xs font-semibold tabular-nums text-white">
-                            <Clock className="h-3 w-3 text-[#FFB547]" />
-                            {group.timeLabel}
-                          </span>
-                          <Link to={`/classes/${group.event.class_id}`} className="text-sm font-semibold text-zinc-900 hover:underline">
-                            {group.className}
-                          </Link>
-                          {online.online && (
-                            <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">Online</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {online.online &&
-                            (online.url ? (
-                              <a
-                                href={online.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[#0B1B3A] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40"
-                              >
-                                <Video className="h-3.5 w-3.5" />
-                                {vi ? "Vào lớp" : "Join class"}
-                                <ExternalLink className="h-3 w-3 opacity-60" />
-                              </a>
-                            ) : (
-                              <Link
-                                to={`/classes/${group.event.class_id}`}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-dashed border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-900"
-                              >
-                                <Video className="h-3.5 w-3.5" />
-                                {vi ? "Thêm link lớp" : "Add class link"}
-                              </Link>
-                            ))}
-                          <span className="text-xs font-medium tabular-nums text-zinc-500">
-                            {presentCount}/{group.students.length} {vi ? "có mặt" : "present"}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2 p-4">
-                        {group.students.length === 0 ? (
-                          <span className="text-xs text-zinc-500">{vi ? "Không có học sinh" : "No students"}</span>
-                        ) : (
-                          group.students.map((student: any) => {
-                            const isPresent = !!shiftMap[String(student.id)];
-                            const color = colorOf(student.id);
-                            return (
-                              <button
-                                key={student.id}
-                                type="button"
-                                aria-pressed={isPresent}
-                                onClick={() => toggleStudentAttendance(evId, student.id)}
-                                className={cn(
-                                  "inline-flex select-none items-center gap-2 rounded-full border py-1 pl-1 pr-3.5 text-sm font-medium transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/40",
-                                  isPresent
-                                    ? "border-transparent"
-                                    : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"
-                                )}
-                                style={isPresent ? { ...solid(color), borderColor: color } : undefined}
-                              >
-                                <span
-                                  className={cn(avatarBase, "h-7 w-7 rounded-full text-xs", isPresent && "bg-white/25")}
-                                  style={isPresent ? { color: inkOn(color) } : solid(color)}
-                                >
-                                  {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
-                                </span>
-                                {student.name}
-                                {isPresent && <CheckCircle2 className="h-3.5 w-3.5" />}
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-
-                      {renderShiftLog(group)}
-                    </div>
-                  );
-                })}
+              <div className="flex items-center gap-4">
+                <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/10 text-[#FFD27A] ring-1 ring-white/10">
+                  {todayShiftGroups.length === 0 ? <CalendarCheck2 className="h-6 w-6" /> : <CheckCheck className="h-6 w-6" />}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-bold leading-snug">
+                    {todayShiftGroups.length === 0
+                      ? vi ? "Hôm nay không có ca học" : "No classes today"
+                      : vi ? "Đã xong các ca hôm nay" : "All done for today"}
+                  </div>
+                  <div className="text-sm text-white/60">
+                    {todayShiftGroups.length === 0
+                      ? vi ? "Một ngày nhẹ nhàng." : "A light day."
+                      : vi ? `${shiftsDone} ca đã kết thúc` : `${shiftsDone} classes finished`}
+                  </div>
+                </div>
               </div>
             )}
-          </section>
 
-          <div className="lg:col-span-4">{renderFeatured(statOf("pending"))}</div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-white/10 pt-4">
+              <div className="relative grid shrink-0 place-items-center">
+                <ProgressRing pct={todayPct} size={56} stroke={5} />
+                <span className="absolute text-xs font-bold tabular-nums">{todayPct}%</span>
+              </div>
+              <div className="min-w-[9rem] flex-1">
+                <div className="whitespace-nowrap text-xs font-medium text-white/60">{vi ? "Điểm danh hôm nay" : "Today's attendance"}</div>
+                <div className="whitespace-nowrap text-lg font-bold tabular-nums">
+                  {todayPresentTotal}
+                  <span className="text-sm font-medium text-white/50">
+                    /{todayTotalStudents} {vi ? "có mặt" : "present"}
+                  </span>
+                </div>
+              </div>
+              {todayShiftGroups.length > 0 && (
+                <button
+                  type="button"
+                  onClick={scrollToAttendance}
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-xs font-semibold text-white ring-1 ring-white/15 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                >
+                  {vi ? "Điểm danh" : "Mark"}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
+      </section>
 
-        {/* TÍNH HỌC PHÍ ĐẾN MỘT NGÀY BẤT KỲ (không phụ thuộc bộ lọc thời gian bên dưới) */}
-        <section className={cn(CARD, "space-y-5 p-5 sm:p-6")}>
+      {/* ========== 2. LỊCH 7 NGÀY TỚI ========== */}
+      <section className={cn(CARD, "dash-rise p-4 sm:p-5")} style={rise(80)}>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1 pb-3.5">
           <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#0B1B3A]/20" style={ICON_TILE_BG}>
-              <Calculator className="h-5 w-5" />
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600">
+              <CalendarDays className="h-[18px] w-[18px]" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-zinc-900">{vi ? "Tính học phí đến ngày" : "Tuition calculator"}</h3>
-              <p className="text-xs text-zinc-500">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">{vi ? "Lịch dạy" : "Schedule"}</div>
+              <h2 className="text-base font-bold leading-tight text-zinc-900">{vi ? "7 ngày tới" : "Next 7 days"}</h2>
+            </div>
+          </div>
+          <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium tabular-nums text-zinc-600">
+            {weekTotal} {vi ? "ca học" : "classes"}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1.5 sm:gap-2.5">
+          {weekDays.map((d, i) => {
+            const active = d.date === selDay.date;
+            return (
+              <button
+                key={d.date}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setWeekSel(d.date)}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/40 sm:py-3.5",
+                  active
+                    ? "border-[#3B1553] bg-[#3B1553] text-white shadow-lg shadow-[#3B1553]/25"
+                    : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50",
+                  i === 0 && !active && "ring-2 ring-[#FFB547]/60",
+                )}
+              >
+                <span className={cn("text-[10px] font-semibold uppercase tracking-wide", active ? "text-white/60" : "text-zinc-400")}>
+                  {DOW_SHORT[d.dow]}
+                </span>
+                <span className="text-lg font-extrabold leading-none tabular-nums sm:text-2xl">{d.day}</span>
+                <span className="flex h-1.5 items-center gap-0.5" aria-hidden>
+                  {d.sessions.slice(0, 4).map((s, k) => (
+                    <span key={`${s.key}-${k}`} className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-[#FFB547]" : "bg-violet-400")} />
+                  ))}
+                </span>
+                <span className={cn("text-[10px] font-medium tabular-nums", active ? "text-white/70" : "text-zinc-500")}>
+                  {d.sessions.length > 0 ? `${d.sessions.length} ${vi ? "ca" : "cls"}` : "—"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-zinc-50 p-3">
+          {selDay.sessions.length === 0 ? (
+            <span className="px-1 text-xs text-zinc-500">
+              {vi ? `Không có ca học ngày ${shortDate(selDay.date)}` : `No classes on ${shortDate(selDay.date)}`}
+            </span>
+          ) : (
+            selDay.sessions.map((s) => (
+              <span key={s.key} className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-200 bg-white py-1 pl-1 pr-3 text-xs shadow-sm">
+                <span className={cn(MONO, "shrink-0 rounded-full bg-[#3B1553] px-2.5 py-1 text-[11px] font-semibold text-white")}>{s.start}</span>
+                <span className="truncate font-medium text-zinc-800">{s.className}</span>
+              </span>
+            ))
+          )}
+        </div>
+      </section>
+
+      {/* ========== 3. HÔM NAY: ĐIỂM DANH NHANH + TÍNH HỌC PHÍ ĐẾN NGÀY ========== */}
+      <div className="grid items-start gap-4 lg:grid-cols-12">
+        {/* ĐIỂM DANH NHANH (dòng thời gian) */}
+        <section id="diem-danh" className={cn(CARD, "dash-rise scroll-mt-4 space-y-5 p-5 sm:p-6 lg:col-span-8")} style={rise(120)}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#3B1553]/20" style={ICON_TILE_BG}>
+                <UserCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-zinc-900">{vi ? "Điểm danh nhanh hôm nay" : "Today's quick attendance"}</h2>
+                <p className="max-w-md text-xs leading-relaxed text-zinc-500">
+                  {vi
+                    ? "Chạm vào tên học sinh có mặt, ghi nhanh nhật ký học tập nếu cần, rồi lưu một lần cho tất cả ca"
+                    : "Tap the students who are present, jot down the learning log if needed, then save once for all shifts"}
+                </p>
+              </div>
+            </div>
+            {todayShiftGroups.length > 0 && (
+              <Button
+                onClick={handleSaveAllAttendance}
+                disabled={savingAttendance}
+                className="h-10 shrink-0 gap-2 rounded-xl bg-[#3B1553] px-4 text-sm font-semibold text-white shadow-md shadow-[#3B1553]/25 hover:bg-[#521F70]"
+              >
+                <CheckCircle2 className="h-4 w-4 text-[#FFB547]" />
+                {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu điểm danh" : "Save attendance"}
+              </Button>
+            )}
+          </div>
+
+          {attendanceAll.isLoading && todayShiftGroups.length > 0 ? (
+            <div className="space-y-3">
+              <Skeleton className="h-44 w-full rounded-3xl" />
+              <Skeleton className="h-44 w-full rounded-3xl" />
+            </div>
+          ) : todayShiftGroups.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-zinc-300 bg-zinc-50/50 px-4 py-12 text-center">
+              <div className="grid h-14 w-14 place-items-center rounded-full bg-white text-zinc-400 shadow-sm ring-1 ring-zinc-200">
+                <CalendarCheck2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-zinc-800">{vi ? "Hôm nay không có ca học nào" : "No classes scheduled today"}</p>
+                <p className="text-xs text-zinc-500">{vi ? "Bạn có thể nghỉ ngơi, hoặc xem lại lịch các lớp." : "Enjoy the break, or review your class schedules."}</p>
+              </div>
+              <Link
+                to="/classes"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-4 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+              >
+                {vi ? "Xem các lớp" : "View classes"}
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          ) : (
+            <div className="relative space-y-4">
+              <div aria-hidden className="absolute bottom-4 left-[11px] top-4 w-px bg-gradient-to-b from-zinc-200 via-zinc-200 to-transparent" />
+              {todayShiftGroups.map((group, idx) => {
+                const evId = group.event.id;
+                const shiftMap = attendanceMap[evId] || {};
+                const total = group.students.length;
+                const presentCount = group.students.filter((s: any) => !!shiftMap[String(s.id)]).length;
+                const allPresent = total > 0 && presentCount === total;
+                const shiftPct = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+                const online = onlineOf(group);
+                const st = shiftStatusOf(group.event);
+                const stCfg = SHIFT_STATUS[st];
+                return (
+                  <Fragment key={evId}>
+                    {showNowMarker && idx === nowIdx && (
+                      <div className="relative pl-8 sm:pl-9">
+                        <span className="absolute left-[7px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-rose-500 ring-4 ring-rose-100" />
+                        <div className="flex items-center gap-3">
+                          <span className={cn(MONO, "rounded-full bg-rose-500 px-2.5 py-0.5 text-[11px] font-semibold text-white")}>{nowLabel}</span>
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-500">{vi ? "Bây giờ" : "Now"}</span>
+                          <span className="h-px flex-1 bg-gradient-to-r from-rose-300 to-transparent" />
+                        </div>
+                      </div>
+                    )}
+                    <div className="relative pl-8 sm:pl-9">
+                      <span className="absolute left-0 top-6 grid h-6 w-6 place-items-center rounded-full bg-white ring-2 ring-zinc-200">
+                        <span className={cn("h-2.5 w-2.5 rounded-full", stCfg.dot, st === "live" && "animate-pulse motion-reduce:animate-none")} />
+                      </span>
+                      <div
+                        className={cn(
+                          "overflow-hidden rounded-3xl border bg-white transition-shadow",
+                          st === "live" ? "border-emerald-300 shadow-[0_0_0_4px_rgba(16,185,129,0.08)]" : "border-zinc-200/80",
+                          st === "done" && "opacity-90",
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center gap-3 border-b border-zinc-100 bg-zinc-50/60 p-3 sm:p-4">
+                          <div
+                            className="grid h-14 w-16 shrink-0 place-items-center rounded-2xl text-white shadow-md shadow-[#3B1553]/20"
+                            style={ICON_TILE_BG}
+                          >
+                            {group.event.start_time ? (
+                              <div className="text-center leading-none">
+                                <div className={cn(MONO, "text-sm font-semibold tabular-nums")}>{String(group.event.start_time).slice(0, 5)}</div>
+                                {group.event.end_time && (
+                                  <div className={cn(MONO, "mt-1.5 text-[10px] tabular-nums text-white/55")}>{String(group.event.end_time).slice(0, 5)}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <CalendarCheck2 className="h-5 w-5 text-[#FFB547]" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0 flex-1 basis-[10rem] space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Link
+                                to={`/classes/${group.event.class_id}`}
+                                className="truncate text-base font-bold text-zinc-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+                              >
+                                {group.className}
+                              </Link>
+                              <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1", stCfg.pill)}>
+                                <span className={cn("h-1.5 w-1.5 rounded-full", stCfg.dot, st === "live" && "animate-pulse motion-reduce:animate-none")} />
+                                {vi ? stCfg.vi : stCfg.en}
+                              </span>
+                              {online.online && (
+                                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100">Online</span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-zinc-200">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all duration-300 motion-reduce:transition-none"
+                                  style={{ width: `${shiftPct}%` }}
+                                />
+                              </div>
+                              <span className="whitespace-nowrap text-xs font-medium tabular-nums text-zinc-500">
+                                {presentCount}/{total} {vi ? "có mặt" : "present"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                            {online.online &&
+                              (online.url ? (
+                                <a
+                                  href={online.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[#3B1553] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/40"
+                                >
+                                  <Video className="h-3.5 w-3.5" />
+                                  {vi ? "Vào lớp" : "Join class"}
+                                  <ExternalLink className="h-3 w-3 opacity-60" />
+                                </a>
+                              ) : (
+                                <Link
+                                  to={`/classes/${group.event.class_id}`}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-full border border-dashed border-zinc-300 bg-white px-3 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-900"
+                                >
+                                  <Video className="h-3.5 w-3.5" />
+                                  {vi ? "Thêm link lớp" : "Add class link"}
+                                </Link>
+                              ))}
+                            {total > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setShiftAllAttendance(group, !allPresent)}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+                              >
+                                <CheckCheck className="h-3.5 w-3.5 text-zinc-500" />
+                                {allPresent ? (vi ? "Bỏ chọn tất cả" : "Clear all") : vi ? "Có mặt tất cả" : "All present"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 p-4">
+                          {total === 0 ? (
+                            <span className="text-xs text-zinc-500">{vi ? "Lớp chưa có học sinh" : "No students enrolled"}</span>
+                          ) : (
+                            group.students.map((student: any) => {
+                              const isPresent = !!shiftMap[String(student.id)];
+                              const color = colorOf(student.id);
+                              return (
+                                <button
+                                  key={student.id}
+                                  type="button"
+                                  aria-pressed={isPresent}
+                                  onClick={() => toggleStudentAttendance(evId, student.id)}
+                                  className={cn(
+                                    "inline-flex min-h-11 select-none items-center gap-2.5 rounded-full border py-1 pl-1 pr-4 text-sm font-medium transition-all active:scale-95 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/40",
+                                    isPresent
+                                      ? "border-transparent"
+                                      : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
+                                  )}
+                                  style={isPresent ? { ...solid(color), borderColor: color } : undefined}
+                                >
+                                  <span
+                                    className={cn(avatarBase, "h-9 w-9 rounded-full text-sm", isPresent && "bg-white/25")}
+                                    style={isPresent ? { color: inkOn(color) } : solid(color)}
+                                  >
+                                    {student.name ? student.name.slice(0, 1).toUpperCase() : "?"}
+                                  </span>
+                                  <span className="max-w-[10rem] truncate">{student.name}</span>
+                                  {isPresent ? (
+                                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                                  ) : (
+                                    <span aria-hidden className="h-4 w-4 shrink-0 rounded-full border-2 border-zinc-300" />
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {renderShiftLog(group)}
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+              {showNowMarker && nowIdx === todayShiftGroups.length && (
+                <div className="relative pl-8 sm:pl-9">
+                  <span className="absolute left-[7px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-rose-500 ring-4 ring-rose-100" />
+                  <div className="flex items-center gap-3">
+                    <span className={cn(MONO, "rounded-full bg-rose-500 px-2.5 py-0.5 text-[11px] font-semibold text-white")}>{nowLabel}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-500">{vi ? "Bây giờ" : "Now"}</span>
+                    <span className="h-px flex-1 bg-gradient-to-r from-rose-300 to-transparent" />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* TÍNH HỌC PHÍ ĐẾN MỘT NGÀY BẤT KỲ (không phụ thuộc bộ lọc thời gian bên dưới) */}
+        <section className={cn(CARD, "dash-rise space-y-4 p-5 sm:p-6 lg:col-span-4")} style={rise(160)}>
+          <div className="flex items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#3B1553]/20" style={ICON_TILE_BG}>
+              <Calculator className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-zinc-900">{vi ? "Tính học phí đến ngày" : "Tuition calculator"}</h2>
+              <p className="text-xs leading-relaxed text-zinc-500">
                 {vi
                   ? "Cộng học phí chưa thu của tất cả học sinh, từ hôm nay đến ngày bạn chọn"
                   : "Add up everyone's unpaid tuition, from today until the date you pick"}
@@ -1971,40 +2510,41 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap items-center gap-2">
-              <label className={datePill}>
-                <span className="text-zinc-500">{vi ? "Đến ngày" : "Until"}</span>
-                <input
-                  type="date"
-                  min={todayStr}
-                  value={calcDate}
-                  onChange={(e) => setCalcDate(e.target.value)}
-                  className="bg-transparent font-medium text-zinc-900 focus:outline-none"
-                />
-              </label>
-              <div className={SEG}>
-                {calcPresets.map((p) => (
-                  <button
-                    key={p.k}
-                    type="button"
-                    aria-pressed={calcDate === p.date}
-                    onClick={() => setCalcDate(p.date)}
-                    className={segBtn(calcDate === p.date)}
-                  >
-                    {vi ? p.vi : p.en}
-                  </button>
-                ))}
-              </div>
+          <div className="space-y-2.5">
+            <label className={cn(datePill, "w-full justify-between")}>
+              <span className="text-zinc-500">{vi ? "Đến ngày" : "Until"}</span>
+              <input
+                type="date"
+                min={todayStr}
+                value={calcDate}
+                onChange={(e) => setCalcDate(e.target.value)}
+                className="bg-transparent font-medium text-zinc-900 focus:outline-none"
+              />
+            </label>
+            <div className="grid grid-cols-3 gap-1 rounded-2xl bg-zinc-100 p-1">
+              {calcPresets.map((p) => (
+                <button
+                  key={p.k}
+                  type="button"
+                  aria-pressed={calcDate === p.date}
+                  onClick={() => setCalcDate(p.date)}
+                  className={cn(
+                    "h-9 rounded-xl px-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
+                    calcDate === p.date ? "bg-[#3B1553] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900",
+                  )}
+                >
+                  {vi ? p.vi : p.en}
+                </button>
+              ))}
             </div>
             <button
               type="button"
               role="switch"
               aria-checked={calcIncludeOwed}
               onClick={() => setCalcIncludeOwed((v) => !v)}
-              className="inline-flex items-center gap-2.5 self-start rounded-full py-1 pr-1 text-sm font-medium text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30 lg:self-auto"
+              className="flex w-full items-center gap-2.5 rounded-full py-1 text-left text-sm font-medium text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
             >
-              <span className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", calcIncludeOwed ? "bg-[#0B1B3A]" : "bg-zinc-300")}>
+              <span className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", calcIncludeOwed ? "bg-[#3B1553]" : "bg-zinc-300")}>
                 <span
                   className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", calcIncludeOwed ? "left-[18px]" : "left-0.5")}
                 />
@@ -2013,131 +2553,141 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-12">
-            <div className="relative flex flex-col justify-between gap-6 overflow-hidden rounded-2xl p-5 text-white lg:col-span-5" style={NAVY_BG}>
-              <Calculator aria-hidden className="pointer-events-none absolute -bottom-8 -right-6 h-36 w-36 -rotate-12 text-white/[0.06]" />
-              <div className="relative space-y-2">
-                <div className="text-sm font-medium text-white/70">
-                  {vi ? "Tổng học phí đến" : "Total tuition until"}{" "}
-                  <span className="font-semibold text-[#FFB547]">{tuitionCalc.valid ? fullDate(calcDate) : "—"}</span>
-                </div>
-                <div className="truncate text-4xl font-semibold tabular-nums tracking-tight">{formatVND(calcTotal)}</div>
-                <div className="text-xs text-white/60">
-                  {tuitionCalc.valid
-                    ? `${calcRows.length} ${vi ? "học sinh" : "students"}`
-                    : vi
-                    ? "Chọn một ngày từ hôm nay trở đi"
-                    : "Pick a date from today onward"}
-                </div>
+          <div className="relative flex flex-col gap-5 overflow-hidden rounded-3xl p-5 text-white" style={DEEP_BG}>
+            <div aria-hidden className="dash-aurora-b pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-[#FFB547]/25 blur-3xl" />
+            <div aria-hidden className="dash-aurora-a pointer-events-none absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-fuchsia-500/30 blur-3xl" />
+            <Calculator aria-hidden className="pointer-events-none absolute -bottom-8 -right-6 h-32 w-32 -rotate-12 text-white/[0.06]" />
+            <div className="relative space-y-1.5">
+              <div className="text-sm font-medium text-white/70">
+                {vi ? "Tổng học phí đến" : "Total tuition until"}{" "}
+                <span className={cn(MONO, "font-semibold text-[#FFB547]")}>{tuitionCalc.valid ? fullDate(calcDate) : "—"}</span>
               </div>
+              <div className="truncate text-3xl font-extrabold tabular-nums tracking-tight">
+                <CountMoney value={calcTotal} />
+              </div>
+              <div className="text-xs text-white/60">
+                {tuitionCalc.valid
+                  ? `${calcRows.length} ${vi ? "học sinh" : "students"}`
+                  : vi
+                  ? "Chọn một ngày từ hôm nay trở đi"
+                  : "Pick a date from today onward"}
+              </div>
+            </div>
 
-              {tuitionCalc.valid && (
-                <div className="relative space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-white/10 px-3 py-2.5 ring-1 ring-white/10">
-                      <div className="text-[11px] font-medium text-white/60">{vi ? "Đã học, chưa thu" : "Attended, unpaid"}</div>
-                      <div
-                        className={cn(
-                          "truncate text-sm font-semibold tabular-nums",
-                          calcIncludeOwed ? "text-white" : "text-white/40 line-through",
-                        )}
-                      >
-                        {formatVND(tuitionCalc.owedTotal)}
-                      </div>
-                      <div className="text-[11px] text-white/50">
-                        {tuitionCalc.owedStudents} {vi ? "học sinh" : "students"}
-                      </div>
+            {tuitionCalc.valid && (
+              <div className="relative space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-white/10 backdrop-blur-sm">
+                    <div className="text-[11px] font-medium text-white/60">{vi ? "Đã học, chưa thu" : "Attended, unpaid"}</div>
+                    <div
+                      className={cn(
+                        "truncate text-sm font-bold tabular-nums",
+                        calcIncludeOwed ? "text-white" : "text-white/40 line-through",
+                      )}
+                    >
+                      {formatVND(tuitionCalc.owedTotal)}
                     </div>
-                    <div className="rounded-xl bg-white/10 px-3 py-2.5 ring-1 ring-white/10">
-                      <div className="text-[11px] font-medium text-white/60">{vi ? "Sắp tới" : "Upcoming"}</div>
-                      <div className="truncate text-sm font-semibold tabular-nums text-[#FFB547]">{formatVND(tuitionCalc.upcomingTotal)}</div>
-                      <div className="text-[11px] text-white/50">
-                        {tuitionCalc.upcomingStudents} {vi ? "học sinh" : "students"}
+                    <div className="text-[11px] text-white/50">
+                      {tuitionCalc.owedStudents} {vi ? "học sinh" : "students"}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 px-3 py-2.5 ring-1 ring-white/10 backdrop-blur-sm">
+                    <div className="text-[11px] font-medium text-white/60">{vi ? "Sắp tới" : "Upcoming"}</div>
+                    <div className="truncate text-sm font-bold tabular-nums text-[#FFB547]">{formatVND(tuitionCalc.upcomingTotal)}</div>
+                    <div className="text-[11px] text-white/50">
+                      {tuitionCalc.upcomingStudents} {vi ? "học sinh" : "students"}
+                    </div>
+                  </div>
+                </div>
+                {tuitionCalc.deferredFee > 0 && (
+                  <p className="text-[11px] leading-relaxed text-white/60">
+                    {vi
+                      ? `${tuitionCalc.deferredCount} học sinh theo tháng có kỳ thu sau ngày này nên chưa tính (${formatVND(tuitionCalc.deferredFee)}).`
+                      : `${tuitionCalc.deferredCount} monthly student${tuitionCalc.deferredCount > 1 ? "s" : ""} are billed after this date and are not counted (${formatVND(tuitionCalc.deferredFee)}).`}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {!tuitionCalc.valid ? (
+            <div className="flex min-h-[8rem] items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 px-4 text-center text-sm text-zinc-500">
+              {vi ? "Chọn ngày từ hôm nay trở đi để xem học phí từng học sinh." : "Pick a date from today onward to see each student's tuition."}
+            </div>
+          ) : calcRows.length === 0 ? (
+            <div className="flex min-h-[8rem] items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 px-4 text-center text-sm text-zinc-500">
+              {vi ? "Không có khoản học phí nào cần thu đến ngày này." : "No tuition to collect by this date."}
+            </div>
+          ) : (
+            <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+              {calcRows.map((r) => (
+                <Link
+                  key={r.student.id}
+                  to={`/students/${r.student.id}`}
+                  className="group flex items-center justify-between gap-2.5 rounded-2xl border border-zinc-200 bg-white p-2.5 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div className={cn(avatarBase, "h-10 w-10 rounded-full text-xs")} style={solid(colorOf(r.student.id))}>
+                      {r.student.name ? r.student.name.slice(0, 2).toUpperCase() : "HS"}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-zinc-900">{r.student.name}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+                        {r.bySession ? (
+                          <>
+                            {calcIncludeOwed && r.owedSessions > 0 && (
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                                {r.owedSessions} {vi ? "buổi đã học chưa thu" : "attended, unpaid"}
+                              </span>
+                            )}
+                            {r.upcomingSessions > 0 && (
+                              <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600">
+                                {r.upcomingSessions} {vi ? "buổi sắp học" : "upcoming"}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-700">{vi ? "Theo tháng" : "Monthly"}</span>
+                            {r.periods
+                              .filter((per) => calcIncludeOwed || !per.overdue)
+                              .map((per) => (
+                                <span key={per.start} className={cn("tabular-nums", per.overdue ? "text-rose-600" : "text-zinc-500")}>
+                                  {shortDate(per.start)} – {shortDate(per.end)}
+                                </span>
+                              ))}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
-                  {tuitionCalc.deferredFee > 0 && (
-                    <p className="text-[11px] leading-relaxed text-white/60">
-                      {vi
-                        ? `${tuitionCalc.deferredCount} học sinh theo tháng có kỳ thu sau ngày này nên chưa tính (${formatVND(tuitionCalc.deferredFee)}).`
-                        : `${tuitionCalc.deferredCount} monthly student${tuitionCalc.deferredCount > 1 ? "s" : ""} are billed after this date and are not counted (${formatVND(tuitionCalc.deferredFee)}).`}
-                    </p>
-                  )}
-                </div>
-              )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-sm font-bold tabular-nums text-zinc-900">+{formatVND(r.total)}</span>
+                    <ChevronRight className="h-4 w-4 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-600" />
+                  </div>
+                </Link>
+              ))}
             </div>
+          )}
+        </section>
+      </div>
 
-            <div className="lg:col-span-7">
-              {!tuitionCalc.valid ? (
-                <div className="flex h-full min-h-[10rem] items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 px-4 text-center text-sm text-zinc-500">
-                  {vi ? "Chọn ngày từ hôm nay trở đi để xem học phí từng học sinh." : "Pick a date from today onward to see each student's tuition."}
-                </div>
-              ) : calcRows.length === 0 ? (
-                <div className="flex h-full min-h-[10rem] items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/50 px-4 text-center text-sm text-zinc-500">
-                  {vi ? "Không có khoản học phí nào cần thu đến ngày này." : "No tuition to collect by this date."}
-                </div>
-              ) : (
-                <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
-                  {calcRows.map((r) => (
-                    <Link
-                      key={r.student.id}
-                      to={`/students/${r.student.id}`}
-                      className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(r.student.id))}>
-                          {r.student.name ? r.student.name.slice(0, 2).toUpperCase() : "HS"}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-zinc-900">{r.student.name}</div>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
-                            {r.bySession ? (
-                              <>
-                                {calcIncludeOwed && r.owedSessions > 0 && (
-                                  <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                                    {r.owedSessions} {vi ? "buổi đã học chưa thu" : "attended, unpaid"}
-                                  </span>
-                                )}
-                                {r.upcomingSessions > 0 && (
-                                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-medium text-zinc-600">
-                                    {r.upcomingSessions} {vi ? "buổi sắp học" : "upcoming"}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                <span className="rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-700">{vi ? "Theo tháng" : "Monthly"}</span>
-                                {r.periods
-                                  .filter((per) => calcIncludeOwed || !per.overdue)
-                                  .map((per) => (
-                                    <span key={per.start} className={cn("tabular-nums", per.overdue ? "text-rose-600" : "text-zinc-500")}>
-                                      {shortDate(per.start)} – {shortDate(per.end)}
-                                    </span>
-                                  ))}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="text-sm font-semibold tabular-nums text-zinc-900">+{formatVND(r.total)}</span>
-                        <ChevronRight className="h-4 w-4 text-zinc-300 transition-transform group-hover:translate-x-0.5 group-hover:text-zinc-600" />
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
+      {/* ========== 4. TỔNG QUAN THEO KỲ LỌC (bento) ========== */}
+      <section className="space-y-4">
+        <div className={cn(CARD, "dash-rise flex flex-col gap-4 p-4 sm:p-5 xl:flex-row xl:items-center xl:justify-between")} style={rise(60)}>
+          <div className="flex items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-zinc-100 text-zinc-600">
+              <CalendarRange className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">{vi ? "Tổng quan" : "Overview"}</div>
+              <h2 className="text-lg font-bold leading-tight tracking-tight text-zinc-900">{periodLabel}</h2>
+              <p className={cn(MONO, "text-xs tabular-nums text-zinc-500")}>
+                {fullDate(fromDate)} – {fullDate(toDate)}
+              </p>
             </div>
           </div>
-        </section>
-
-        {/* BỘ LỌC THỜI GIAN */}
-        <div className={cn(CARD, "flex flex-col gap-3 p-2.5 lg:flex-row lg:items-center lg:justify-between")}>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="hidden items-center gap-2 pl-3 text-sm font-medium text-zinc-500 sm:inline-flex">
-              <CalendarRange className="h-4 w-4 text-zinc-400" />
-              {vi ? "Khoảng thời gian" : "Period"}
-            </span>
+          <div className="flex flex-col gap-2.5 lg:flex-row lg:flex-wrap lg:items-center">
             <div className={SEG}>
               {presets.map((p) => (
                 <button key={p.k} type="button" aria-pressed={preset === p.k} onClick={() => applyPreset(p.k)} className={segBtn(preset === p.k)}>
@@ -2145,35 +2695,308 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className={datePill}>
+                <span className="text-zinc-500">{vi ? "Từ" : "From"}</span>
+                <input type="date" value={fromDate} onChange={(e) => onCustomChange("from", e.target.value)} className="bg-transparent font-medium text-zinc-900 focus:outline-none" />
+              </label>
+              <label className={datePill}>
+                <span className="text-zinc-500">{vi ? "Đến" : "To"}</span>
+                <input type="date" value={toDate} onChange={(e) => onCustomChange("to", e.target.value)} className="bg-transparent font-medium text-zinc-900 focus:outline-none" />
+              </label>
+              {preset === "custom" && (
+                <Button variant="ghost" onClick={() => applyPreset("thisMonth")} className="h-9 rounded-full px-4 text-sm font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700">
+                  {vi ? "Đặt lại" : "Reset"}
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className={datePill}>
-              <span className="text-zinc-500">{vi ? "Từ" : "From"}</span>
-              <input type="date" value={fromDate} onChange={(e) => onCustomChange("from", e.target.value)} className="bg-transparent font-medium text-zinc-900 focus:outline-none" />
-            </label>
-            <label className={datePill}>
-              <span className="text-zinc-500">{vi ? "Đến" : "To"}</span>
-              <input type="date" value={toDate} onChange={(e) => onCustomChange("to", e.target.value)} className="bg-transparent font-medium text-zinc-900 focus:outline-none" />
-            </label>
-            {preset === "custom" && (
-              <Button variant="ghost" onClick={() => applyPreset("thisMonth")} className="h-9 rounded-full px-4 text-sm font-medium text-rose-600 hover:bg-rose-50 hover:text-rose-700">
-                {vi ? "Đặt lại" : "Reset"}
-              </Button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-12">
+          {/* A. Thẻ lớn: học phí dự kiến trong kỳ (cố định) + phân bổ theo ngày thu */}
+          <Spot
+            tint="rgba(255,181,71,0.14)"
+            className="dash-rise relative flex min-h-[22rem] flex-col justify-between gap-8 overflow-hidden rounded-[32px] p-6 text-white shadow-[0_26px_54px_-26px_rgba(59,21,83,0.75)] sm:col-span-2 sm:p-7 lg:col-span-5 lg:row-span-2"
+            style={{ ...HERO_BG, ...rise(100) }}
+          >
+            <div aria-hidden className="dash-aurora-b pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#FFB547]/30 blur-[80px]" />
+            <div aria-hidden className="dash-aurora-a pointer-events-none absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-fuchsia-500/35 blur-[80px]" />
+            <div aria-hidden className="pointer-events-none absolute inset-0" style={DOT_BG} />
+
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[#FFB547]/15 text-[#FFB547] ring-1 ring-[#FFB547]/30">
+                  <Hourglass className="h-5 w-5" />
+                </div>
+                <span className="text-sm font-medium leading-snug text-white/70">{vi ? "Học phí dự kiến trong kỳ" : "Upcoming in period"}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExpectedModal(true)}
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-xs font-semibold text-white ring-1 ring-white/15 transition-colors hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              >
+                {vi ? "Chi tiết" : "Details"}
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="relative space-y-4">
+              <div className="break-words text-4xl font-extrabold tabular-nums tracking-tight sm:text-5xl">
+                <CountMoney value={expectedTotal} />
+              </div>
+              <div className="flex items-center gap-3">
+                {unpaidStudents.length > 0 ? (
+                  <>
+                    <div className="flex -space-x-2">
+                      {unpaidStudents.slice(0, 5).map((s: any) => (
+                        <span
+                          key={s.id}
+                          title={s.name}
+                          className={cn(avatarBase, "h-8 w-8 rounded-full text-[11px] ring-2 ring-[#3B1553]")}
+                          style={solid(colorOf(s.id))}
+                        >
+                          {s.name ? String(s.name).slice(0, 1).toUpperCase() : "?"}
+                        </span>
+                      ))}
+                      {unpaidStudents.length > 5 && (
+                        <span className="grid h-8 min-w-8 place-items-center rounded-full bg-white/15 px-1.5 text-[11px] font-semibold ring-2 ring-[#3B1553]">
+                          +{unpaidStudents.length - 5}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-white/70">
+                      {unpaidStudentCount} {vi ? "học sinh chưa thu" : "students unpaid"}
+                    </span>
+                  </>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-300">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {vi ? "Đã thu đủ học phí" : "All tuition collected"}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="relative space-y-3">
+              {groupsColored.length > 0 && totalUpcomingFee > 0 ? (
+                <>
+                  <div className="flex items-center justify-between gap-3 text-xs font-medium text-white/60">
+                    <span className="inline-flex items-center gap-1.5">
+                      <BarChart3 className="h-3.5 w-3.5" />
+                      {vi ? "Phân bổ học phí kỳ sắp tới theo ngày thu" : "Upcoming tuition by billing day"}
+                    </span>
+                    <span className="tabular-nums">{formatVND(totalUpcomingFee)}</span>
+                  </div>
+                  <div className="flex h-3.5 gap-1">
+                    {groupsColored
+                      .filter((g) => g.fee > 0)
+                      .map((g) => (
+                        <button
+                          key={g.key}
+                          type="button"
+                          title={`${groupLabel(g)} · ${g.count} ${vi ? "HS" : "students"} · ${formatVND(g.fee)}`}
+                          aria-label={`${groupLabel(g)}: ${formatVND(g.fee)}`}
+                          onClick={() => {
+                            setBillingFilter(g.key);
+                            setShowCollectedModal(true);
+                          }}
+                          className="h-full min-w-[8px] rounded-full transition-all hover:scale-y-125 hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                          style={{ width: `${(g.fee / totalUpcomingFee) * 100}%`, background: g.color }}
+                        />
+                      ))}
+                  </div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                    {groupsColored.map((g) => (
+                      <span key={g.key} className="inline-flex items-center gap-1.5 text-xs text-white/65">
+                        <span className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                        {groupLabel(g)}
+                        <span className="font-semibold tabular-nums text-white">{formatVND(g.fee)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs leading-relaxed text-white/55">
+                  {vi
+                    ? "Con số này cố định, không đổi theo bộ lọc thời gian."
+                    : "This number is fixed and does not change with the date filter."}
+                </p>
+              )}
+            </div>
+          </Spot>
+
+          {/* B. Học phí kỳ sắp tới */}
+          <Spot tint="rgba(255,181,71,0.12)" className={cn(CARD, "dash-rise overflow-hidden lg:col-span-4")} style={rise(160)}>
+            <button
+              type="button"
+              onClick={() => setShowCollectedModal(true)}
+              className={cn("group flex h-full min-h-[11rem] w-full flex-col justify-between gap-5 rounded-[28px] p-5 text-left sm:p-6", focusRing)}
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl", TONES.tuition.tile)}>
+                  <Wallet className="h-5 w-5" />
+                </div>
+                <span className="text-sm font-medium leading-snug text-zinc-500">{vi ? "Tổng học phí kỳ sắp tới" : "Upcoming period tuition"}</span>
+                <ArrowUpRight className="ml-auto h-4 w-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-900" />
+              </div>
+              <div className="space-y-3">
+                <div className="truncate text-3xl font-extrabold tabular-nums tracking-tight text-zinc-900">
+                  {loading ? <Skeleton className="h-9 w-32" /> : <CountMoney value={totalUpcomingFee} />}
+                </div>
+                {totalUpcomingFee > 0 ? (
+                  <div className="space-y-2">
+                    <div className="flex h-2 gap-1 overflow-hidden rounded-full bg-zinc-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-[#3B1553] to-[#9B4DDB]" style={{ width: `${100 - overduePct}%` }} />
+                      {totalOverdueFee > 0 && <div className="h-full min-w-[6px] rounded-full bg-rose-500" style={{ width: `${overduePct}%` }} />}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+                      <span className="inline-flex items-center gap-1.5 text-zinc-500">
+                        <span className="h-2 w-2 rounded-full bg-[#3B1553]" />
+                        {vi ? "Kỳ hiện tại" : "Current"}
+                        <b className="font-semibold tabular-nums text-zinc-800">{formatVND(currentOnly)}</b>
+                      </span>
+                      {totalOverdueFee > 0 && (
+                        <span className="inline-flex items-center gap-1 font-medium text-rose-600">
+                          <AlertCircle className="h-3 w-3" />
+                          {vi ? "Chưa thu kỳ trước" : "Overdue"}
+                          <b className="font-semibold tabular-nums">{formatVND(totalOverdueFee)}</b>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">{vi ? "Theo ngày thu của từng học sinh" : "By each student's billing day"}</p>
+                )}
+              </div>
+            </button>
+          </Spot>
+
+          {/* C. Lương mặc định */}
+          <Spot tint="rgba(34,211,238,0.12)" className={cn(CARD, "dash-rise overflow-hidden lg:col-span-3")} style={rise(220)}>
+            <button
+              type="button"
+              onClick={() => setShowSalaryModal(true)}
+              className={cn("group flex h-full min-h-[11rem] w-full flex-col justify-between gap-5 rounded-[28px] p-5 text-left sm:p-6", focusRing)}
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-2xl", TONES.avg.tile)}>
+                  <TrendingUp className="h-5 w-5" />
+                </div>
+                <span className="text-sm font-medium leading-snug text-zinc-500">{vi ? "Lương mặc định" : "Default salary"}</span>
+                <ArrowUpRight className="ml-auto h-4 w-4 shrink-0 text-zinc-300 transition-colors group-hover:text-zinc-900" />
+              </div>
+              <div className="space-y-3">
+                <div className="truncate text-3xl font-extrabold tabular-nums tracking-tight text-zinc-900">
+                  {loading ? <Skeleton className="h-9 w-32" /> : <CountMoney value={defaultSalary} />}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1" aria-hidden>
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <span key={i} className={cn("h-1.5 flex-1 rounded-full", i < Math.min(12, monthsInRange) ? "bg-cyan-500" : "bg-zinc-200")} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    {vi ? `Học phí tháng × ${monthsInRange} tháng` : `Monthly fees × ${monthsInRange} month${monthsInRange > 1 ? "s" : ""}`}
+                  </p>
+                </div>
+              </div>
+            </button>
+          </Spot>
+
+          {/* D. Biểu đồ lượt có mặt 14 ngày gần nhất */}
+          <Spot tint="rgba(16,185,129,0.10)" className={cn(CARD, "dash-rise overflow-hidden p-5 sm:col-span-2 sm:p-6 lg:col-span-7")} style={rise(280)}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+                  <Activity className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-zinc-500">{vi ? "Lượt có mặt · 14 ngày qua" : "Attendance · last 14 days"}</div>
+                  <div className="text-3xl font-extrabold tabular-nums tracking-tight text-zinc-900">
+                    <CountNum value={att14Total} />
+                  </div>
+                </div>
+              </div>
+              <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium tabular-nums text-zinc-600">
+                {vi ? `TB ${att14Avg} / ngày có lớp` : `Avg ${att14Avg} / class day`}
+              </span>
+            </div>
+            {attendanceAll.isLoading ? (
+              <Skeleton className="mt-5 h-36 w-full rounded-2xl" />
+            ) : (
+              <div
+                className="mt-5 flex items-end gap-1.5 sm:gap-2.5"
+                role="img"
+                aria-label={vi ? `${att14Total} lượt có mặt trong 14 ngày qua` : `${att14Total} present records in the last 14 days`}
+              >
+                {attendance14.map((d) => {
+                  const h = d.n > 0 ? Math.max(10, Math.round((d.n / att14Max) * 100)) : 5;
+                  return (
+                    <div key={d.date} className="flex flex-1 flex-col items-center gap-1.5" title={`${shortDate(d.date)} · ${d.n} ${vi ? "lượt có mặt" : "present"}`}>
+                      <span className={cn("text-[10px] font-semibold tabular-nums", d.n > 0 ? "text-zinc-600" : "text-transparent")}>{d.n || 0}</span>
+                      <div className="flex h-24 w-full items-end">
+                        <div
+                          className={cn(
+                            "w-full rounded-t-lg rounded-b-sm transition-all duration-500 motion-reduce:transition-none",
+                            d.isToday
+                              ? "bg-gradient-to-t from-[#FF9A3D] to-[#FFC56B]"
+                              : d.n > 0
+                              ? "bg-gradient-to-t from-[#3B1553] to-[#9B4DDB]"
+                              : "bg-zinc-100",
+                          )}
+                          style={{ height: `${h}%` }}
+                        />
+                      </div>
+                      <span className={cn("text-[10px] tabular-nums", d.isToday ? "font-bold text-[#c77700]" : "text-zinc-400")}>{d.day}</span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
+          </Spot>
+
+          {/* E. Ba thẻ đếm gọn */}
+          {renderCounter("students", "/students", vi ? "Học sinh hoạt động" : "Active students", activeStudents, vi ? `/ ${students.length} học sinh` : `of ${students.length}`, Users, 320)}
+          {renderCounter("classes", "/classes", vi ? "Lớp có hoạt động" : "Active classes", activeClasses, vi ? `/ ${(classes.data || []).length} lớp` : `of ${(classes.data || []).length}`, GraduationCap, 360)}
+          {renderCounter("payments", "/students", vi ? "Số lần thanh toán" : "Payments count", paymentsCount, vi ? "trong khoảng chọn" : "in range", CalendarClock, 400)}
+        </div>
+      </section>
+
+      {/* ========== THANH LƯU NỔI: chỉ hiện khi còn thay đổi chưa lưu ========== */}
+      {hasPending && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div
+            role="status"
+            className="dash-rise pointer-events-auto relative flex w-full max-w-xl items-center justify-between gap-3 overflow-hidden rounded-full border border-white/15 p-2 pl-5 text-white shadow-2xl shadow-[#3B1553]/50 backdrop-blur-xl"
+            style={DEEP_BG}
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="relative grid h-2.5 w-2.5 shrink-0 place-items-center">
+                <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-[#FFB547]/60 motion-reduce:animate-none" />
+                <span className="h-2 w-2 rounded-full bg-[#FFB547]" />
+              </span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{vi ? "Có thay đổi chưa lưu" : "You have unsaved changes"}</div>
+                <div className="truncate text-xs tabular-nums text-white/60">
+                  {todayPresentTotal}/{todayTotalStudents} {vi ? "có mặt" : "present"}
+                  {unsavedLogs ? (vi ? " · kèm nhật ký học tập" : " · with learning log") : ""}
+                </div>
+              </div>
+            </div>
+            <Button
+              onClick={handleSaveAllAttendance}
+              disabled={savingAttendance}
+              className="h-11 shrink-0 gap-2 rounded-full bg-[#FFB547] px-5 text-sm font-semibold text-[#3B1553] hover:bg-[#ffa726]"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu ngay" : "Save now"}
+            </Button>
           </div>
         </div>
+      )}
 
-        {/* SỐ LIỆU THEO KỲ ĐANG LỌC */}
-        <div className="grid gap-4 md:grid-cols-6 lg:grid-cols-12">
-          <div className="md:col-span-3 lg:col-span-6">{renderStat(statOf("tuition"), true)}</div>
-          <div className="md:col-span-3 lg:col-span-6">{renderStat(statOf("avg"), true)}</div>
-          <div className="md:col-span-2 lg:col-span-4">{renderStat(statOf("students"))}</div>
-          <div className="md:col-span-2 lg:col-span-4">{renderStat(statOf("classes"))}</div>
-          <div className="md:col-span-2 lg:col-span-4">{renderStat(statOf("payments"))}</div>
-        </div>
-      </div>
-
-      {/* POPUP CHI TIẾT HỌC PHÍ KỲ SẮP TỚI */}
+      {/* ========== POPUP CHI TIẾT HỌC PHÍ KỲ SẮP TỚI ========== */}
       <Dialog
         open={showCollectedModal}
         onOpenChange={(open) => {
@@ -2217,9 +3040,9 @@ export default function Dashboard() {
                       aria-pressed={active}
                       onClick={() => setBillingFilter(c.key)}
                       className={cn(
-                        "rounded-2xl border px-3.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]/30",
+                        "rounded-2xl border px-3.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
                         active
-                          ? "border-[#0B1B3A] bg-[#0B1B3A] text-white shadow-md shadow-[#0B1B3A]/25"
+                          ? "border-[#3B1553] bg-[#3B1553] text-white shadow-md shadow-[#3B1553]/25"
                           : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
                       )}
                     >
@@ -2238,7 +3061,7 @@ export default function Dashboard() {
               </div>
 
               {activeGroup && (
-                <div className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 text-white" style={NAVY_BG}>
+                <div className="flex items-center justify-between gap-3 rounded-2xl px-4 py-3.5 text-white" style={DEEP_BG}>
                   <div className="min-w-0 space-y-0.5">
                     <div className="text-xs font-medium text-white/80">
                       {activeGroup.dueDate
@@ -2287,7 +3110,7 @@ export default function Dashboard() {
                       type="button"
                       aria-expanded={open}
                       onClick={() => setExpandedStudent(open ? null : String(student.id))}
-                      className="flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(student.id))}>
@@ -2389,7 +3212,7 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* POPUP CHI TIẾT LƯƠNG MẶC ĐỊNH */}
+      {/* ========== POPUP CHI TIẾT LƯƠNG MẶC ĐỊNH ========== */}
       <Dialog open={showSalaryModal} onOpenChange={setShowSalaryModal}>
         <DialogContent className={modalShell}>
           <ModalHead
@@ -2411,7 +3234,7 @@ export default function Dashboard() {
                   key={student.id}
                   to={`/students/${student.id}`}
                   onClick={() => setShowSalaryModal(false)}
-                  className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(student.id))}>
@@ -2445,7 +3268,7 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* POPUP CHI TIẾT HỌC PHÍ DỰ KIẾN TRONG KỲ (danh sách hóa đơn sắp tới, không phụ thuộc bộ lọc thời gian) */}
+      {/* ========== POPUP CHI TIẾT HỌC PHÍ DỰ KIẾN TRONG KỲ (danh sách hóa đơn sắp tới, không phụ thuộc bộ lọc thời gian) ========== */}
       <Dialog
         open={showExpectedModal}
         onOpenChange={(open) => {
@@ -2486,7 +3309,7 @@ export default function Dashboard() {
                   to={`/students/${item.studentId}`}
                   key={item.studentId}
                   onClick={() => setShowExpectedModal(false)}
-                  className="group flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1B3A]"
+                  className="group flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(item.studentId))}>
