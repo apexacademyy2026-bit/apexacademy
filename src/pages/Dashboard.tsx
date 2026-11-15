@@ -19,6 +19,7 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
+  Palette,
   UserCheck,
   ChevronRight,
   ChevronDown,
@@ -52,6 +53,121 @@ import { Textarea } from "@/components/ui/textarea";
 // Nhật ký học tập: dùng đúng tên cột và cách đọc/ghi bài kiểm tra của trang Learning log và trang Hóa đơn
 import { LOG, rawVal, type LogCol } from "@/lib/Learninglog";
 import { EMPTY_TEST, cleanTests, isBlankTest, parseTests, serializeTests, withSpare, type TestItem } from "@/lib/Learningtests";
+
+/* ================= MÀU CHỦ ĐẠO: ĐỔI Ở ĐÂY HOẶC NGAY TRÊN GIAO DIỆN =================
+   Cách 1 - trong code: sửa DEFAULT_BRAND bên dưới thành mã màu bạn thích,
+            ví dụ "#065F46" (lục bảo), "#9D174D" (hồng đậm), "#9A3412" (cam đất).
+            Chỉ cần MỘT màu: nền phần chào, nút, quầng aurora, biểu đồ... đều tự tính theo màu đó,
+            và tự tối bớt nếu màu quá sáng để chữ trắng luôn đọc rõ.
+   Cách 2 - trên giao diện: bấm "Màu chủ đạo" ở phần chào, chọn màu có sẵn hoặc nhập / chọn bất kỳ màu nào.
+            Màu đã chọn được nhớ trên trình duyệt này. Nếu sau đó bạn sửa DEFAULT_BRAND thì màu mặc định mới
+            sẽ được dùng (màu đã chọn trước đó tự bỏ qua). */
+const DEFAULT_BRAND = "#3B1553";
+const BRAND_STORAGE_KEY = "dashboard-brand-color";
+const BRAND_PRESETS: { hex: string; vi: string; en: string }[] = [
+  { hex: "#3B1553", vi: "Mận đậm", en: "Plum" },
+  { hex: "#5B21B6", vi: "Tím", en: "Violet" },
+  { hex: "#9D174D", vi: "Hồng đậm", en: "Raspberry" },
+  { hex: "#991B1B", vi: "Đỏ vang", en: "Wine" },
+  { hex: "#9A3412", vi: "Cam đất", en: "Terracotta" },
+  { hex: "#065F46", vi: "Lục bảo", en: "Emerald" },
+  { hex: "#0F766E", vi: "Xanh ngọc", en: "Teal" },
+  { hex: "#1D4ED8", vi: "Xanh dương", en: "Blue" },
+  { hex: "#27272A", vi: "Than chì", en: "Graphite" },
+];
+
+type RGB = [number, number, number];
+// "#abc" / "abc" / "#aabbcc" -> "#AABBCC"; không hợp lệ thì trả về null
+const normalizeHex = (raw: string): string | null => {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(raw).trim());
+  if (!m) return null;
+  const h = m[1].length === 3 ? m[1].split("").map((c) => c + c).join("") : m[1];
+  return `#${h.toUpperCase()}`;
+};
+const hexToRgb = (hex: string): RGB => {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const rgbToHsl = ([r, g, b]: RGB): [number, number, number] => {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === rn ? ((gn - bn) / d) % 6 : max === gn ? (bn - rn) / d + 2 : (rn - gn) / d + 4;
+  return [(h * 60 + 360) % 360, s, l];
+};
+const hslToRgb = (h: number, s: number, l: number): RGB => {
+  const hh = ((h % 360) + 360) % 360;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + hh / 30) % 12;
+    return l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+  };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+};
+const channelLum = (c: number) => {
+  const v = c / 255;
+  return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+};
+// Độ tương phản của màu nền với chữ trắng (WCAG); >= 4.5 là đọc tốt
+const contrastWithWhite = ([r, g, b]: RGB) => 1.05 / (0.2126 * channelLum(r) + 0.7152 * channelLum(g) + 0.0722 * channelLum(b) + 0.05);
+const rgbVar = (c: RGB) => c.join(" ");
+
+// Từ MỘT màu gốc, tính ra cả bảng màu của trang (dạng "r g b" để dùng với rgb(var(--d-...) / độ mờ))
+const buildPalette = (hex: string): Record<string, string> => {
+  const base = normalizeHex(hex) ?? "#3B1553";
+  const [h, s0, l0] = rgbToHsl(hexToRgb(base));
+  const neutral = s0 < 0.08; // xám / đen / trắng: giữ trung tính, không ép ra màu
+  const s = neutral ? s0 : Math.min(0.9, Math.max(0.3, s0));
+  // Màu đậm chủ đạo: giữ nguyên nếu đã đủ tối, tối bớt nếu quá sáng để chữ trắng đọc rõ
+  let l = Math.min(0.34, Math.max(0.12, l0));
+  while (l > 0.1 && contrastWithWhite(hslToRgb(h, s, l)) < 5.5) l -= 0.01;
+  const lift = (dl: number) => rgbVar(hslToRgb(h, s, Math.min(0.92, l + dl)));
+  const vivid = neutral ? s0 : 0.85;
+  return {
+    ink: lift(0), // nút, ô đang chọn, viền nhấn
+    "ink-hover": lift(0.06),
+    "tile-end": lift(0.15), // cuối gradient ô icon
+    "hero-a": rgbVar(hslToRgb(h, s, l * 0.55)), // nền phần chào: đậm nhất
+    "hero-b": lift(0),
+    "hero-c": lift(0.1), // nền phần chào: sáng nhất
+    bright: rgbVar(hslToRgb(h, neutral ? s0 : Math.min(0.9, s + 0.08), 0.58)), // cuối gradient cột biểu đồ
+    accent: rgbVar(hslToRgb(h, neutral ? s0 : Math.min(0.8, Math.max(0.5, s)), 0.46)), // icon / chấm nhỏ trên nền trắng
+    tint: rgbVar(hslToRgb(h, neutral ? s0 : 0.9, 0.96)), // nền ô icon nhạt
+    "glow-a": rgbVar(hslToRgb(h + 15, vivid, 0.58)), // quầng aurora 1
+    "glow-c": rgbVar(hslToRgb(h + 45, vivid, 0.62)), // quầng aurora 3 (quầng 2 luôn là hổ phách)
+  };
+};
+const paletteCss = (p: Record<string, string>) =>
+  `:root{${Object.entries(p)
+    .map(([k, v]) => `--d-${k}:${v}`)
+    .join(";")}}`;
+
+// Màu đã chọn trên giao diện được nhớ cùng với DEFAULT_BRAND lúc chọn, để sửa DEFAULT_BRAND trong code vẫn có tác dụng
+const readStoredBrand = (): string | null => {
+  try {
+    const raw = window.localStorage.getItem(BRAND_STORAGE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (v && v.d === DEFAULT_BRAND && typeof v.c === "string") return normalizeHex(v.c);
+  } catch {
+    /* trình duyệt chặn lưu trữ: dùng màu mặc định */
+  }
+  return null;
+};
+const writeStoredBrand = (hex: string | null) => {
+  try {
+    if (hex === null) window.localStorage.removeItem(BRAND_STORAGE_KEY);
+    else window.localStorage.setItem(BRAND_STORAGE_KEY, JSON.stringify({ d: DEFAULT_BRAND, c: hex }));
+  } catch {
+    /* bỏ qua */
+  }
+};
 
 // Nhóm các buổi học trong popup chi tiết học phí
 // (buổi đã qua mà vắng / chưa điểm danh không hiện và không tính tiền)
@@ -172,7 +288,7 @@ type ShiftLogDraft = { content?: string; homework?: string };
 type StudentLogDraft = { note?: string; tests?: TestItem[] };
 
 const LOG_FIELD =
-  "rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[#3B1553] focus-visible:ring-2 focus-visible:ring-[#3B1553]/10";
+  "rounded-xl border-zinc-200 bg-white text-sm shadow-none placeholder:text-zinc-400 focus-visible:border-[color:rgb(var(--d-ink))] focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.1)]";
 
 // Các cột nhật ký cần ghi cho một học sinh có mặt; null nếu không có gì để ghi
 const buildLogFields = (shift: ShiftLogDraft | undefined, own: StudentLogDraft | undefined): Record<string, string | null> | null => {
@@ -481,14 +597,14 @@ const computeTuitionUntil = (o: {
    - Phần tổng quan xếp kiểu bento: thẻ lớn nổi bật, thẻ vừa, biểu đồ nhỏ (phân bổ theo ngày thu, điểm danh 14 ngày).
    - Số tiền / số đếm chạy lên khi tải; thẻ có ánh sáng đi theo con trỏ chuột (spotlight); mọi chuyển động tắt khi
      người dùng bật "giảm chuyển động".
-   Bảng màu: mận đậm #3B1553 · hổ phách #FFB547 · tím hồng / hồng cho aurora.
+   Bảng màu: màu chủ đạo (DEFAULT_BRAND, đổi được ngay trên giao diện) · hổ phách #FFB547 cố định · hai quầng aurora còn lại tự tính theo màu chủ đạo.
    Đỏ chỉ dành cho khoản chưa thu từ kỳ trước, xanh lục chỉ dành cho trạng thái đã thu / có mặt / đang diễn ra.
    Mọi chữ nằm trong thẻ trắng đặc hoặc khối mận đậm nên đọc rõ dù hình nền toàn ứng dụng là gì. */
 const FONT = "font-['Be_Vietnam_Pro',sans-serif]";
 // Số giờ / đồng hồ dùng chữ đơn cách (mono) cho cảm giác "bảng điều khiển"
 const MONO = "font-['JetBrains_Mono',ui-monospace,monospace]";
 const CARD =
-  "rounded-[28px] border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgba(59,21,83,0.04),0_18px_44px_-22px_rgba(59,21,83,0.22)]";
+  "rounded-[28px] border border-zinc-200/70 bg-white shadow-[0_1px_2px_rgb(var(--d-ink)/0.04),0_18px_44px_-22px_rgb(var(--d-ink)/0.22)]";
 // Kính mờ đặt trên nền mận đậm / aurora
 const GLASS = "border border-white/15 bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-xl";
 const CHIP = "inline-flex h-9 items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 text-sm font-medium text-white backdrop-blur-md";
@@ -501,13 +617,13 @@ const GROUP_COLORS = ["#FFB547", "#818CF8", "#22D3EE", "#F472B6", "#34D399", "#A
 
 // Nền gradient mận đậm (phần chào + các khối nổi bật)
 const HERO_BG: CSSProperties = {
-  backgroundImage: "linear-gradient(140deg, #1F0A30 0%, #3B1553 52%, #5A2179 100%)",
+  backgroundImage: "linear-gradient(140deg, rgb(var(--d-hero-a)) 0%, rgb(var(--d-hero-b)) 52%, rgb(var(--d-hero-c)) 100%)",
 };
 const DEEP_BG: CSSProperties = {
   backgroundImage:
-    "radial-gradient(100% 100% at 100% 0%, rgba(255,181,71,0.26) 0%, rgba(255,181,71,0) 60%), linear-gradient(145deg, #3B1553 0%, #4F1C6B 100%)",
+    "radial-gradient(100% 100% at 100% 0%, rgba(255,181,71,0.26) 0%, rgba(255,181,71,0) 60%), linear-gradient(145deg, rgb(var(--d-ink)) 0%, rgb(var(--d-ink-hover)) 100%)",
 };
-const ICON_TILE_BG: CSSProperties = { backgroundImage: "linear-gradient(145deg, #3B1553 0%, #6B2A8F 100%)" };
+const ICON_TILE_BG: CSSProperties = { backgroundImage: "linear-gradient(145deg, rgb(var(--d-ink)) 0%, rgb(var(--d-tile-end)) 100%)" };
 // Lưới chấm mờ phủ lên nền mận đậm, mờ dần về phía góc trái dưới
 const DOT_BG: CSSProperties = {
   backgroundImage: "radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px)",
@@ -552,7 +668,7 @@ const inkOn = (c: string) => {
   if (!m) return "#ffffff";
   const n = parseInt(m[1], 16);
   const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-  return lum > 170 ? "#3B1553" : "#ffffff";
+  return lum > 170 ? "rgb(var(--d-ink))" : "#ffffff";
 };
 // Ô màu đặc, có quầng sáng cùng màu để nổi bật
 const solid = (c: string): CSSProperties => ({
@@ -602,7 +718,7 @@ function CountNum({ value }: { value: number }) {
 function Spot({
   className,
   children,
-  tint = "rgba(99,102,241,0.09)",
+  tint = "rgb(var(--d-accent)/0.09)",
   style,
 }: {
   className?: string;
@@ -675,7 +791,7 @@ function ModalHead({
   return (
     <DialogHeader className="relative shrink-0 space-y-4 overflow-hidden border-b border-zinc-100 bg-gradient-to-b from-zinc-50/80 to-white px-6 py-6 text-left">
       <div className="relative flex items-center gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#3B1553]/25" style={ICON_TILE_BG}>
+        <div className="grid h-10 w-10 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[color:rgb(var(--d-ink)/0.25)]" style={ICON_TILE_BG}>
           <Icon className="h-[18px] w-[18px]" />
         </div>
         <DialogTitle className="text-sm font-medium text-zinc-500">{title}</DialogTitle>
@@ -683,7 +799,7 @@ function ModalHead({
       <div className="relative text-4xl font-extrabold tabular-nums tracking-tight text-zinc-900">{total}</div>
       {children && <div className="relative">{children}</div>}
       <div aria-hidden className="pointer-events-none absolute -right-10 -top-16 h-44 w-44 rounded-full bg-[#FFB547]/20 blur-3xl" />
-      <div aria-hidden className="pointer-events-none absolute -left-16 -top-20 h-40 w-40 rounded-full bg-fuchsia-400/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -left-16 -top-20 h-40 w-40 rounded-full bg-[color:rgb(var(--d-glow-a)/0.1)] blur-3xl" />
     </DialogHeader>
   );
 }
@@ -1603,7 +1719,7 @@ export default function Dashboard() {
           type="button"
           aria-expanded={open}
           onClick={() => setOpenLog((o) => ({ ...o, [evId]: !o[evId] }))}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B1553]/40"
+          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:rgb(var(--d-ink)/0.4)]"
         >
           <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-semibold text-zinc-800">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-zinc-100 text-zinc-500">
@@ -1695,7 +1811,7 @@ export default function Dashboard() {
                           type="button"
                           aria-expanded={sOpen}
                           onClick={() => setOpenStudentLog((o) => ({ ...o, [key]: !(o[key] ?? defaultOpen) }))}
-                          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#3B1553]/40"
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:rgb(var(--d-ink)/0.4)]"
                         >
                           <span className="flex min-w-0 flex-wrap items-center gap-2">
                             <span className={cn(avatarBase, "h-8 w-8 rounded-full text-xs")} style={solid(colorOf(student.id))}>
@@ -1749,7 +1865,7 @@ export default function Dashboard() {
                                       aria-label={`${vi ? "Xóa bài kiểm tra" : "Remove test"} ${i + 1}`}
                                       onClick={() => mutateTests(evId, student.id, (items) => items.filter((_, j) => j !== i))}
                                       className={cn(
-                                        "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
+                                        "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-zinc-200 text-zinc-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]",
                                         tests.length > 1 || !isBlankTest(tItem) ? "" : "invisible",
                                       )}
                                     >
@@ -1761,7 +1877,7 @@ export default function Dashboard() {
                                   type="button"
                                   disabled={lastBlank}
                                   onClick={() => mutateTests(evId, student.id, (items) => [...items, { ...EMPTY_TEST }])}
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-dashed border-zinc-300 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-400 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
                                 >
                                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                                   {vi ? "Thêm bài kiểm tra" : "Add test"}
@@ -1924,6 +2040,25 @@ export default function Dashboard() {
   };
   const scrollToAttendance = () => document.getElementById("diem-danh")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+  // Màu chủ đạo: màu đã chọn trên trình duyệt này (nếu có), không thì DEFAULT_BRAND ở đầu file
+  const defaultBrand = normalizeHex(DEFAULT_BRAND) ?? "#3B1553";
+  const [brand, setBrand] = useState<string>(() => readStoredBrand() ?? defaultBrand);
+  const [brandDraft, setBrandDraft] = useState<string>(brand);
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  const palette = useMemo(() => buildPalette(brand), [brand]);
+  const pickBrand = (hex: string, syncDraft = true) => {
+    const n = normalizeHex(hex);
+    if (!n) return;
+    setBrand(n);
+    if (syncDraft) setBrandDraft(n);
+    writeStoredBrand(n);
+  };
+  const resetBrand = () => {
+    setBrand(defaultBrand);
+    setBrandDraft(defaultBrand);
+    writeStoredBrand(null);
+  };
+
   // Dải lịch 7 ngày tới: các buổi theo lịch cố định + buổi thêm tay (cùng quy tắc với phần tính học phí), bỏ buổi đã hủy
   const [weekSel, setWeekSel] = useState<string | null>(null);
   const weekDays = useMemo(() => {
@@ -1988,7 +2123,7 @@ export default function Dashboard() {
   const showNowMarker = todayShiftGroups.length > 0 && !(firstOpenIdx !== -1 && shiftStatusOf(todayShiftGroups[firstOpenIdx].event) === "live");
   const nowLabel = `${String(clockNow.getHours()).padStart(2, "0")}:${String(clockNow.getMinutes()).padStart(2, "0")}`;
 
-  const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
+  const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink))] focus-visible:ring-offset-2 focus-visible:ring-offset-white";
   const rise = (ms: number) => ({ "--d": `${ms}ms` }) as CSSProperties;
 
   // Thẻ đếm gọn ở hàng cuối của phần tổng quan
@@ -1997,8 +2132,8 @@ export default function Dashboard() {
     return (
       <Link key={key} to={to} className={cn("group block rounded-[28px] lg:col-span-4", focusRing)}>
         <Spot
-          tint="rgba(99,102,241,0.08)"
-          className={cn(CARD, "dash-rise flex h-full items-center gap-4 overflow-hidden p-4 transition-shadow duration-200 hover:shadow-[0_2px_4px_rgba(59,21,83,0.05),0_22px_44px_-18px_rgba(59,21,83,0.3)] sm:p-5")}
+          tint="rgb(var(--d-accent)/0.08)"
+          className={cn(CARD, "dash-rise flex h-full items-center gap-4 overflow-hidden p-4 transition-shadow duration-200 hover:shadow-[0_2px_4px_rgb(var(--d-ink)/0.05),0_22px_44px_-18px_rgb(var(--d-ink)/0.3)] sm:p-5")}
           style={rise(delay)}
         >
           <div className={cn("grid h-12 w-12 shrink-0 place-items-center rounded-2xl", tone.tile)}>
@@ -2013,7 +2148,7 @@ export default function Dashboard() {
               <span className="truncate text-xs text-zinc-400">{sub}</span>
             </div>
           </div>
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-400 transition-colors duration-200 group-hover:bg-[#3B1553] group-hover:text-[#FFB547]">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-400 transition-colors duration-200 group-hover:bg-[color:rgb(var(--d-ink))] group-hover:text-[#FFB547]">
             <ArrowUpRight className="h-4 w-4" />
           </span>
         </Spot>
@@ -2029,24 +2164,24 @@ export default function Dashboard() {
   ];
   const segBtn = (active: boolean) =>
     cn(
-      "h-8 rounded-full px-3.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
-      active ? "bg-[#3B1553] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+      "h-8 rounded-full px-3.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]",
+      active ? "bg-[color:rgb(var(--d-ink))] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900"
     );
-  const datePill = "flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm focus-within:border-[#3B1553] focus-within:ring-2 focus-within:ring-[#3B1553]/10";
+  const datePill = "flex h-9 items-center gap-2 rounded-full border border-zinc-200 bg-white px-3.5 text-sm focus-within:border-[color:rgb(var(--d-ink))] focus-within:ring-2 focus-within:ring-[color:rgb(var(--d-ink)/0.1)]";
 
   return (
     <div className={cn("mx-auto max-w-7xl space-y-5 pb-12", hasPending && "pb-28", FONT)}>
-      <style>{DASH_CSS}</style>
+      <style>{DASH_CSS + paletteCss(palette)}</style>
 
       {/* ========== 1. PHẦN CHÀO (aurora) + CA TIẾP THEO ========== */}
       <section
-        className="dash-rise relative isolate overflow-hidden rounded-[36px] p-6 text-white shadow-[0_30px_60px_-30px_rgba(59,21,83,0.85)] sm:p-9"
+        className="dash-rise relative isolate overflow-hidden rounded-[36px] p-6 text-white shadow-[0_30px_60px_-30px_rgb(var(--d-ink)/0.85)] sm:p-9"
         style={HERO_BG}
       >
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-          <div className="dash-aurora-a absolute -left-24 -top-32 h-96 w-96 rounded-full bg-fuchsia-500/60 blur-[90px]" />
+          <div className="dash-aurora-a absolute -left-24 -top-32 h-96 w-96 rounded-full bg-[color:rgb(var(--d-glow-a)/0.6)] blur-[90px]" />
           <div className="dash-aurora-b absolute -right-16 -top-10 h-[26rem] w-[26rem] rounded-full bg-[#FFB547]/40 blur-[100px]" />
-          <div className="dash-aurora-c absolute -bottom-44 left-1/3 h-96 w-96 rounded-full bg-pink-400/30 blur-[100px]" />
+          <div className="dash-aurora-c absolute -bottom-44 left-1/3 h-96 w-96 rounded-full bg-[color:rgb(var(--d-glow-c)/0.3)] blur-[100px]" />
           <div className="absolute inset-0" style={DOT_BG} />
         </div>
 
@@ -2100,6 +2235,10 @@ export default function Dashboard() {
                 {vi ? `${todayShiftGroups.length} ca học hôm nay` : `${todayShiftGroups.length} classes today`}
               </span>
               <BackgroundPicker vi={vi} className={CHIP_BTN} />
+              <button type="button" onClick={() => setShowThemeModal(true)} className={CHIP_BTN}>
+                <span aria-hidden className="h-4 w-4 rounded-full ring-2 ring-white/70" style={{ background: brand }} />
+                {vi ? "Màu chủ đạo" : "Theme color"}
+              </button>
             </div>
           </div>
 
@@ -2126,7 +2265,7 @@ export default function Dashboard() {
                   href={nextOnline.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[#3B1553] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[color:rgb(var(--d-ink))] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
                 >
                   <Video className="h-3.5 w-3.5" />
                   {vi ? "Vào lớp" : "Join class"}
@@ -2203,7 +2342,7 @@ export default function Dashboard() {
       <section className={cn(CARD, "dash-rise p-4 sm:p-5")} style={rise(80)}>
         <div className="flex flex-wrap items-center justify-between gap-3 px-1 pb-3.5">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color:rgb(var(--d-tint))] text-[color:rgb(var(--d-accent))]">
               <CalendarDays className="h-[18px] w-[18px]" />
             </div>
             <div>
@@ -2226,9 +2365,9 @@ export default function Dashboard() {
                 aria-pressed={active}
                 onClick={() => setWeekSel(d.date)}
                 className={cn(
-                  "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/40 sm:py-3.5",
+                  "flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-2.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.4)] sm:py-3.5",
                   active
-                    ? "border-[#3B1553] bg-[#3B1553] text-white shadow-lg shadow-[#3B1553]/25"
+                    ? "border-[color:rgb(var(--d-ink))] bg-[color:rgb(var(--d-ink))] text-white shadow-lg shadow-[color:rgb(var(--d-ink)/0.25)]"
                     : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50",
                   i === 0 && !active && "ring-2 ring-[#FFB547]/60",
                 )}
@@ -2239,7 +2378,7 @@ export default function Dashboard() {
                 <span className="text-lg font-extrabold leading-none tabular-nums sm:text-2xl">{d.day}</span>
                 <span className="flex h-1.5 items-center gap-0.5" aria-hidden>
                   {d.sessions.slice(0, 4).map((s, k) => (
-                    <span key={`${s.key}-${k}`} className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-[#FFB547]" : "bg-violet-400")} />
+                    <span key={`${s.key}-${k}`} className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-[#FFB547]" : "bg-[color:rgb(var(--d-accent)/0.7)]")} />
                   ))}
                 </span>
                 <span className={cn("text-[10px] font-medium tabular-nums", active ? "text-white/70" : "text-zinc-500")}>
@@ -2258,7 +2397,7 @@ export default function Dashboard() {
           ) : (
             selDay.sessions.map((s) => (
               <span key={s.key} className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-200 bg-white py-1 pl-1 pr-3 text-xs shadow-sm">
-                <span className={cn(MONO, "shrink-0 rounded-full bg-[#3B1553] px-2.5 py-1 text-[11px] font-semibold text-white")}>{s.start}</span>
+                <span className={cn(MONO, "shrink-0 rounded-full bg-[color:rgb(var(--d-ink))] px-2.5 py-1 text-[11px] font-semibold text-white")}>{s.start}</span>
                 <span className="truncate font-medium text-zinc-800">{s.className}</span>
               </span>
             ))
@@ -2272,7 +2411,7 @@ export default function Dashboard() {
         <section id="diem-danh" className={cn(CARD, "dash-rise scroll-mt-4 space-y-5 p-5 sm:p-6 lg:col-span-8")} style={rise(120)}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#3B1553]/20" style={ICON_TILE_BG}>
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[color:rgb(var(--d-ink)/0.2)]" style={ICON_TILE_BG}>
                 <UserCheck className="h-5 w-5" />
               </div>
               <div>
@@ -2288,7 +2427,7 @@ export default function Dashboard() {
               <Button
                 onClick={handleSaveAllAttendance}
                 disabled={savingAttendance}
-                className="h-10 shrink-0 gap-2 rounded-xl bg-[#3B1553] px-4 text-sm font-semibold text-white shadow-md shadow-[#3B1553]/25 hover:bg-[#521F70]"
+                className="h-10 shrink-0 gap-2 rounded-xl bg-[color:rgb(var(--d-ink))] px-4 text-sm font-semibold text-white shadow-md shadow-[color:rgb(var(--d-ink)/0.25)] hover:bg-[color:rgb(var(--d-ink-hover))]"
               >
                 <CheckCircle2 className="h-4 w-4 text-[#FFB547]" />
                 {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu điểm danh" : "Save attendance"}
@@ -2312,7 +2451,7 @@ export default function Dashboard() {
               </div>
               <Link
                 to="/classes"
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-4 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-4 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]"
               >
                 {vi ? "Xem các lớp" : "View classes"}
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -2356,7 +2495,7 @@ export default function Dashboard() {
                       >
                         <div className="flex flex-wrap items-center gap-3 border-b border-zinc-100 bg-zinc-50/60 p-3 sm:p-4">
                           <div
-                            className="grid h-14 w-16 shrink-0 place-items-center rounded-2xl text-white shadow-md shadow-[#3B1553]/20"
+                            className="grid h-14 w-16 shrink-0 place-items-center rounded-2xl text-white shadow-md shadow-[color:rgb(var(--d-ink)/0.2)]"
                             style={ICON_TILE_BG}
                           >
                             {group.event.start_time ? (
@@ -2375,7 +2514,7 @@ export default function Dashboard() {
                             <div className="flex flex-wrap items-center gap-2">
                               <Link
                                 to={`/classes/${group.event.class_id}`}
-                                className="truncate text-base font-bold text-zinc-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+                                className="truncate text-base font-bold text-zinc-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]"
                               >
                                 {group.className}
                               </Link>
@@ -2407,7 +2546,7 @@ export default function Dashboard() {
                                   href={online.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[#3B1553] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/40"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#FFB547] px-3.5 text-xs font-semibold text-[color:rgb(var(--d-ink))] shadow-sm shadow-[#FFB547]/40 transition-colors hover:bg-[#ffa726] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.4)]"
                                 >
                                   <Video className="h-3.5 w-3.5" />
                                   {vi ? "Vào lớp" : "Join class"}
@@ -2426,7 +2565,7 @@ export default function Dashboard() {
                               <button
                                 type="button"
                                 onClick={() => setShiftAllAttendance(group, !allPresent)}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+                                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]"
                               >
                                 <CheckCheck className="h-3.5 w-3.5 text-zinc-500" />
                                 {allPresent ? (vi ? "Bỏ chọn tất cả" : "Clear all") : vi ? "Có mặt tất cả" : "All present"}
@@ -2449,7 +2588,7 @@ export default function Dashboard() {
                                   aria-pressed={isPresent}
                                   onClick={() => toggleStudentAttendance(evId, student.id)}
                                   className={cn(
-                                    "inline-flex min-h-11 select-none items-center gap-2.5 rounded-full border py-1 pl-1 pr-4 text-sm font-medium transition-all active:scale-95 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/40",
+                                    "inline-flex min-h-11 select-none items-center gap-2.5 rounded-full border py-1 pl-1 pr-4 text-sm font-medium transition-all active:scale-95 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.4)]",
                                     isPresent
                                       ? "border-transparent"
                                       : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
@@ -2497,7 +2636,7 @@ export default function Dashboard() {
         {/* TÍNH HỌC PHÍ ĐẾN MỘT NGÀY BẤT KỲ (không phụ thuộc bộ lọc thời gian bên dưới) */}
         <section className={cn(CARD, "dash-rise space-y-4 p-5 sm:p-6 lg:col-span-4")} style={rise(160)}>
           <div className="flex items-center gap-3">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[#3B1553]/20" style={ICON_TILE_BG}>
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-[#FFB547] shadow-lg shadow-[color:rgb(var(--d-ink)/0.2)]" style={ICON_TILE_BG}>
               <Calculator className="h-5 w-5" />
             </div>
             <div className="min-w-0">
@@ -2529,8 +2668,8 @@ export default function Dashboard() {
                   aria-pressed={calcDate === p.date}
                   onClick={() => setCalcDate(p.date)}
                   className={cn(
-                    "h-9 rounded-xl px-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
-                    calcDate === p.date ? "bg-[#3B1553] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900",
+                    "h-9 rounded-xl px-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]",
+                    calcDate === p.date ? "bg-[color:rgb(var(--d-ink))] text-white shadow-sm" : "text-zinc-500 hover:text-zinc-900",
                   )}
                 >
                   {vi ? p.vi : p.en}
@@ -2542,9 +2681,9 @@ export default function Dashboard() {
               role="switch"
               aria-checked={calcIncludeOwed}
               onClick={() => setCalcIncludeOwed((v) => !v)}
-              className="flex w-full items-center gap-2.5 rounded-full py-1 text-left text-sm font-medium text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30"
+              className="flex w-full items-center gap-2.5 rounded-full py-1 text-left text-sm font-medium text-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]"
             >
-              <span className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", calcIncludeOwed ? "bg-[#3B1553]" : "bg-zinc-300")}>
+              <span className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", calcIncludeOwed ? "bg-[color:rgb(var(--d-ink))]" : "bg-zinc-300")}>
                 <span
                   className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all", calcIncludeOwed ? "left-[18px]" : "left-0.5")}
                 />
@@ -2555,7 +2694,7 @@ export default function Dashboard() {
 
           <div className="relative flex flex-col gap-5 overflow-hidden rounded-3xl p-5 text-white" style={DEEP_BG}>
             <div aria-hidden className="dash-aurora-b pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-[#FFB547]/25 blur-3xl" />
-            <div aria-hidden className="dash-aurora-a pointer-events-none absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-fuchsia-500/30 blur-3xl" />
+            <div aria-hidden className="dash-aurora-a pointer-events-none absolute -bottom-14 -left-10 h-36 w-36 rounded-full bg-[color:rgb(var(--d-glow-a)/0.3)] blur-3xl" />
             <Calculator aria-hidden className="pointer-events-none absolute -bottom-8 -right-6 h-32 w-32 -rotate-12 text-white/[0.06]" />
             <div className="relative space-y-1.5">
               <div className="text-sm font-medium text-white/70">
@@ -2624,7 +2763,7 @@ export default function Dashboard() {
                 <Link
                   key={r.student.id}
                   to={`/students/${r.student.id}`}
-                  className="group flex items-center justify-between gap-2.5 rounded-2xl border border-zinc-200 bg-white p-2.5 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
+                  className="group flex items-center justify-between gap-2.5 rounded-2xl border border-zinc-200 bg-white p-2.5 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink))]"
                 >
                   <div className="flex min-w-0 items-center gap-2.5">
                     <div className={cn(avatarBase, "h-10 w-10 rounded-full text-xs")} style={solid(colorOf(r.student.id))}>
@@ -2717,11 +2856,11 @@ export default function Dashboard() {
           {/* A. Thẻ lớn: học phí dự kiến trong kỳ (cố định) + phân bổ theo ngày thu */}
           <Spot
             tint="rgba(255,181,71,0.14)"
-            className="dash-rise relative flex min-h-[22rem] flex-col justify-between gap-8 overflow-hidden rounded-[32px] p-6 text-white shadow-[0_26px_54px_-26px_rgba(59,21,83,0.75)] sm:col-span-2 sm:p-7 lg:col-span-5 lg:row-span-2"
+            className="dash-rise relative flex min-h-[22rem] flex-col justify-between gap-8 overflow-hidden rounded-[32px] p-6 text-white shadow-[0_26px_54px_-26px_rgb(var(--d-ink)/0.75)] sm:col-span-2 sm:p-7 lg:col-span-5 lg:row-span-2"
             style={{ ...HERO_BG, ...rise(100) }}
           >
             <div aria-hidden className="dash-aurora-b pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#FFB547]/30 blur-[80px]" />
-            <div aria-hidden className="dash-aurora-a pointer-events-none absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-fuchsia-500/35 blur-[80px]" />
+            <div aria-hidden className="dash-aurora-a pointer-events-none absolute -bottom-24 -left-16 h-60 w-60 rounded-full bg-[color:rgb(var(--d-glow-a)/0.35)] blur-[80px]" />
             <div aria-hidden className="pointer-events-none absolute inset-0" style={DOT_BG} />
 
             <div className="relative flex items-start justify-between gap-3">
@@ -2753,14 +2892,14 @@ export default function Dashboard() {
                         <span
                           key={s.id}
                           title={s.name}
-                          className={cn(avatarBase, "h-8 w-8 rounded-full text-[11px] ring-2 ring-[#3B1553]")}
+                          className={cn(avatarBase, "h-8 w-8 rounded-full text-[11px] ring-2 ring-[color:rgb(var(--d-hero-b))]")}
                           style={solid(colorOf(s.id))}
                         >
                           {s.name ? String(s.name).slice(0, 1).toUpperCase() : "?"}
                         </span>
                       ))}
                       {unpaidStudents.length > 5 && (
-                        <span className="grid h-8 min-w-8 place-items-center rounded-full bg-white/15 px-1.5 text-[11px] font-semibold ring-2 ring-[#3B1553]">
+                        <span className="grid h-8 min-w-8 place-items-center rounded-full bg-white/15 px-1.5 text-[11px] font-semibold ring-2 ring-[color:rgb(var(--d-hero-b))]">
                           +{unpaidStudents.length - 5}
                         </span>
                       )}
@@ -2847,12 +2986,12 @@ export default function Dashboard() {
                 {totalUpcomingFee > 0 ? (
                   <div className="space-y-2">
                     <div className="flex h-2 gap-1 overflow-hidden rounded-full bg-zinc-100">
-                      <div className="h-full rounded-full bg-gradient-to-r from-[#3B1553] to-[#9B4DDB]" style={{ width: `${100 - overduePct}%` }} />
+                      <div className="h-full rounded-full bg-gradient-to-r from-[color:rgb(var(--d-ink))] to-[color:rgb(var(--d-bright))]" style={{ width: `${100 - overduePct}%` }} />
                       {totalOverdueFee > 0 && <div className="h-full min-w-[6px] rounded-full bg-rose-500" style={{ width: `${overduePct}%` }} />}
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
                       <span className="inline-flex items-center gap-1.5 text-zinc-500">
-                        <span className="h-2 w-2 rounded-full bg-[#3B1553]" />
+                        <span className="h-2 w-2 rounded-full bg-[color:rgb(var(--d-ink))]" />
                         {vi ? "Kỳ hiện tại" : "Current"}
                         <b className="font-semibold tabular-nums text-zinc-800">{formatVND(currentOnly)}</b>
                       </span>
@@ -2942,7 +3081,7 @@ export default function Dashboard() {
                             d.isToday
                               ? "bg-gradient-to-t from-[#FF9A3D] to-[#FFC56B]"
                               : d.n > 0
-                              ? "bg-gradient-to-t from-[#3B1553] to-[#9B4DDB]"
+                              ? "bg-gradient-to-t from-[color:rgb(var(--d-ink))] to-[color:rgb(var(--d-bright))]"
                               : "bg-zinc-100",
                           )}
                           style={{ height: `${h}%` }}
@@ -2968,7 +3107,7 @@ export default function Dashboard() {
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
           <div
             role="status"
-            className="dash-rise pointer-events-auto relative flex w-full max-w-xl items-center justify-between gap-3 overflow-hidden rounded-full border border-white/15 p-2 pl-5 text-white shadow-2xl shadow-[#3B1553]/50 backdrop-blur-xl"
+            className="dash-rise pointer-events-auto relative flex w-full max-w-xl items-center justify-between gap-3 overflow-hidden rounded-full border border-white/15 p-2 pl-5 text-white shadow-2xl shadow-[color:rgb(var(--d-ink)/0.5)] backdrop-blur-xl"
             style={DEEP_BG}
           >
             <div className="flex min-w-0 items-center gap-3">
@@ -2987,7 +3126,7 @@ export default function Dashboard() {
             <Button
               onClick={handleSaveAllAttendance}
               disabled={savingAttendance}
-              className="h-11 shrink-0 gap-2 rounded-full bg-[#FFB547] px-5 text-sm font-semibold text-[#3B1553] hover:bg-[#ffa726]"
+              className="h-11 shrink-0 gap-2 rounded-full bg-[#FFB547] px-5 text-sm font-semibold text-[color:rgb(var(--d-ink))] hover:bg-[#ffa726]"
             >
               <CheckCircle2 className="h-4 w-4" />
               {savingAttendance ? (vi ? "Đang lưu..." : "Saving...") : vi ? "Lưu ngay" : "Save now"}
@@ -3040,9 +3179,9 @@ export default function Dashboard() {
                       aria-pressed={active}
                       onClick={() => setBillingFilter(c.key)}
                       className={cn(
-                        "rounded-2xl border px-3.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]/30",
+                        "rounded-2xl border px-3.5 py-2 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)]",
                         active
-                          ? "border-[#3B1553] bg-[#3B1553] text-white shadow-md shadow-[#3B1553]/25"
+                          ? "border-[color:rgb(var(--d-ink))] bg-[color:rgb(var(--d-ink))] text-white shadow-md shadow-[color:rgb(var(--d-ink)/0.25)]"
                           : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
                       )}
                     >
@@ -3110,7 +3249,7 @@ export default function Dashboard() {
                       type="button"
                       aria-expanded={open}
                       onClick={() => setExpandedStudent(open ? null : String(student.id))}
-                      className="flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-colors hover:bg-zinc-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink))]"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(student.id))}>
@@ -3212,6 +3351,143 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* ========== POPUP ĐỔI MÀU CHỦ ĐẠO ========== */}
+      <Dialog open={showThemeModal} onOpenChange={setShowThemeModal}>
+        <DialogContent className={cn(modalShell, "sm:max-w-lg")}>
+          <DialogHeader className="shrink-0 space-y-1.5 border-b border-zinc-100 px-6 py-5 text-left">
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-zinc-900">
+              <Palette className="h-4 w-4 text-[color:rgb(var(--d-accent))]" />
+              {vi ? "Màu chủ đạo" : "Theme color"}
+            </DialogTitle>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              {vi
+                ? "Chọn một màu, cả trang đổi theo ngay: phần chào, nút, biểu đồ và các quầng sáng."
+                : "Pick one color and the whole page follows: greeting, buttons, charts and glows."}
+            </p>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+            {/* Xem trước trực tiếp */}
+            <div className="relative isolate overflow-hidden rounded-2xl p-4 text-white shadow-lg" style={HERO_BG}>
+              <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+                <div className="absolute -left-10 -top-12 h-32 w-32 rounded-full bg-[color:rgb(var(--d-glow-a)/0.55)] blur-3xl" />
+                <div className="absolute -right-8 -top-6 h-28 w-28 rounded-full bg-[#FFB547]/40 blur-3xl" />
+                <div className="absolute -bottom-14 left-1/3 h-28 w-28 rounded-full bg-[color:rgb(var(--d-glow-c)/0.4)] blur-3xl" />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-lg font-extrabold leading-tight">
+                    {greeting}, <span className="text-[#FFD27A]">{displayName}</span>
+                  </div>
+                  <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#FFB547]/15 px-2.5 py-1 text-[11px] font-semibold text-[#FFD9A0] ring-1 ring-[#FFB547]/40">
+                    <Hourglass className="h-3 w-3" />
+                    {vi ? "Chưa thu · 3 HS" : "Unpaid · 3 students"}
+                  </div>
+                </div>
+                <span className="inline-flex h-9 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-md" style={ICON_TILE_BG}>
+                  <CheckCircle2 className="h-4 w-4 text-[#FFB547]" />
+                  {vi ? "Lưu điểm danh" : "Save attendance"}
+                </span>
+              </div>
+            </div>
+
+            {/* Màu có sẵn */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-zinc-600">{vi ? "Màu có sẵn" : "Presets"}</div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {BRAND_PRESETS.map((p) => {
+                  const active = normalizeHex(p.hex) === brand;
+                  return (
+                    <button
+                      key={p.hex}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => pickBrand(p.hex)}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-2xl border p-2.5 text-[11px] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.4)]",
+                        active
+                          ? "border-[color:rgb(var(--d-ink))] bg-zinc-50 text-zinc-900 shadow-sm"
+                          : "border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50",
+                      )}
+                    >
+                      <span className="grid h-9 w-9 place-items-center rounded-full text-white shadow-sm" style={{ background: p.hex }}>
+                        {active && <CheckCircle2 className="h-4 w-4" />}
+                      </span>
+                      {vi ? p.vi : p.en}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Màu bất kỳ */}
+            <div>
+              <div className="mb-2 text-xs font-semibold text-zinc-600">{vi ? "Hoặc chọn màu bất kỳ" : "Or pick any color"}</div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label
+                  className="relative h-11 w-14 shrink-0 cursor-pointer overflow-hidden rounded-xl border border-zinc-200 shadow-sm focus-within:ring-2 focus-within:ring-[color:rgb(var(--d-ink)/0.4)]"
+                  style={{ background: brand }}
+                >
+                  <input
+                    type="color"
+                    value={brand.toLowerCase()}
+                    onChange={(e) => pickBrand(e.target.value)}
+                    aria-label={vi ? "Chọn màu" : "Pick a color"}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  />
+                </label>
+                <Input
+                  value={brandDraft}
+                  maxLength={7}
+                  spellCheck={false}
+                  placeholder="#3B1553"
+                  aria-label={vi ? "Mã màu" : "Color code"}
+                  className={cn("h-11 w-32 font-mono uppercase", LOG_FIELD)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setBrandDraft(v);
+                    if (/^#?[0-9a-f]{6}$/i.test(v.trim())) pickBrand(v, false);
+                  }}
+                  onBlur={() => {
+                    const n = normalizeHex(brandDraft);
+                    if (n) pickBrand(n);
+                    else setBrandDraft(brand);
+                  }}
+                />
+                <span className="min-w-0 flex-1 text-xs leading-relaxed text-zinc-500">
+                  {vi ? "Bấm ô màu để chọn, hoặc gõ mã dạng #RRGGBB." : "Click the swatch to pick, or type a #RRGGBB code."}
+                </span>
+              </div>
+              {brandDraft.trim() !== "" && !normalizeHex(brandDraft) && (
+                <p className="mt-1.5 text-xs text-rose-600">{vi ? "Mã màu gồm 6 ký tự, ví dụ #3B1553" : "A color code has 6 characters, e.g. #3B1553"}</p>
+              )}
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">
+                {vi
+                  ? "Màu quá sáng sẽ tự tối bớt để chữ trắng vẫn đọc rõ. Muốn đổi màu mặc định cho mọi người dùng, sửa DEFAULT_BRAND ở đầu file Dashboard.tsx."
+                  : "Very light colors are darkened automatically so white text stays readable. To change the default for everyone, edit DEFAULT_BRAND at the top of Dashboard.tsx."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-100 bg-zinc-50/60 px-6 py-4">
+            <button
+              type="button"
+              onClick={resetBrand}
+              disabled={brand === defaultBrand}
+              className="inline-flex h-10 items-center rounded-xl px-3 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink)/0.3)] disabled:pointer-events-none disabled:opacity-40"
+            >
+              {vi ? "Đặt lại mặc định" : "Reset to default"}
+            </button>
+            <Button
+              onClick={() => setShowThemeModal(false)}
+              className="h-10 rounded-xl bg-[color:rgb(var(--d-ink))] px-5 text-sm font-semibold text-white hover:bg-[color:rgb(var(--d-ink-hover))]"
+            >
+              {vi ? "Xong" : "Done"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ========== POPUP CHI TIẾT LƯƠNG MẶC ĐỊNH ========== */}
       <Dialog open={showSalaryModal} onOpenChange={setShowSalaryModal}>
         <DialogContent className={modalShell}>
@@ -3234,7 +3510,7 @@ export default function Dashboard() {
                   key={student.id}
                   to={`/students/${student.id}`}
                   onClick={() => setShowSalaryModal(false)}
-                  className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
+                  className="group flex items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink))]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(student.id))}>
@@ -3309,7 +3585,7 @@ export default function Dashboard() {
                   to={`/students/${item.studentId}`}
                   key={item.studentId}
                   onClick={() => setShowExpectedModal(false)}
-                  className="group flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B1553]"
+                  className="group flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-200 bg-white p-3 transition-all hover:border-zinc-300 hover:bg-zinc-50/70 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:rgb(var(--d-ink))]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className={cn(avatarBase, "h-11 w-11 rounded-full text-sm")} style={solid(colorOf(item.studentId))}>
